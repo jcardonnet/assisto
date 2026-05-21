@@ -24,6 +24,14 @@ export async function runPiExtensionTests() {
   const root = await makeTempVault();
 
   try {
+    assert.equal(typeof piEntry.default, "function");
+    assert.equal(typeof piEntry.factory, "function");
+    assert.equal(piEntry.default, piEntry.factory);
+
+    const factoryExtension = piEntry.default({ vaultRoot: root });
+    assert.equal(factoryExtension.tools.length, 9);
+    assert.equal(factoryExtension.commands.length, 6);
+
     const registeredTools = [];
     const registeredCommands = [];
     const registeredGuards = [];
