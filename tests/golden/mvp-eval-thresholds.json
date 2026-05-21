@@ -1,0 +1,9 @@
+{
+  "committedFollowupPrecisionMin": 0.95,
+  "duplicatePersonFalseMergeRateMax": 0,
+  "unscopedSystemClaimsAutoPromotedMax": 0,
+  "sourceCitationCoverageMin": 0.95,
+  "transactionValidationFailureCaughtBeforeWriteMin": 1,
+  "summaryUnsupportedClaimRateMax": 0,
+  "brokenLinkRateAfterAppliedTransactionsMax": 0
+}

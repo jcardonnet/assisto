@@ -1,0 +1,20 @@
+{
+  "name": "@assisto/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wm": "./bin/wm.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "wm": "node ./bin/wm.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@assisto/core": "workspace:*"
+  },
+  "devDependencies": {}
+}

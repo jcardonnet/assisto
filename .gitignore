@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build and coverage outputs
+dist/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Package manager and tool caches
+.pnpm-store/
+.eslintcache
+.cache/
+.turbo/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Codex/local agent runtime state
+.codex/
+.agents/
+
+# Pi runtime caches; keep .pi skills, prompts, and extensions tracked
+.pi/cache/
+.pi/runtime/
+.pi/sessions/
+
+# Derived memory artifacts; keep the indexes README if present
+memory/indexes/*
+!memory/indexes/README.md
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+tmp/
+temp/
+.tmp/
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
