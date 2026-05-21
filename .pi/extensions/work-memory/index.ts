@@ -45,6 +45,7 @@ function isPiExtensionApi(value: PiExtensionApi | WorkMemoryExtensionOptions | u
     ("registerTool" in value ||
       "registerCommand" in value ||
       "registerWriteGuard" in value ||
-      "onBeforeWrite" in value)
+      "onBeforeWrite" in value ||
+      "on" in value)
   );
 }

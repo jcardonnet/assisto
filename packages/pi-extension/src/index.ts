@@ -38,10 +38,11 @@ export type WorkMemoryCommandName =
   | "/wm-lint";
 
 export interface PiExtensionApi {
-  registerTool?: (tool: WorkMemoryToolDefinition) => void;
-  registerCommand?: (command: WorkMemoryCommandDefinition) => void;
+  registerTool?: (tool: unknown) => void;
+  registerCommand?: (...args: unknown[]) => void;
   registerWriteGuard?: (guard: WorkMemoryWriteGuard) => void;
   onBeforeWrite?: (guard: WorkMemoryWriteGuard) => void;
+  on?: (eventName: string, handler: PiEventHandler) => void;
 }
 
 export interface WorkMemoryExtensionOptions {
@@ -72,6 +73,57 @@ export interface WorkMemoryWriteGuardResult {
 }
 
 export type WorkMemoryWriteGuard = (request: WorkMemoryWriteRequest) => WorkMemoryWriteGuardResult;
+
+type PiEventHandler = (event: PiToolCallEvent, context: PiEventContext) => Promise<PiToolCallBlock | undefined> | PiToolCallBlock | undefined;
+
+interface PiToolCallEvent {
+  toolName?: unknown;
+  input?: unknown;
+}
+
+interface PiEventContext {
+  hasUI?: boolean;
+  ui?: {
+    notify?: (message: string, level?: "info" | "warning" | "error" | "success") => void;
+  };
+}
+
+interface PiToolCallBlock {
+  block: true;
+  reason: string;
+}
+
+interface PiToolResult {
+  content: Array<{ type: "text"; text: string }>;
+  details: Record<string, unknown>;
+}
+
+interface PiCommandOptions {
+  description: string;
+  getArgumentCompletions?: (prefix: string) => Promise<AutocompleteItem[]>;
+  handler: (args: string, context: PiCommandContext) => Promise<unknown>;
+}
+
+interface PiCommandContext {
+  ui?: {
+    notify?: (message: string, level?: "info" | "warning" | "error" | "success") => void;
+  };
+}
+
+interface AutocompleteItem {
+  value: string;
+  label?: string;
+  description?: string;
+}
+
+interface JsonSchema {
+  type: "object" | "string";
+  properties?: Record<string, JsonSchema | { type: "string"; description?: string; enum?: string[] }>;
+  required?: string[];
+  additionalProperties?: boolean;
+  description?: string;
+  enum?: string[];
+}
 
 interface ValidationSummary {
   passed: boolean;
@@ -109,12 +161,16 @@ export function registerWorkMemoryExtension(
 ): ReturnType<typeof createWorkMemoryExtension> {
   const extension = createWorkMemoryExtension(options);
 
-  for (const tool of extension.tools) {
-    api.registerTool?.(tool);
-  }
+  if (isNativePiApi(api)) {
+    registerNativePiExtension(api, extension, options);
+  } else {
+    for (const tool of extension.tools) {
+      api.registerTool?.(tool);
+    }
 
-  for (const command of extension.commands) {
-    api.registerCommand?.(command);
+    for (const command of extension.commands) {
+      api.registerCommand?.(command);
+    }
   }
 
   api.registerWriteGuard?.(extension.writeGuard);
@@ -270,6 +326,197 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
       run: async () => byName.get("wm_lint")!.run()
     }
   ];
+}
+
+function registerNativePiExtension(
+  api: PiExtensionApi,
+  extension: ReturnType<typeof createWorkMemoryExtension>,
+  options: WorkMemoryExtensionOptions
+): void {
+  const vaultRoot = options.vaultRoot ?? process.cwd();
+
+  for (const tool of extension.tools) {
+    api.registerTool?.(toNativeTool(tool));
+  }
+
+  for (const command of extension.commands) {
+    api.registerCommand?.(nativeCommandName(command.name), toNativeCommand(command, vaultRoot));
+  }
+
+  api.on?.("tool_call", async (event, context) => protectNativeWriteToolCall(event, context));
+}
+
+function toNativeTool(tool: WorkMemoryToolDefinition): Record<string, unknown> {
+  return {
+    name: tool.name,
+    label: toolLabel(tool.name),
+    description: toText(tool.description),
+    parameters: toolParameters(tool.name),
+    async execute(_toolCallId: unknown, params: unknown): Promise<PiToolResult> {
+      const result = await tool.run(recordInput(params));
+
+      return {
+        content: [{ type: "text", text: formatResult(result) }],
+        details: { result }
+      };
+    }
+  };
+}
+
+function toNativeCommand(command: WorkMemoryCommandDefinition, vaultRoot: string): PiCommandOptions {
+  return {
+    description: toText(command.description),
+    getArgumentCompletions: async (prefix) => getCommandArgumentCompletions(command.name, vaultRoot, prefix),
+    handler: async (args, context) => {
+      const result = await command.run(args);
+      context.ui?.notify?.(`${nativeCommandName(command.name)} completed`, "info");
+
+      return result;
+    }
+  };
+}
+
+async function getCommandArgumentCompletions(
+  commandName: WorkMemoryCommandName,
+  vaultRoot: string,
+  prefix: string
+): Promise<AutocompleteItem[]> {
+  if (commandName !== "/wm-apply") {
+    return [];
+  }
+
+  const transactions = await listTransactions(vaultRoot);
+  const pendingTransactions = transactions.filter((transaction) => transaction.state === "pending");
+  const rawItems = pendingTransactions.map((transaction) => ({
+    value: transaction.id,
+    label: transaction.id,
+    description: `${transaction.state} transaction`
+  }));
+  const normalizedPrefix = toText(prefix);
+  const items = normalizeCompletions(rawItems).filter((item) => item.value.startsWith(normalizedPrefix));
+
+  return items;
+}
+
+function normalizeCompletions(items: unknown): AutocompleteItem[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map(normalizeCompletion).filter((item) => item.value.length > 0);
+}
+
+function normalizeCompletion(item: unknown): AutocompleteItem {
+  if (!isRecord(item)) {
+    const value = toText(item);
+
+    return {
+      value,
+      label: value
+    };
+  }
+
+  const value = toText(item.value);
+
+  return {
+    value,
+    label: item.label == null ? value : toText(item.label),
+    description: item.description == null ? undefined : toText(item.description)
+  };
+}
+
+function protectNativeWriteToolCall(event: PiToolCallEvent, context: PiEventContext): PiToolCallBlock | undefined {
+  const toolName = toText(event.toolName);
+
+  if (toolName !== "write" && toolName !== "edit") {
+    return undefined;
+  }
+
+  const input = recordInput(event.input);
+  const path = toText(input.path);
+  const result = checkWorkMemoryWrite({ path, invokedBy: toolName });
+
+  for (const warning of result.warnings) {
+    context.ui?.notify?.(warning, "warning");
+  }
+
+  if (result.allowed) {
+    return undefined;
+  }
+
+  const reason = result.reason ?? "Write blocked by work-memory path policy.";
+  context.ui?.notify?.(reason, "warning");
+
+  return {
+    block: true,
+    reason
+  };
+}
+
+function isNativePiApi(api: PiExtensionApi): boolean {
+  return typeof api.on === "function";
+}
+
+function nativeCommandName(name: WorkMemoryCommandName): string {
+  return name.replace(/^\/+/, "");
+}
+
+function toolLabel(name: WorkMemoryToolName): string {
+  const labels: Record<WorkMemoryToolName, string> = {
+    wm_validate: "WM Validate",
+    wm_ingest_note: "WM Ingest Note",
+    wm_list_transactions: "WM List Transactions",
+    wm_show_transaction: "WM Show Transaction",
+    wm_apply_transaction: "WM Apply Transaction",
+    wm_reject_transaction: "WM Reject Transaction",
+    wm_review_inbox: "WM Review Inbox",
+    wm_pack_context: "WM Pack Context",
+    wm_lint: "WM Lint"
+  };
+
+  return labels[name];
+}
+
+function toolParameters(name: WorkMemoryToolName): JsonSchema {
+  const root = {
+    type: "string" as const,
+    description: "Vault root. Defaults to the current working directory."
+  };
+  const note = { type: "string" as const, description: "Short note to ingest." };
+  const id = { type: "string" as const, description: "Transaction ID." };
+  const reason = { type: "string" as const, description: "Human-readable rejection reason." };
+  const question = { type: "string" as const, description: "Question to pack context for." };
+
+  const baseProperties = { root };
+
+  switch (name) {
+    case "wm_ingest_note":
+      return objectSchema({ ...baseProperties, note, provider: { type: "string", enum: ["rule", "llm"] } }, ["note"]);
+    case "wm_show_transaction":
+    case "wm_apply_transaction":
+      return objectSchema({ ...baseProperties, id }, ["id"]);
+    case "wm_reject_transaction":
+      return objectSchema({ ...baseProperties, id, reason }, ["id", "reason"]);
+    case "wm_pack_context":
+      return objectSchema({ ...baseProperties, question }, ["question"]);
+    case "wm_validate":
+    case "wm_list_transactions":
+    case "wm_review_inbox":
+    case "wm_lint":
+      return objectSchema(baseProperties);
+  }
+}
+
+function objectSchema(
+  properties: Record<string, JsonSchema | { type: "string"; description?: string; enum?: string[] }>,
+  required: string[] = []
+): JsonSchema {
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: false
+  };
 }
 
 async function validateTool(root: string): Promise<ValidationSummary> {
@@ -454,6 +701,30 @@ function commandText(input: string | Record<string, unknown> | undefined): strin
   }
 
   return "";
+}
+
+function recordInput(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toText(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+
+  return typeof value === "string" ? value : String(value);
+}
+
+function formatResult(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return JSON.stringify(value, null, 2) ?? "";
 }
 
 function stringValue(value: FrontmatterValue | undefined): string | undefined {

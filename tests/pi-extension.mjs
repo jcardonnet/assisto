@@ -18,6 +18,10 @@ function toolMap(extension) {
   return new Map(extension.tools.map((tool) => [tool.name, tool]));
 }
 
+function commandMap(commands) {
+  return new Map(commands.map((command) => [command.name, command.options]));
+}
+
 export async function runPiExtensionTests() {
   const piExtension = await loadTsModule("packages/pi-extension/src/index.ts");
   const piEntry = await loadTsModule(".pi/extensions/work-memory/index.ts");
@@ -31,6 +35,47 @@ export async function runPiExtensionTests() {
     const factoryExtension = piEntry.default({ vaultRoot: root });
     assert.equal(factoryExtension.tools.length, 9);
     assert.equal(factoryExtension.commands.length, 6);
+
+    const nativeTools = [];
+    const nativeCommands = [];
+    const nativeHandlers = [];
+    piEntry.default(
+      {
+        registerTool: (tool) => nativeTools.push(tool),
+        registerCommand: (name, options) => nativeCommands.push({ name, options }),
+        on: (eventName, handler) => nativeHandlers.push({ eventName, handler })
+      },
+      { vaultRoot: root }
+    );
+
+    assert.deepEqual(
+      nativeTools.map((tool) => tool.name).sort(),
+      [
+        "wm_apply_transaction",
+        "wm_ingest_note",
+        "wm_lint",
+        "wm_list_transactions",
+        "wm_pack_context",
+        "wm_reject_transaction",
+        "wm_review_inbox",
+        "wm_show_transaction",
+        "wm_validate"
+      ].sort()
+    );
+    assert.deepEqual(
+      nativeCommands.map((command) => command.name).sort(),
+      ["wm-apply", "wm-ask", "wm-ingest", "wm-lint", "wm-review", "wm-validate"].sort()
+    );
+    assert.equal(nativeCommands.every((command) => typeof command.name === "string"), true);
+    assert.equal(nativeCommands.every((command) => typeof command.options.description === "string"), true);
+    assert.equal(nativeHandlers.some((handler) => handler.eventName === "tool_call"), true);
+    const writeGuardHandler = nativeHandlers.find((handler) => handler.eventName === "tool_call").handler;
+    const blockedWrite = await writeGuardHandler(
+      { toolName: "write", input: { path: "memory/people/joe.md" } },
+      { ui: { notify: () => undefined } }
+    );
+    assert.equal(blockedWrite.block, true);
+    assert.match(blockedWrite.reason, /wm_apply_transaction/);
 
     const registeredTools = [];
     const registeredCommands = [];
@@ -86,6 +131,15 @@ export async function runPiExtensionTests() {
     assert.match(
       await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"),
       /path=memory\/people\/joe\.md/
+    );
+
+    const nativeCommandOptions = commandMap(nativeCommands);
+    const completions = await nativeCommandOptions.get("wm-apply").getArgumentCompletions("tx");
+    assert.equal(completions.every((item) => typeof item.value === "string"), true);
+    assert.equal(completions.every((item) => item.label === undefined || typeof item.label === "string"), true);
+    assert.equal(
+      completions.every((item) => item.description === undefined || typeof item.description === "string"),
+      true
     );
 
     const transactions = await tools.get("wm_list_transactions").run();
