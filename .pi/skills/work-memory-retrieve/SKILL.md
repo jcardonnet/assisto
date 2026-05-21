@@ -1,3 +1,8 @@
+---
+name: work-memory-retrieve
+description: Build deterministic lexical context packs from local markdown work memory without GPT calls or generated persistence. Use when answering questions from existing memory pages or gathering context around people, topics, systems, contexts, staged review items, follow-ups, or recent relevant Events.
+---
+
 # work-memory-retrieve
 
 ## Description

@@ -1,3 +1,8 @@
+---
+name: work-memory-ingest
+description: Safely ingest short work-memory notes into the local markdown vault as Event plus pending Transaction. Use when the user gives a work note, fact, discussion, profile detail, possible follow-up, or question and wants it captured without bypassing transaction validation.
+---
+
 # work-memory-ingest
 
 ## Description

@@ -1,3 +1,8 @@
+---
+name: work-memory-lint
+description: Run manual deterministic work-memory lint checks and stage ReviewItems for unsafe or suspicious vault conditions. Use when checking memory health, duplicates, stale follow-ups, contradictions, broken links, orphan pages, review backlog, or topic bloat without auto-merging or deleting memory.
+---
+
 # work-memory-lint
 
 ## Description

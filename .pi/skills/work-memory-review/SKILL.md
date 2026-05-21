@@ -1,3 +1,8 @@
+---
+name: work-memory-review
+description: Review staged work-memory Transactions and ReviewItems, then apply or reject pending Transactions through validation. Use when inspecting pending memory changes, reviewing ambiguities, approving or rejecting Transactions, or checking the review inbox without direct canonical edits.
+---
+
 # work-memory-review
 
 ## Description
