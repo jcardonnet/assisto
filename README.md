@@ -19,6 +19,7 @@ The assistant ingests messy work inputs:
 ```text
 Joe is the DBA. We use MySQL.
 Mike is my manager. He is a Java generalist with CRM experience.
+I started new job this Monday as an AI Engineer at SmartEquip.
 Today I talked with Joe about pgvector for storing CLIP embeddings.
 How should I explain Joe and Mike the difference between Solr and Qdrant?
 ```

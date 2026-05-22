@@ -187,6 +187,26 @@ function extractCandidates(context: IngestContext): {
       });
     }
 
+    const selfEmploymentClaim = extractSelfEmploymentClaim(context);
+
+    if (selfEmploymentClaim) {
+      claims.push(selfEmploymentClaim.claim);
+      participants.add("per_user");
+      writes.push({
+        path: "memory/people/user.md",
+        operation: "UPSERT_CLAIM",
+        content: renderPersonPage({
+          personName: "User",
+          personId: "per_user",
+          now: context.now,
+          eventId: context.eventId,
+          claims: [selfEmploymentClaim.claim],
+          summary: selfEmploymentClaim.claim.statement,
+          aliases: ["I", "me"]
+        })
+      });
+    }
+
     const mysqlClaim = extractMySqlClaim(context);
 
     if (mysqlClaim) {
@@ -298,6 +318,43 @@ function extractPersonRoleClaim(
     domain: "person",
     context
   });
+}
+
+function extractSelfEmploymentClaim(context: IngestContext): { claim: CandidateClaim; organization: string; role: string } | null {
+  const match =
+    /\bi\s+started\s+(?:an?\s+)?(?:new\s+)?job(?:\s+(?:today|this\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|yesterday))?\s+as\s+(?:an?\s+)?(?<role>[A-Za-z][A-Za-z0-9 +/#.-]*?)\s+at\s+(?<organization>[A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*)*)\b/i.exec(
+      context.note
+    );
+
+  if (!match?.groups) {
+    return null;
+  }
+
+  const role = normalizePhrase(match.groups.role ?? "");
+  const organization = normalizePhrase(match.groups.organization ?? "");
+
+  if (!role || !organization) {
+    return null;
+  }
+
+  const statement = `User started a new job at ${organization} as ${articleFor(role)} ${role}.`;
+
+  return {
+    claim: createClaim({
+      claim_id: `clm_user_job_${idSlug(role)}_${idSlug(organization)}`,
+      statement,
+      claim_kind: "fact",
+      claim_state: "active",
+      evidence_strength: "explicit",
+      scope: organization,
+      scope_state: "complete",
+      valid_from: inferEmploymentStartDate(context.note, context.now.slice(0, 10)),
+      domain: "person",
+      context
+    }),
+    organization,
+    role
+  };
 }
 
 function extractMySqlClaim(context: IngestContext): CandidateClaim | null {
@@ -476,6 +533,7 @@ function createClaim(input: {
   evidence_strength: ClaimBlock["evidence_strength"];
   scope: string | null;
   scope_state: ClaimBlock["scope_state"];
+  valid_from?: string | null;
   domain: ClaimDomain;
   context: IngestContext;
 }): CandidateClaim {
@@ -490,7 +548,7 @@ function createClaim(input: {
     evidence: [input.context.eventId],
     recorded_at: input.context.now,
     observed_at: input.context.observedAt,
-    valid_from: null,
+    valid_from: input.valid_from ?? null,
     valid_to: null,
     domain: input.domain
   };
@@ -544,6 +602,7 @@ function renderPersonPage(input: {
   eventId: string;
   claims: CandidateClaim[];
   summary: string;
+  aliases?: string[];
 }): string {
   const activeClaims = input.claims.filter((claim) => claim.claim_state === "active");
   const frontmatter: Frontmatter = {
@@ -553,7 +612,7 @@ function renderPersonPage(input: {
     review_state: input.claims.some((claim) => claim.claim_state === "staged") ? "staged" : "reviewed",
     created_at: input.now,
     updated_at: input.now,
-    aliases: [],
+    aliases: input.aliases ?? [],
     source_events: [input.eventId],
     related: [],
     summary_generated_from: activeClaims.map((claim) => claim.claim_id)
@@ -726,7 +785,11 @@ function nextSequence(dateIdPart: string, index: VaultIndex): string {
 }
 
 function inferObservedAt(note: string, datePart: string): string | null {
-  return /\btoday\b/i.test(note) ? datePart : null;
+  if (/\btoday\b/i.test(note)) {
+    return datePart;
+  }
+
+  return inferWeekdayDate(note, datePart);
 }
 
 function extractKnownTopicName(subject: string): string {
@@ -762,6 +825,62 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+function idSlug(value: string): string {
+  return slugify(value).replace(/-/g, "_");
+}
+
+function normalizePhrase(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/[.?!]\s*$/, "").trim();
+}
+
+function articleFor(phrase: string): "a" | "an" {
+  return /^[aeiou]/i.test(phrase) ? "an" : "a";
+}
+
+function inferEmploymentStartDate(note: string, datePart: string): string | null {
+  if (/\b(today|this\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|yesterday)\b/i.test(note)) {
+    return inferObservedAt(note, datePart);
+  }
+
+  return null;
+}
+
+function inferWeekdayDate(note: string, datePart: string): string | null {
+  const match = /\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.exec(note);
+
+  if (!match) {
+    return /\byesterday\b/i.test(note) ? addDays(datePart, -1) : null;
+  }
+
+  const weekdays: Record<string, number> = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6
+  };
+  const targetDay = weekdays[match[1]!.toLowerCase()];
+
+  if (targetDay === undefined) {
+    return null;
+  }
+
+  const currentDate = new Date(`${datePart}T00:00:00.000Z`);
+  const daysSinceTarget = currentDate.getUTCDay() - targetDay;
+  currentDate.setUTCDate(currentDate.getUTCDate() - daysSinceTarget);
+
+  return currentDate.toISOString().slice(0, 10);
+}
+
+function addDays(datePart: string, days: number): string {
+  const date = new Date(`${datePart}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+
+  return date.toISOString().slice(0, 10);
 }
 
 function stripMemoryPrefix(path: string): string {

@@ -60,6 +60,35 @@ export async function runCoreIngestTests() {
     await rm(joeRoot, { recursive: true, force: true });
   }
 
+  const selfJobRoot = await makeTempVault();
+
+  try {
+    const result = await ingest.ingestNote(
+      selfJobRoot,
+      "I started new job this monday as a AI Engineer at SmartEquip",
+      { now: "2026-05-20T12:00:00-03:00" }
+    );
+    const event = await readVaultFile(selfJobRoot, "memory/events/2026/2026-05/2026-05-20-001.md");
+    const transactionMarkdown = await readVaultFile(
+      selfJobRoot,
+      "memory/transactions/pending/tx_2026_05_20_001.md"
+    );
+    const transaction = transactions.parseTransactionMarkdown(transactionMarkdown);
+    const userPage = proposedWrite(transaction, "memory/people/user.md").content;
+
+    assert.deepEqual(result.extracted_claim_ids, ["clm_user_job_ai_engineer_smartequip"]);
+    assert.match(event, /observed_at: 2026-05-18/);
+    assert.match(event, /clm_user_job_ai_engineer_smartequip/);
+    assert.deepEqual(operationsOf(transaction), ["UPSERT_CLAIM"]);
+    assert.match(userPage, /User started a new job at SmartEquip as an AI Engineer\./);
+    assert.match(userPage, /scope: SmartEquip/);
+    assert.match(userPage, /scope_state: complete/);
+    assert.match(userPage, /valid_from: 2026-05-18/);
+    await expectMissing(selfJobRoot, "memory/people/user.md");
+  } finally {
+    await rm(selfJobRoot, { recursive: true, force: true });
+  }
+
   const mikeRoot = await makeTempVault();
 
   try {

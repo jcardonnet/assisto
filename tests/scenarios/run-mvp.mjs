@@ -55,6 +55,19 @@ await suite("ingestion precision benchmark", async () => {
     assert.deepEqual(operationNames(queryTx), ["NOOP"]);
     assert.equal(queryTx.proposed_file_writes.length, 0);
 
+    const selfJob = await modules.ingest.ingestNote(
+      root,
+      "I started new job this monday as a AI Engineer at SmartEquip",
+      { now: "2026-05-20T12:00:00-03:00" }
+    );
+    const selfJobTx = await readTransaction(root, selfJob.transaction_id);
+    assert.deepEqual(operationNames(selfJobTx), ["UPSERT_CLAIM"]);
+    assert.equal(selfJobTx.proposed_file_writes.some((write) => write.path.endsWith("memory/people/user.md")), true);
+    assert.equal(
+      selfJobTx.proposed_file_writes.some((write) => /clm_user_job_ai_engineer_smartequip/.test(write.content)),
+      true
+    );
+
     await modules.transactions.applyTransaction(root, joe.transaction_id);
     const postApplyLint = await modules.lint.lintVault(root, { now: fixedNow });
     metrics.brokenLinksAfterAppliedTransactions += postApplyLint.issues.filter((issue) => issue.code === "broken_link").length;
