@@ -23,6 +23,42 @@ AGENTS.md
 
 The dangerous part of the project is not calling GPT-5.5. The dangerous part is letting any agent mutate durable work memory without provenance, scope, staging, validation, and rollback.
 
+## v2 implementation track
+
+v2 keeps the MVP safety model and adds an automated testing pyramid around the expanded behavior.
+
+Current v2 scope:
+
+- candidate extraction pipeline: span detection -> detector/provider proposals -> entity resolution -> policy/staging -> transaction builder;
+- provider-ready LLM-assisted extraction, with provider output treated as candidate data only;
+- context-aware scope handling for existing Context exact/alias matches, with new/near/ambiguous context scope staged;
+- transaction-backed ReviewItem state changes for `reviewed`, `contested`, and `archived`;
+- lexical retrieval over People, Topics, Contexts, aliases, linked ReviewItems, FollowUps, and source Events when needed;
+- deterministic unit, integration, subprocess E2E, MVP eval, and v2 eval commands.
+
+Still deferred:
+
+- vector search;
+- graph database;
+- MCP integration;
+- live LLM client wiring;
+- autonomous merges;
+- autonomous contradiction resolution;
+- full transcript ingestion;
+- standalone Decision, OpenQuestion, and Explanation pages;
+- direct canonical writes from ingestion or provider extraction.
+
+Validation for v2 behavior changes:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm eval:mvp
+pnpm eval:v2
+```
+
 ---
 
 ## Principles for using Codex

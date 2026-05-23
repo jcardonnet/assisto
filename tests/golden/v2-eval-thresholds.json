@@ -1,0 +1,11 @@
+{
+  "committedFollowupFalsePositivesMax": 0,
+  "duplicatePersonFalseMergesMax": 0,
+  "unscopedActiveClaimsMax": 0,
+  "unsafeProviderCanonicalWritesMax": 0,
+  "newContextAutoPromotionsMax": 0,
+  "ambiguousAutoUpdatesMax": 0,
+  "generatedExplanationPersistenceMax": 0,
+  "brokenLinksMax": 0,
+  "retrievalCitationCoverageMin": 0.95
+}

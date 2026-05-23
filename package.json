@@ -8,8 +8,12 @@
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "node tests/run-unit.mjs",
+    "test:integration": "node tests/run-integration.mjs",
     "test": "node tests/run-tests.mjs",
-    "eval:mvp": "node tests/scenarios/run-mvp.mjs"
+    "test:e2e": "node tests/run-e2e.mjs",
+    "eval:mvp": "node tests/scenarios/run-mvp.mjs",
+    "eval:v2": "node tests/scenarios/run-v2.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

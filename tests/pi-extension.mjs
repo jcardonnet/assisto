@@ -33,8 +33,8 @@ export async function runPiExtensionTests() {
     assert.equal(piEntry.default, piEntry.factory);
 
     const factoryExtension = piEntry.default({ vaultRoot: root });
-    assert.equal(factoryExtension.tools.length, 9);
-    assert.equal(factoryExtension.commands.length, 6);
+    assert.equal(factoryExtension.tools.length, 12);
+    assert.equal(factoryExtension.commands.length, 8);
 
     const nativeTools = [];
     const nativeCommands = [];
@@ -54,17 +54,29 @@ export async function runPiExtensionTests() {
         "wm_apply_transaction",
         "wm_ingest_note",
         "wm_lint",
+        "wm_list_review_items",
         "wm_list_transactions",
+        "wm_mark_review_item",
         "wm_pack_context",
         "wm_reject_transaction",
         "wm_review_inbox",
+        "wm_show_review_item",
         "wm_show_transaction",
         "wm_validate"
       ].sort()
     );
     assert.deepEqual(
       nativeCommands.map((command) => command.name).sort(),
-      ["wm-apply", "wm-ask", "wm-ingest", "wm-lint", "wm-review", "wm-validate"].sort()
+      [
+        "wm-apply",
+        "wm-ask",
+        "wm-ingest",
+        "wm-lint",
+        "wm-review",
+        "wm-review-mark",
+        "wm-review-show",
+        "wm-validate"
+      ].sort()
     );
     assert.equal(nativeCommands.every((command) => typeof command.name === "string"), true);
     assert.equal(nativeCommands.every((command) => typeof command.options.description === "string"), true);
@@ -95,21 +107,33 @@ export async function runPiExtensionTests() {
         "wm_apply_transaction",
         "wm_ingest_note",
         "wm_lint",
+        "wm_list_review_items",
         "wm_list_transactions",
+        "wm_mark_review_item",
         "wm_pack_context",
         "wm_reject_transaction",
         "wm_review_inbox",
+        "wm_show_review_item",
         "wm_show_transaction",
         "wm_validate"
       ].sort()
     );
     assert.deepEqual(
       registeredCommands.map((command) => command.name).sort(),
-      ["/wm-apply", "/wm-ask", "/wm-ingest", "/wm-lint", "/wm-review", "/wm-validate"].sort()
+      [
+        "/wm-apply",
+        "/wm-ask",
+        "/wm-ingest",
+        "/wm-lint",
+        "/wm-review",
+        "/wm-review-mark",
+        "/wm-review-show",
+        "/wm-validate"
+      ].sort()
     );
     assert.equal(registeredGuards.length, 1);
-    assert.equal(registered.tools.length, 9);
-    assert.equal(registered.commands.length, 6);
+    assert.equal(registered.tools.length, 12);
+    assert.equal(registered.commands.length, 8);
 
     const directCanonical = piExtension.checkWorkMemoryWrite({ path: "memory/people/joe.md" });
     assert.equal(directCanonical.allowed, false);
@@ -156,6 +180,23 @@ export async function runPiExtensionTests() {
 
     const inbox = await tools.get("wm_review_inbox").run();
     assert.equal(inbox.some((item) => item.id === "rev_unscoped_claims"), true);
+
+    const reviewItems = await tools.get("wm_list_review_items").run();
+    assert.equal(reviewItems.some((item) => item.id === "rev_unscoped_claims"), true);
+
+    const reviewItem = await tools.get("wm_show_review_item").run({ id: "rev_unscoped_claims" });
+    assert.match(reviewItem.content, /# Review: Unscoped claims/);
+
+    const reviewMark = await tools.get("wm_mark_review_item").run({
+      id: "rev_unscoped_claims",
+      state: "contested",
+      note: "Needs project scope."
+    });
+    assert.equal(reviewMark.transaction_id, "tx_2026_05_21_001");
+    assert.match(
+      await readVaultFile(root, "memory/transactions/pending/tx_2026_05_21_001.md"),
+      /review_state: contested/
+    );
 
     const context = await tools.get("wm_pack_context").run({ question: "What should I know about Joe?" });
     assert.match(context.contextPack, /memory\/people\/joe\.md/);

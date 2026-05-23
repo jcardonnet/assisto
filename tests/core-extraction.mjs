@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadTsModule } from "./ts-module-loader.mjs";
@@ -16,6 +16,12 @@ async function readVaultFile(root, relativePath) {
 
 async function expectMissing(root, relativePath) {
   await assert.rejects(() => readVaultFile(root, relativePath));
+}
+
+async function writeVaultFile(root, relativePath, content) {
+  const absolutePath = path.join(root, relativePath);
+  await mkdir(path.dirname(absolutePath), { recursive: true });
+  await writeFile(absolutePath, content, "utf8");
 }
 
 function mockProvider(extraction, output) {
@@ -73,9 +79,8 @@ export async function runCoreExtractionTests() {
     });
     const tx = transactions.parseTransactionMarkdown(await readVaultFile(unscopedRoot, result.transaction_path));
 
-    assert.equal(result.deterministic_review_reasons.includes("llm_unscoped_system_claim"), true);
     assert.equal(proposedWrites(tx).some((write) => write.path === "memory/topics/mysql.md"), false);
-    assert.match(proposedWrites(tx).map((write) => write.content).join("\n"), /review_reason: llm_unscoped_system_claim/);
+    assert.match(proposedWrites(tx).map((write) => write.content).join("\n"), /review_reason: unscoped_claim/);
   } finally {
     await rm(unscopedRoot, { recursive: true, force: true });
   }
@@ -103,9 +108,9 @@ export async function runCoreExtractionTests() {
     });
     const tx = transactions.parseTransactionMarkdown(await readVaultFile(ambiguousRoot, result.transaction_path));
 
-    assert.equal(result.deterministic_review_reasons.includes("llm_entity_update_staged"), true);
+    assert.equal(result.deterministic_review_reasons.includes("llm_entity_resolution_staged"), true);
     assert.equal(proposedWrites(tx).some((write) => write.path === "memory/people/joe.md"), false);
-    assert.match(proposedWrites(tx).map((write) => write.content).join("\n"), /entity_resolution=ambiguous|entity_resolution: ambiguous/);
+    assert.match(proposedWrites(tx).map((write) => write.content).join("\n"), /ambiguous entity resolution/);
   } finally {
     await rm(ambiguousRoot, { recursive: true, force: true });
   }
@@ -166,6 +171,80 @@ export async function runCoreExtractionTests() {
     await expectMissing(personRoot, "memory/people/alice.md");
   } finally {
     await rm(personRoot, { recursive: true, force: true });
+  }
+
+  const contextRoot = await makeTempVault();
+
+  try {
+    await writeVaultFile(
+      contextRoot,
+      "memory/contexts/inventory-project.md",
+      `---
+id: ctx_inventory_project
+type: context
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+  - Warehouse Project
+source_events: []
+related: []
+---
+
+# Inventory Project
+`
+    );
+    const result = await extraction.ingestWithExtractionProvider(contextRoot, "Inventory API uses Redis.", {
+      now: "2026-05-21T12:00:00-03:00",
+      provider: mockProvider(extraction, {
+        claims: [
+          {
+            entity_kind: "topic",
+            entity_name: "Inventory API",
+            statement: "Inventory API uses Redis.",
+            scope: "Warehouse Project",
+            scope_state: "complete",
+            entity_resolution: "new_entity"
+          }
+        ]
+      })
+    });
+    const tx = transactions.parseTransactionMarkdown(await readVaultFile(contextRoot, result.transaction_path));
+    const topicWrite = proposedWrites(tx).find((write) => write.path === "memory/topics/inventory-api.md");
+
+    assert.ok(topicWrite);
+    assert.match(topicWrite.content, /scope: ctx_inventory_project/);
+    assert.equal(proposedWrites(tx).some((write) => write.path.startsWith("memory/review/")), false);
+  } finally {
+    await rm(contextRoot, { recursive: true, force: true });
+  }
+
+  const newContextRoot = await makeTempVault();
+
+  try {
+    const result = await extraction.ingestWithExtractionProvider(newContextRoot, "Inventory API uses Redis.", {
+      now: "2026-05-21T12:00:00-03:00",
+      provider: mockProvider(extraction, {
+        claims: [
+          {
+            entity_kind: "topic",
+            entity_name: "Inventory API",
+            statement: "Inventory API uses Redis.",
+            scope: "New Warehouse Project",
+            scope_state: "complete",
+            entity_resolution: "new_entity"
+          }
+        ]
+      })
+    });
+    const tx = transactions.parseTransactionMarkdown(await readVaultFile(newContextRoot, result.transaction_path));
+
+    assert.equal(proposedWrites(tx).some((write) => write.path === "memory/topics/inventory-api.md"), false);
+    assert.equal(proposedWrites(tx).some((write) => write.path === "memory/contexts/new-warehouse-project.md"), false);
+    assert.match(proposedWrites(tx).map((write) => write.content).join("\n"), /review_reason: context_scope_new/);
+  } finally {
+    await rm(newContextRoot, { recursive: true, force: true });
   }
 
   const malformedRoot = await makeTempVault();

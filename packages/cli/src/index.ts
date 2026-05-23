@@ -1,20 +1,23 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { writeSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  createReviewStateTransaction,
   listMarkdownFiles,
-  parseMarkdownFile,
+  listReviewItems,
   parseTransactionMarkdown,
   readMarkdownPage,
   rejectTransaction,
+  showReviewItem,
   toValidationDocument,
   transactionFilePaths,
   validateDocuments,
   validateTransaction,
   type FrontmatterValue,
-  type ParsedMarkdownFile,
   type ParsedTransaction,
+  type ReviewActionState,
   type ValidationDocument,
   type ValidationResult
 } from "@assisto/core";
@@ -234,39 +237,54 @@ async function commandIngest(root: string, args: string[], io: CliIo): Promise<n
 }
 
 async function commandReview(root: string, args: string[], io: CliIo): Promise<number> {
-  const [subcommand] = args;
+  const [subcommand, idOrPath] = args;
 
-  if (subcommand !== "inbox") {
-    throw new Error("Usage: wm review inbox");
-  }
+  if (!subcommand || subcommand === "inbox" || subcommand === "list") {
+    const includeAll = args.includes("--all");
+    const items = await listReviewItems(root, includeAll);
 
-  const files = await listVaultMarkdownFiles(root, "memory/review/*.md");
-  const staged: Array<{ path: string; parsed: ParsedMarkdownFile }> = [];
-
-  for (const file of files) {
-    const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
-
-    if (parsed.frontmatter.type === "review_item" && parsed.frontmatter.review_state === "staged") {
-      staged.push({ path: file, parsed });
+    if (items.length === 0) {
+      io.stdout(includeAll ? "No review items.\n" : "No staged review items.\n");
+      return 0;
     }
-  }
 
-  if (staged.length === 0) {
-    io.stdout("No staged review items.\n");
+    io.stdout(includeAll ? "Review items:\n" : "Staged review items:\n");
+
+    for (const item of items) {
+      io.stdout(`- ${item.id} [${item.review_reason}] ${item.review_state} ${item.path}\n`);
+    }
+
     return 0;
   }
 
-  io.stdout("Staged review items:\n");
+  if (subcommand === "show") {
+    if (!idOrPath) {
+      throw new Error("wm review show requires a review id or path.");
+    }
 
-  for (const item of staged) {
-    io.stdout(
-      `- ${stringValue(item.parsed.frontmatter.id) ?? item.path} ` +
-        `[${stringValue(item.parsed.frontmatter.review_reason) ?? "review"}] ` +
-        `${item.path}\n`
-    );
+    const item = await showReviewItem(root, idOrPath);
+    io.stdout(item.content);
+    return 0;
   }
 
-  return 0;
+  if (subcommand === "mark" || isReviewActionState(subcommand)) {
+    const target = subcommand === "mark" ? idOrPath : idOrPath;
+    const state = subcommand === "mark" ? optionValue(args, "--state") : subcommand;
+    const note = optionValue(args, "--note") ?? undefined;
+
+    if (!target || !state || !isReviewActionState(state)) {
+      throw new Error("Usage: wm review mark <id|path> --state <reviewed|contested|archived> [--note <text>]");
+    }
+
+    const result = await createReviewStateTransaction(root, target, state, { note });
+    io.stdout(`Pending review transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+    io.stdout(`Review item: ${result.review_id} (${result.review_path})\n`);
+    return 0;
+  }
+
+  throw new Error(
+    "Usage: wm review <list|inbox|show|mark|reviewed|contested|archived> [id|path] [--state <state>] [--note <text>]"
+  );
 }
 
 async function commandAsk(root: string, args: string[], io: CliIo): Promise<number> {
@@ -400,6 +418,10 @@ function stringValue(value: FrontmatterValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function isReviewActionState(value: string | null | undefined): value is ReviewActionState {
+  return value === "reviewed" || value === "contested" || value === "archived";
+}
+
 function writeHelp(write: (text: string) => void): void {
   write(
     [
@@ -413,7 +435,9 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx apply <id>",
       "  wm [--root <path>] tx reject <id> --reason <text>",
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub] "<note>"',
-      '  wm [--root <path>] review inbox',
+      '  wm [--root <path>] review list [--all]',
+      "  wm [--root <path>] review show <id|path>",
+      "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",
       '  wm [--root <path>] ask --pack-context "<question>"',
       ""
     ].join("\n")
@@ -422,7 +446,7 @@ function writeHelp(write: (text: string) => void): void {
 
 function defaultIo(): CliIo {
   return {
-    stdout: (text) => process.stdout.write(text),
-    stderr: (text) => process.stderr.write(text)
+    stdout: (text) => writeSync(1, text),
+    stderr: (text) => writeSync(2, text)
   };
 }

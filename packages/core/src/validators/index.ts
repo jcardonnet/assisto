@@ -770,6 +770,7 @@ function normalizeResolvablePath(path: string): string {
     .split("#")[0]!
     .replace(/\\/g, "/")
     .replace(/\.md$/i, "")
+    .replace(/^memory\//, "")
     .replace(/^\/+/, "")
     .trim();
 }

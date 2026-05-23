@@ -31,7 +31,10 @@ export type StagingReason =
   | "active_claim_conflict"
   | "possible_action_without_commitment"
   | "inferred_person_communication_guidance"
-  | "generated_explanation_without_save";
+  | "generated_explanation_without_save"
+  | "scope_new_context"
+  | "scope_near_match"
+  | "scope_ambiguous";
 
 export interface StagingPolicyInput {
   claim?: Pick<ClaimBlock, "claim_kind" | "claim_state" | "scope" | "scope_state" | "statement">;
@@ -272,7 +275,8 @@ function hasMissingScopeForScopedClaim(input: StagingPolicyInput): boolean {
   const scopedDomain =
     input.claimDomain === "system" ||
     input.claimDomain === "project" ||
-    input.claimDomain === "architecture";
+    input.claimDomain === "architecture" ||
+    input.claimDomain === "topic";
 
   if (!scopedDomain || !input.claim) {
     return false;
@@ -374,4 +378,3 @@ function levenshteinDistance(left: string, right: string): number {
 
   return previous[right.length]!;
 }
-

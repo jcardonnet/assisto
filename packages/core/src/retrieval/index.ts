@@ -310,6 +310,7 @@ function targetKind(entry: VaultIndexEntry): RetrievalTargetKind | null {
 function targetNames(entry: VaultIndexEntry): string[] {
   return [
     entry.id ?? "",
+    ...(entry.aliases ?? []),
     displayNameFromPath(entry.path),
     stripMemoryPrefix(entry.path).replace(/\.md$/i, "")
   ]

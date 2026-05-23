@@ -213,10 +213,19 @@ Run the scaffold checks:
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:e2e
 pnpm eval:mvp
+pnpm eval:v2
 ```
 
-The current package scaffold is intentionally empty of business logic. `packages/core` will own deterministic memory semantics, `packages/cli` will wrap those semantics for local commands, and `packages/pi-extension` will remain a thin runtime adapter after the core and CLI are tested.
+Useful narrower test commands:
+
+```bash
+pnpm test:unit
+pnpm test:integration
+```
+
+The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, lexical retrieval, CLI and Pi adapters, and MVP/v2 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, and `packages/pi-extension` remains a thin runtime adapter.
 
 ## Required commands
 

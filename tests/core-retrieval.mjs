@@ -212,6 +212,26 @@ related:
   );
   await writeVaultFile(
     root,
+    "memory/contexts/inventory-project.md",
+    `---
+id: ctx_inventory_project
+type: context
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+  - Warehouse Project
+source_events:
+  - ev_2026_05_21_003
+related: []
+---
+
+# Inventory Project
+`
+  );
+  await writeVaultFile(
+    root,
     "memory/events/2026/2026-05/2026-05-21-001.md",
     eventPage("ev_2026_05_21_001", "Joe discussed search infrastructure.", "2026-05-21T09:00:00-03:00")
   );
@@ -257,6 +277,8 @@ export async function runCoreRetrievalTests() {
         "memory/topics/solr.md"
       ]
     );
+    const aliasTargets = retrieval.identifyNamedTargets("What changed for Warehouse Project?", index);
+    assert.equal(aliasTargets.some((target) => target.path === "memory/contexts/inventory-project.md"), true);
 
     const pages = await retrieval.loadExactPages(root, targets);
     const linked = await retrieval.loadLinkedReviewAndFollowupItems(root, pages);

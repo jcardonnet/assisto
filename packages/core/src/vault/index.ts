@@ -5,6 +5,7 @@ export interface VaultIndexEntry {
   path: string;
   id?: string;
   type?: string;
+  aliases: string[];
   wikilinks: string[];
   claimIds: string[];
 }
@@ -62,6 +63,7 @@ export async function loadVaultIndex(root: string): Promise<VaultIndex> {
       path: filePath,
       id,
       type,
+      aliases: stringArrayValue(parsed.frontmatter.aliases),
       wikilinks: links,
       claimIds: claims
     });
@@ -82,6 +84,10 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 function frontmatterToText(frontmatter: Record<string, unknown>): string {
   return Object.entries(frontmatter)
     .map(([key, value]) => `${key}: ${frontmatterValueToText(value)}`)
@@ -95,4 +101,3 @@ function frontmatterValueToText(value: unknown): string {
 
   return String(value);
 }
-

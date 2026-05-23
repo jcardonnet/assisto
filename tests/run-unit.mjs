@@ -1,0 +1,44 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
+import { runCoreModelEnumTests } from "./core-model-enums.mjs";
+import { runCoreMarkdownTests } from "./core-markdown.mjs";
+import { runCoreValidatorTests } from "./core-validators.mjs";
+import { runCorePolicyTests } from "./core-policies.mjs";
+import { runCoreIngestPipelineTests } from "./core-ingest-pipeline.mjs";
+import { runCoreExtractionTests } from "./core-extraction.mjs";
+import { runCoreRetrievalTests } from "./core-retrieval.mjs";
+
+export async function runUnitTests() {
+  assertRequiredPaths();
+
+  await runCoreModelEnumTests();
+  await runCoreMarkdownTests();
+  await runCoreValidatorTests();
+  await runCorePolicyTests();
+  await runCoreIngestPipelineTests();
+  await runCoreExtractionTests();
+  await runCoreRetrievalTests();
+}
+
+export function assertRequiredPaths() {
+  const requiredPaths = [
+    "packages/core/src/index.ts",
+    "packages/cli/src/index.ts",
+    "packages/pi-extension/src/index.ts",
+    "memory/schema/conventions.md",
+    "memory/transactions/pending",
+    "tests/fixtures",
+    "tests/scenarios",
+    "tests/golden"
+  ];
+
+  for (const path of requiredPaths) {
+    assert.equal(existsSync(path), true, `${path} should exist`);
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await runUnitTests();
+  console.log("unit tests passed");
+}

@@ -443,7 +443,8 @@ export async function markTransactionFailed(
 
 export async function appendIngestLog(root: string, entry: string): Promise<void> {
   const path = "memory/logs/ingest-log.md";
-  let current = "# Ingest Log\n";
+  const timestamp = new Date().toISOString();
+  let current = renderIngestLog(timestamp, "");
 
   try {
     current = await readMarkdownPage(root, path);
@@ -451,10 +452,27 @@ export async function appendIngestLog(root: string, entry: string): Promise<void
     // Create the ingest log if the vault scaffold has not created it yet.
   }
 
-  const timestamp = new Date().toISOString();
+  if (!/^---\s*$/m.test(current)) {
+    current = renderIngestLog(timestamp, current.replace(/^# Ingest Log\s*/i, "").trim());
+  }
+
   const next = `${current.trimEnd()}\n\n- ${timestamp}: ${entry.trim()}\n`;
 
   await writeMarkdownPageAtomic(root, path, next);
+}
+
+function renderIngestLog(recordedAt: string, body: string): string {
+  return serializeMarkdownFile(
+    {
+      id: "log_ingest",
+      type: "log_entry",
+      object_state: "active",
+      review_state: "reviewed",
+      recorded_at: recordedAt,
+      message: "Ingest transaction log."
+    },
+    ["# Ingest Log", "", body].filter((line) => line !== "").join("\n")
+  );
 }
 
 function transactionPath(state: TransactionState, id: string): string {

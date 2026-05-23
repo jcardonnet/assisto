@@ -28,20 +28,23 @@ Project invariant:
 
 Current implementation status:
 - TypeScript pnpm monorepo is scaffolded.
-- Core domain types, markdown parsing, validators, safe fs/vault utilities, transactions, deterministic policies, ingestion, CLI, lexical retrieval, lint, eval harness, Pi extension, Pi skills/prompts, and optional LLM extraction boundary exist.
-- Pi extension entrypoint exports a default factory function and native Pi command/tool adapter.
+- Core domain types, markdown parsing, validators, safe fs/vault utilities, transactions, deterministic policies, candidate-pipeline ingestion, provider-ready LLM extraction, CLI, lexical retrieval, lint, eval harness, Pi extension, Pi skills/prompts, and review workflow support exist.
+- Pi extension entrypoint exports a default factory function, native Pi command/tool adapter, write guard, and review item tools.
 - Skill files have required YAML frontmatter.
 - Rule-based ingestion now recognizes first-person job utterances like "I started new job this monday as a AI Engineer at SmartEquip".
+- Testing is split into `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm eval:mvp`, and `pnpm eval:v2`; `pnpm test` runs unit plus integration.
 
 Before changing behavior, inspect the current git status and preserve unrelated user changes.
 Run validation after code changes:
 - pnpm lint
 - pnpm typecheck
 - pnpm test
+- pnpm test:e2e for CLI/Pi/review workflow changes
 - pnpm eval:mvp when touching ingestion, validation, transactions, follow-ups, retrieval, entity resolution, linting, or evals.
+- pnpm eval:v2 when touching v2 extraction, context staging, review workflow, retrieval, or evals.
 
 Recommended next feature:
-Refactor extraction into a candidate pipeline: sentence/span detection -> detector proposals -> entity resolution -> policy/staging -> transaction builder. Detectors should emit candidate data, not markdown writes.
+Expand deterministic detector coverage and v2 eval cases while keeping provider output as candidate data only.
 ```
 
 ## WSL2 Bootstrap

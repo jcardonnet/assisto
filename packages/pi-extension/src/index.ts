@@ -1,16 +1,19 @@
 import {
   applyTransaction,
+  createReviewStateTransaction,
   listMarkdownFiles,
-  parseMarkdownFile,
+  listReviewItems,
   parseTransactionMarkdown,
   readMarkdownPage,
   rejectTransaction,
+  showReviewItem,
   toValidationDocument,
   transactionFilePaths,
   validateDocuments,
   validateTransaction,
   type FrontmatterValue,
   type ParsedTransaction,
+  type ReviewActionState,
   type ValidationDocument,
   type ValidationResult
 } from "@assisto/core";
@@ -26,12 +29,17 @@ export type WorkMemoryToolName =
   | "wm_apply_transaction"
   | "wm_reject_transaction"
   | "wm_review_inbox"
+  | "wm_list_review_items"
+  | "wm_show_review_item"
+  | "wm_mark_review_item"
   | "wm_pack_context"
   | "wm_lint";
 
 export type WorkMemoryCommandName =
   | "/wm-ingest"
   | "/wm-review"
+  | "/wm-review-show"
+  | "/wm-review-mark"
   | "/wm-apply"
   | "/wm-ask"
   | "/wm-validate"
@@ -279,6 +287,27 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
       run: async (input) => reviewInbox(rootFromInput(input, vaultRoot))
     },
     {
+      name: "wm_list_review_items",
+      description: "List work-memory ReviewItems.",
+      run: async (input) => listReviewItems(rootFromInput(input, vaultRoot), input?.include_all === true)
+    },
+    {
+      name: "wm_show_review_item",
+      description: "Show one ReviewItem markdown file.",
+      run: async (input) => showReviewItem(rootFromInput(input, vaultRoot), stringInput(input, "id"))
+    },
+    {
+      name: "wm_mark_review_item",
+      description: "Create a pending Transaction to mark a ReviewItem reviewed, contested, or archived.",
+      run: async (input) =>
+        createReviewStateTransaction(
+          rootFromInput(input, vaultRoot),
+          stringInput(input, "id"),
+          reviewStateInput(input, "state"),
+          { note: optionalStringInput(input, "note") }
+        )
+    },
+    {
       name: "wm_pack_context",
       description: "Pack deterministic lexical context for a question.",
       run: async (input) => retrieveContextForAnswer(rootFromInput(input, vaultRoot), stringInput(input, "question"))
@@ -304,6 +333,20 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
       name: "/wm-review",
       description: "Show staged work-memory review items.",
       run: async () => byName.get("wm_review_inbox")!.run()
+    },
+    {
+      name: "/wm-review-show",
+      description: "Show one work-memory review item.",
+      run: async (input) => byName.get("wm_show_review_item")!.run({ id: commandText(input) })
+    },
+    {
+      name: "/wm-review-mark",
+      description: "Create a pending review-state transaction. Args: <id> <reviewed|contested|archived>",
+      run: async (input) => {
+        const [id, state, ...noteParts] = commandText(input).split(/\s+/);
+
+        return byName.get("wm_mark_review_item")!.run({ id, state, note: noteParts.join(" ") });
+      }
     },
     {
       name: "/wm-apply",
@@ -470,6 +513,9 @@ function toolLabel(name: WorkMemoryToolName): string {
     wm_apply_transaction: "WM Apply Transaction",
     wm_reject_transaction: "WM Reject Transaction",
     wm_review_inbox: "WM Review Inbox",
+    wm_list_review_items: "WM List Review Items",
+    wm_show_review_item: "WM Show Review Item",
+    wm_mark_review_item: "WM Mark Review Item",
     wm_pack_context: "WM Pack Context",
     wm_lint: "WM Lint"
   };
@@ -484,6 +530,8 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
   };
   const note = { type: "string" as const, description: "Short note to ingest." };
   const id = { type: "string" as const, description: "Transaction ID." };
+  const reviewId = { type: "string" as const, description: "Review item ID or path." };
+  const reviewState = { type: "string" as const, enum: ["reviewed", "contested", "archived"] };
   const reason = { type: "string" as const, description: "Human-readable rejection reason." };
   const question = { type: "string" as const, description: "Question to pack context for." };
 
@@ -497,11 +545,19 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
       return objectSchema({ ...baseProperties, id }, ["id"]);
     case "wm_reject_transaction":
       return objectSchema({ ...baseProperties, id, reason }, ["id", "reason"]);
+    case "wm_show_review_item":
+      return objectSchema({ ...baseProperties, id: reviewId }, ["id"]);
+    case "wm_mark_review_item":
+      return objectSchema(
+        { ...baseProperties, id: reviewId, state: reviewState, note: { type: "string", description: "Optional review note." } },
+        ["id", "state"]
+      );
     case "wm_pack_context":
       return objectSchema({ ...baseProperties, question }, ["question"]);
     case "wm_validate":
     case "wm_list_transactions":
     case "wm_review_inbox":
+    case "wm_list_review_items":
     case "wm_lint":
       return objectSchema(baseProperties);
   }
@@ -570,22 +626,11 @@ async function showTransaction(
 }
 
 async function reviewInbox(root: string): Promise<Array<{ id?: string; path: string; review_reason?: string }>> {
-  const files = await listVaultMarkdownFiles(root, "memory/review/*.md");
-  const staged: Array<{ id?: string; path: string; review_reason?: string }> = [];
-
-  for (const file of files) {
-    const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
-
-    if (parsed.frontmatter.type === "review_item" && parsed.frontmatter.review_state === "staged") {
-      staged.push({
-        id: stringValue(parsed.frontmatter.id),
-        path: file,
-        review_reason: stringValue(parsed.frontmatter.review_reason)
-      });
-    }
-  }
-
-  return staged;
+  return (await listReviewItems(root)).map((item) => ({
+    id: item.id,
+    path: item.path,
+    review_reason: item.review_reason
+  }));
 }
 
 async function findTransaction(
@@ -677,6 +722,21 @@ function stringInput(input: Record<string, unknown> | undefined, key: string): s
   }
 
   return value.trim();
+}
+
+function optionalStringInput(input: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = input?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function reviewStateInput(input: Record<string, unknown> | undefined, key: string): ReviewActionState {
+  const value = stringInput(input, key);
+
+  if (value === "reviewed" || value === "contested" || value === "archived") {
+    return value;
+  }
+
+  throw new Error(`Invalid review state: ${value}`);
 }
 
 function commandText(input: string | Record<string, unknown> | undefined): string {
