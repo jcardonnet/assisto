@@ -30,6 +30,10 @@ function operationsOf(draft) {
   return draft.operations.map((operation) => operation.operation);
 }
 
+function writeFor(draft, path) {
+  return draft.writes.find((write) => write.path === path);
+}
+
 export async function runCoreIngestPipelineTests() {
   const detectors = await loadTsModule("packages/core/src/ingest/detectors.ts");
   const entityResolution = await loadTsModule("packages/core/src/ingest/entity-resolution.ts");
@@ -56,6 +60,53 @@ export async function runCoreIngestPipelineTests() {
   assert.deepEqual(operationsOf(draft), ["UPSERT_CLAIM", "STAGE_REVIEW"]);
   assert.equal(draft.writes.some((write) => write.path === "memory/people/joe.md"), true);
   assert.equal(draft.writes.some((write) => write.path === "memory/review/unscoped-claims.md"), true);
+
+  const scopedContext = context("In Warehouse Project, we use Redis.");
+  const scopedProposals = detectors.detectCandidateProposals(scopedContext);
+
+  assert.deepEqual(
+    scopedProposals.map((proposal) => proposal.kind),
+    ["claim"]
+  );
+  assert.equal(scopedProposals.some((proposal) => "content" in proposal || "path" in proposal), false);
+  assert.equal(scopedProposals[0].entity_name, "Redis");
+  assert.equal(scopedProposals[0].scope, "Warehouse Project");
+  assert.equal(scopedProposals[0].scope_state, "complete");
+
+  const scopedResolved = entityResolution.resolveDetectorProposals(
+    scopedProposals,
+    index([
+      {
+        path: "memory/contexts/inventory-project.md",
+        id: "ctx_inventory_project",
+        type: "context",
+        aliases: ["Warehouse Project"],
+        wikilinks: [],
+        claimIds: []
+      }
+    ])
+  );
+  const scopedDraft = builder.buildIngestExtractionDraft(scopedContext, scopedResolved);
+  const redisWrite = writeFor(scopedDraft, "memory/topics/redis.md");
+
+  assert.equal(scopedResolved[0].scope, "ctx_inventory_project");
+  assert.equal(scopedResolved[0].scope_resolution.resolution_state, "alias_match");
+  assert.deepEqual(operationsOf(scopedDraft), ["UPSERT_CLAIM"]);
+  assert.ok(redisWrite);
+  assert.match(redisWrite.content, /scope: ctx_inventory_project/);
+  assert.equal(scopedDraft.writes.some((write) => write.path.startsWith("memory/review/")), false);
+
+  const newScopeContext = context("In New Warehouse Project, we use Redis.");
+  const newScopeResolved = entityResolution.resolveDetectorProposals(
+    detectors.detectCandidateProposals(newScopeContext),
+    index()
+  );
+  const newScopeDraft = builder.buildIngestExtractionDraft(newScopeContext, newScopeResolved);
+
+  assert.deepEqual(operationsOf(newScopeDraft), ["STAGE_REVIEW"]);
+  assert.equal(newScopeDraft.writes.some((write) => write.path === "memory/topics/redis.md"), false);
+  assert.equal(newScopeDraft.writes.some((write) => write.path.startsWith("memory/review/")), true);
+  assert.match(newScopeDraft.writes.map((write) => write.content).join("\n"), /review_reason: context_scope_new/);
 
   const ambiguousContext = context("Joe is the DBA.");
   const ambiguousProposals = detectors.detectCandidateProposals(ambiguousContext);

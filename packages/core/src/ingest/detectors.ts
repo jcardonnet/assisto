@@ -65,7 +65,13 @@ export function detectCandidateProposals(context: IngestPipelineContext): Detect
     proposals.push(selfEmploymentClaim);
   }
 
-  const mysqlClaim = detectMySqlClaim(context, spans);
+  const scopedSystemUsageClaims = detectScopedSystemUsageClaims(context, spans);
+
+  proposals.push(...scopedSystemUsageClaims);
+
+  const mysqlClaim = scopedSystemUsageClaims.some((claim) => isSameEntityName(claim.entity_name, "MySQL"))
+    ? null
+    : detectMySqlClaim(context, spans);
 
   if (mysqlClaim) {
     proposals.push(mysqlClaim);
@@ -175,6 +181,43 @@ function detectMySqlClaim(
     scope: null,
     scope_state: "unknown"
   };
+}
+
+function detectScopedSystemUsageClaims(
+  context: IngestPipelineContext,
+  spans: CandidateSpan[]
+): ExtractedClaimCandidate[] {
+  const pattern =
+    /\b(?:in|for)\s+(?:the\s+)?(?<scope>[A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*)*)\s*,?\s+we\s+use\s+(?<technology>[A-Za-z][A-Za-z0-9+/#.'-]*(?:\s+[A-Za-z][A-Za-z0-9+/#.'-]*){0,2})\b/gi;
+  const claims: ExtractedClaimCandidate[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(context.note)) !== null) {
+    const scope = normalizePhrase(match.groups?.scope ?? "");
+    const technology = normalizePhrase(match.groups?.technology ?? "");
+
+    if (!scope || !technology) {
+      continue;
+    }
+
+    const statement = `We use ${technology} in ${scope}.`;
+
+    claims.push({
+      kind: "claim",
+      source_text: sourceTextForPattern(spans, scopedSystemUsagePattern(scope, technology)),
+      entity_kind: "system",
+      entity_name: technology,
+      claim_id: `clm_${idSlug(technology)}_used_${idSlug(scope)}`,
+      statement,
+      claim_kind: "fact",
+      evidence_strength: "explicit",
+      scope,
+      scope_state: "complete",
+      page_summary: statement
+    });
+  }
+
+  return claims;
 }
 
 function detectMikeProfileClaims(
@@ -348,6 +391,17 @@ function extractFollowUpAction(note: string, matchedText: string): string {
   const action = afterMatch.replace(/^[\s:,-]+/, "").replace(/[.?!]\s*$/, "").trim();
 
   return action || note.trim();
+}
+
+function scopedSystemUsagePattern(scope: string, technology: string): RegExp {
+  return new RegExp(
+    `\\b(?:in|for)\\s+(?:the\\s+)?${escapeRegExp(scope)}\\s*,?\\s+we\\s+use\\s+${escapeRegExp(technology)}\\b`,
+    "i"
+  );
+}
+
+function isSameEntityName(left: string, right: string): boolean {
+  return idSlug(left) === idSlug(right);
 }
 
 function isQueryOnly(note: string): boolean {

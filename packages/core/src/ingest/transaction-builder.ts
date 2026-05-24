@@ -87,7 +87,7 @@ export function buildIngestExtractionDraft(
       continue;
     }
 
-    if (policyCandidate.entity.kind === "topic") {
+    if (policyCandidate.entity.kind === "topic" || policyCandidate.entity.kind === "system") {
       if (!topicGroups.has(policyCandidate.entity.path)) {
         writeOrder.push({ kind: "topic", path: policyCandidate.entity.path });
       }

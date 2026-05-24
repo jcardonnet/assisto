@@ -28,11 +28,12 @@ Project invariant:
 
 Current implementation status:
 - TypeScript pnpm monorepo is scaffolded.
-- Core domain types, markdown parsing, validators, safe fs/vault utilities, transactions, deterministic policies, candidate-pipeline ingestion, provider-ready LLM extraction, CLI, lexical retrieval, lint, eval harness, Pi extension, Pi skills/prompts, and review workflow support exist.
+- Core domain types, markdown parsing, validators, safe fs/vault utilities, transactions, deterministic policies, candidate-pipeline ingestion, provider-ready LLM extraction, CLI, lexical retrieval, lint, eval harness, Pi extension, Pi skills/prompts, review workflow support, and CI exist.
 - Pi extension entrypoint exports a default factory function, native Pi command/tool adapter, write guard, and review item tools.
 - Skill files have required YAML frontmatter.
 - Rule-based ingestion now recognizes first-person job utterances like "I started new job this monday as a AI Engineer at SmartEquip".
 - Testing is split into `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm eval:mvp`, and `pnpm eval:v2`; `pnpm test` runs unit plus integration.
+- GitHub Actions CI is at `.github/workflows/ci.yml` and runs lint, typecheck, test, test:e2e, eval:mvp, and eval:v2 on push/PR to main.
 
 Before changing behavior, inspect the current git status and preserve unrelated user changes.
 Run validation after code changes:
@@ -59,7 +60,9 @@ pnpm install
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:e2e
 pnpm eval:mvp
+pnpm eval:v2
 ```
 
 If cloning from the Windows working tree, check line endings before committing. The Windows repo has shown LF-to-CRLF warnings. Prefer Git settings that keep repo text stable in WSL2.
@@ -79,24 +82,21 @@ tests/                 deterministic unit/integration/eval tests
 
 ## Current Git/State Notes
 
-At handoff time, the Windows working tree had these relevant modified files:
+Latest pushed commits on `main`:
 
 ```text
-README.md
-packages/core/src/ingest/index.ts
-tests/core-ingest.mjs
-tests/scenarios/run-mvp.mjs
+3494a16 Add CI validation workflow
+4cae8ec Finished V2
 ```
 
-It also had untracked runtime memory files:
+Current expected state after pulling `origin/main`:
 
 ```text
-memory/events/2026/
-memory/transactions/pending/tx_2026_05_20_001.md
-memory/transactions/pending/tx_2026_05_20_002.md
+git status --short --branch
+## main...origin/main
 ```
 
-Treat those memory files as user data until inspected. Do not delete or revert them without explicit approval.
+Historical caution: earlier handoffs had untracked runtime `memory/events/2026/` and pending transaction files. Treat any local `memory/` files as user data until inspected. Do not delete or revert them without explicit approval.
 
 ## Recent Fixes To Preserve
 
@@ -175,10 +175,19 @@ This is proposed in `memory/people/user.md` through a pending Transaction, not w
 
 ## Current Extractor Shape
 
-Main path:
+Main orchestrator:
 
 ```text
 packages/core/src/ingest/index.ts
+```
+
+Candidate pipeline modules:
+
+```text
+packages/core/src/ingest/candidates.ts
+packages/core/src/ingest/detectors.ts
+packages/core/src/ingest/entity-resolution.ts
+packages/core/src/ingest/transaction-builder.ts
 ```
 
 `ingestNote()` currently:
@@ -186,10 +195,13 @@ packages/core/src/ingest/index.ts
 1. normalizes the note;
 2. creates Event and Transaction IDs;
 3. infers simple observed dates;
-4. runs `extractCandidates()`;
-5. writes the Event;
-6. writes a pending Transaction;
-7. applies only if `options.apply === true`.
+4. runs detector proposals;
+5. resolves entities and scope;
+6. applies deterministic staging policy;
+7. builds proposed transaction writes;
+8. writes the Event;
+9. writes a pending Transaction;
+10. applies only if `options.apply === true`.
 
 Current hard-coded detectors include:
 
@@ -202,74 +214,74 @@ Current hard-coded detectors include:
 
 Known limitation:
 
-- Extraction, policy, page rendering, and transaction draft creation are still coupled inside `ingest/index.ts`.
 - The extractor is not yet general-purpose natural-language extraction.
+- Detector coverage is intentionally narrow and should be expanded with tests/evals first.
 
-## Recommended Next Extractor Refactor
+## V2 Foundation To Preserve
 
-Refactor toward this pipeline:
+Implemented v2 foundation:
 
 ```text
-Raw note
--> normalized spans
--> detector proposals
--> entity resolution
+Raw note / provider output
+-> normalized candidate data
+-> entity and scope resolution
 -> deterministic policy/staging
--> transaction draft builder
--> validation/application
+-> transaction builder
+-> pending transaction
+-> explicit apply
 ```
 
-Suggested new modules:
+Important behavior:
+
+- Detectors emit candidate data only; they do not write markdown.
+- Provider-ready LLM extraction in `packages/core/src/extraction/index.ts` converts provider output into the same candidate pipeline.
+- `LlmExtractionProvider` remains provider-ready/stubbed unless a caller supplies a client; do not add live network/API-key behavior without a separate plan.
+- Provider hints can only increase caution; deterministic resolver/policy remains authoritative.
+- Existing Context exact/alias matches can scope claims; new, near-match, ambiguous, or unknown contexts stage ReviewItems.
+- Review item state changes are transaction-backed through `packages/core/src/review/index.ts`, CLI review commands, and Pi review tools.
+- Retrieval remains lexical and alias-aware; vector search remains deferred.
+
+CI:
 
 ```text
-packages/core/src/ingest/candidates.ts
-packages/core/src/ingest/detectors.ts
-packages/core/src/ingest/entity-resolution.ts
-packages/core/src/ingest/transaction-builder.ts
+.github/workflows/ci.yml
 ```
 
-Detector output should be neutral candidate data, for example:
+The workflow uses Node 22 and pnpm 9.15.4, then runs:
 
-```ts
-interface ExtractedClaimCandidate {
-  source_text: string;
-  entity_kind: "person" | "topic" | "context" | "system";
-  entity_name: string;
-  statement: string;
-  claim_kind: "fact" | "inference" | "assumption" | "preference" | "commitment";
-  evidence_strength: "explicit" | "inferred" | "weak";
-  scope: string | null;
-  scope_state: "complete" | "partial" | "unknown";
-  observed_at: string | null;
-  valid_from: string | null;
-}
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm eval:mvp
+pnpm eval:v2
 ```
-
-Rules:
-
-- Detectors must not write markdown.
-- Detectors must not create canonical pages.
-- LLM output, when enabled, should emit the same candidate shape.
-- Deterministic validators and staging policies remain authoritative.
 
 ## Validation Baseline
 
-The latest Windows validation passed with:
+Latest local validation passed with:
 
 ```text
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:e2e
 pnpm eval:mvp
+pnpm eval:v2
 ```
 
-On Windows, `pnpm` was invoked through:
+In this WSL2 shell, commands may need temp/cache environment variables if Corepack tries to use Windows paths:
 
-```powershell
-& "$env:APPDATA\npm\pnpm.cmd" lint
+```bash
+env COREPACK_HOME=/tmp/corepack LOCALAPPDATA=/tmp XDG_CACHE_HOME=/tmp TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm <script>
 ```
 
-In WSL2, use normal `pnpm` after enabling Corepack.
+Repo-local Git email was set to the GitHub noreply address to avoid push rejection:
+
+```text
+931057+jcardonnet@users.noreply.github.com
+```
 
 ## Operational Cautions
 

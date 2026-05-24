@@ -13,7 +13,9 @@
     "test": "node tests/run-tests.mjs",
     "test:e2e": "node tests/run-e2e.mjs",
     "eval:mvp": "node tests/scenarios/run-mvp.mjs",
-    "eval:v2": "node tests/scenarios/run-v2.mjs"
+    "eval:v2": "node tests/scenarios/run-v2.mjs",
+    "mxbai:upload": "scripts/mxbai-upload.sh",
+    "mxbai:smoke": "scripts/mxbai-smoke.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

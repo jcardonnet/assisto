@@ -1,0 +1,137 @@
+version: "1"
+
+defaults:
+  strategy: fast
+  metadata:
+    repo: assisto
+
+files:
+  - path: AGENTS.md
+    metadata:
+      kind: docs
+      domain: agent-instructions
+      importance: high
+
+  - path: README.md
+    metadata:
+      kind: docs
+      domain: overview
+      importance: high
+
+  - path: package.json
+    metadata:
+      kind: config
+      domain: workspace
+      importance: high
+
+  - path: pnpm-workspace.yaml
+    metadata:
+      kind: config
+      domain: workspace
+
+  - path: tsconfig.json
+    metadata:
+      kind: config
+      domain: typescript
+
+  - path: tsconfig.base.json
+    metadata:
+      kind: config
+      domain: typescript
+
+  - path: eslint.config.mjs
+    metadata:
+      kind: config
+      domain: lint
+
+  - path: ".mxbai/upload-manifest.yaml"
+    metadata:
+      kind: config
+      domain: mixedbread
+
+  - path: "scripts/**/*.sh"
+    metadata:
+      kind: tooling
+      domain: mixedbread
+
+  - path: "docs/**/*.md"
+    metadata:
+      kind: docs
+      domain: architecture
+
+  - path: "memory/schema/**/*.md"
+    metadata:
+      kind: memory-schema
+      domain: schema
+
+  - path: "memory/indexes/README.md"
+    metadata:
+      kind: docs
+      domain: derived-indexes
+
+  - path: "packages/core/src/**/*.ts"
+    metadata:
+      kind: source
+      package: core
+
+  - path: "packages/core/package.json"
+    metadata:
+      kind: config
+      package: core
+
+  - path: "packages/core/tsconfig.json"
+    metadata:
+      kind: config
+      package: core
+
+  - path: "packages/cli/src/**/*.ts"
+    metadata:
+      kind: source
+      package: cli
+
+  - path: "packages/cli/bin/**/*.mjs"
+    metadata:
+      kind: source
+      package: cli
+
+  - path: "packages/cli/package.json"
+    metadata:
+      kind: config
+      package: cli
+
+  - path: "packages/cli/tsconfig.json"
+    metadata:
+      kind: config
+      package: cli
+
+  - path: "packages/pi-extension/src/**/*.ts"
+    metadata:
+      kind: source
+      package: pi-extension
+
+  - path: "packages/pi-extension/package.json"
+    metadata:
+      kind: config
+      package: pi-extension
+
+  - path: "packages/pi-extension/tsconfig.json"
+    metadata:
+      kind: config
+      package: pi-extension
+
+  - path: ".pi/**/*.md"
+    metadata:
+      kind: runtime
+      package: pi
+
+  - path: "tests/**/*.mjs"
+    metadata:
+      kind: test
+
+  - path: "tests/**/*.md"
+    metadata:
+      kind: test
+
+  - path: "tests/**/*.json"
+    metadata:
+      kind: test

@@ -150,6 +150,49 @@ await suite("context staging and generated explanation boundary", async () => {
   }
 });
 
+await suite("deterministic scoped context extraction", async () => {
+  const matchedRoot = await makeTempVault("eval-v2-scoped-context-");
+
+  try {
+    await writeVaultFile(
+      matchedRoot,
+      "memory/contexts/inventory-project.md",
+      minimalContext("ctx_inventory_project", "Inventory Project", ["Warehouse Project"])
+    );
+    const result = await modules.ingest.ingestNote(matchedRoot, "In Warehouse Project, we use Redis.", {
+      now: fixedNow
+    });
+    const tx = await readTransaction(matchedRoot, result.transaction_id);
+    const redisWrite = tx.proposed_file_writes.find((write) => write.path === "memory/topics/redis.md");
+
+    assert.ok(redisWrite);
+    assert.match(redisWrite.content, /scope: ctx_inventory_project/);
+    assert.equal(tx.proposed_file_writes.some((write) => write.path.startsWith("memory/review/")), false);
+  } finally {
+    await rm(matchedRoot, { recursive: true, force: true });
+  }
+
+  const newContextRoot = await makeTempVault("eval-v2-new-context-");
+
+  try {
+    const result = await modules.ingest.ingestNote(newContextRoot, "In New Warehouse Project, we use Redis.", {
+      now: fixedNow
+    });
+    const tx = await readTransaction(newContextRoot, result.transaction_id);
+
+    metrics.newContextAutoPromotions += tx.proposed_file_writes.some((write) => write.path === "memory/contexts/new-warehouse-project.md")
+      ? 1
+      : 0;
+    metrics.unsafeProviderCanonicalWrites += tx.proposed_file_writes.some((write) => write.path === "memory/topics/redis.md")
+      ? 1
+      : 0;
+    assert.equal(tx.proposed_file_writes.some((write) => write.path.startsWith("memory/review/")), true);
+    assert.match(tx.proposed_file_writes.map((write) => write.content).join("\n"), /review_reason: context_scope_new/);
+  } finally {
+    await rm(newContextRoot, { recursive: true, force: true });
+  }
+});
+
 await suite("retrieval citation coverage", async () => {
   const root = await makeTempVault("eval-v2-retrieval-");
 
@@ -229,6 +272,24 @@ aliases: []
 source_events: []
 related: []
 summary_generated_from: []
+---
+
+# ${name}
+`;
+}
+
+function minimalContext(id, name, aliases = []) {
+  return `---
+id: ${id}
+type: context
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+${aliases.map((alias) => `  - ${alias}`).join("\n") || "  []"}
+source_events: []
+related: []
 ---
 
 # ${name}
