@@ -15,19 +15,23 @@ If running through the CLI, use:
 pnpm --filter @assisto/cli wm ask --pack-context "<question>"
 ```
 
-Report the context pack and call out:
+Report the structured result and preserve the raw `contextPack` if the user asks for detail. Call out:
 
 - Exact people, topics, and contexts loaded.
+- Active claims, including `claim_id`, `claim_kind`, `claim_state`, scope, `scope_state`, and Event evidence.
+- Uncertain, staged, superseded, rejected, contested, partial, or unknown-scope claims.
 - Linked ReviewItems or FollowUps.
 - Relevant Events included.
-- Uncertainty markers for staged, contested, partial, unknown-scope, superseded, or rejected claims.
+- No-match guidance when no page or relation claim matched.
 
 Safety constraints:
 
 - Do not call GPT from this prompt.
+- If you answer the user, answer only from the returned context pack and structured fields.
 - Do not save generated explanations.
 - Do not edit canonical pages directly.
 - Do not route retrieval through vector search or graph traversal beyond wikilinks.
 - Do not implement MCP behavior.
 - Prefer active claims, but surface uncertainty explicitly.
+- If evidence is absent or a claim is staged/contested/superseded, say that plainly.
 - If the user wants an answer saved, route it through ingestion and a Transaction.

@@ -8,4 +8,6 @@ The extension exposes work-memory tools and slash commands, and installs a write
 - writes to `.obsidian/` are blocked;
 - writes outside `memory/` and `.pi/` return a warning.
 
+Review apply and Event reprocess tools only create pending Transactions; they do not edit canonical pages directly.
+
 It does not implement separate memory semantics, MCP, vector search, or autonomous background linting.

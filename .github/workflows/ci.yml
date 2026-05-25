@@ -57,3 +57,6 @@ jobs:
 
       - name: v3 eval
         run: pnpm eval:v3
+
+      - name: Retrieval eval
+        run: pnpm eval:retrieval

@@ -1,0 +1,8 @@
+{
+  "targetRecallMin": 7,
+  "irrelevantInclusionMax": 0,
+  "citationCoverageMin": 4,
+  "uncertaintySurfacedMin": 2,
+  "generatedPersistenceViolationsMax": 0,
+  "noMatchGuidanceMin": 1
+}

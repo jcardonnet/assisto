@@ -681,6 +681,11 @@ packages/cli/**
 - `wm_apply_transaction`
 - `wm_reject_transaction`
 - `wm_review_inbox`
+- `wm_list_review_items`
+- `wm_show_review_item`
+- `wm_mark_review_item`
+- `wm_review_apply_staged`
+- `wm_events_reprocess`
 - `wm_pack_context`
 - `wm_lint`
 
@@ -688,6 +693,10 @@ packages/cli/**
 
 - `/wm-ingest`
 - `/wm-review`
+- `/wm-review-show`
+- `/wm-review-mark`
+- `/wm-review-apply`
+- `/wm-event-reprocess`
 - `/wm-apply`
 - `/wm-ask`
 - `/wm-validate`
@@ -711,12 +720,21 @@ Register tools:
 - wm_apply_transaction
 - wm_reject_transaction
 - wm_review_inbox
+- wm_list_review_items
+- wm_show_review_item
+- wm_mark_review_item
+- wm_review_apply_staged
+- wm_events_reprocess
 - wm_pack_context
 - wm_lint
 
 Register commands:
 - /wm-ingest
 - /wm-review
+- /wm-review-show
+- /wm-review-mark
+- /wm-review-apply
+- /wm-event-reprocess
 - /wm-apply
 - /wm-ask
 - /wm-validate

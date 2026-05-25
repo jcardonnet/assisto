@@ -1,9 +1,12 @@
 import {
   applyTransaction,
+  createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
   listReviewItems,
+  parseClaimBlockRecords,
   parseTransactionMarkdown,
+  parseMarkdownFile,
   readMarkdownPage,
   rejectTransaction,
   showReviewItem,
@@ -18,6 +21,7 @@ import {
   type ValidationResult
 } from "@assisto/core";
 import { ingestWithExtractionProvider, LlmExtractionProvider } from "../../core/src/extraction";
+import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
 import { retrieveContextForAnswer } from "../../core/src/retrieval";
 
@@ -32,6 +36,8 @@ export type WorkMemoryToolName =
   | "wm_list_review_items"
   | "wm_show_review_item"
   | "wm_mark_review_item"
+  | "wm_review_apply_staged"
+  | "wm_events_reprocess"
   | "wm_pack_context"
   | "wm_lint";
 
@@ -40,6 +46,8 @@ export type WorkMemoryCommandName =
   | "/wm-review"
   | "/wm-review-show"
   | "/wm-review-mark"
+  | "/wm-review-apply"
+  | "/wm-event-reprocess"
   | "/wm-apply"
   | "/wm-ask"
   | "/wm-validate"
@@ -125,8 +133,8 @@ interface AutocompleteItem {
 }
 
 interface JsonSchema {
-  type: "object" | "string";
-  properties?: Record<string, JsonSchema | { type: "string"; description?: string; enum?: string[] }>;
+  type: "object" | "string" | "boolean";
+  properties?: Record<string, JsonSchema | { type: "string" | "boolean"; description?: string; enum?: string[] }>;
   required?: string[];
   additionalProperties?: boolean;
   description?: string;
@@ -308,6 +316,29 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
         )
     },
     {
+      name: "wm_review_apply_staged",
+      description: "Create a pending Transaction that applies a staged ReviewItem claim.",
+      run: async (input) =>
+        createReviewApplyTransaction(rootFromInput(input, vaultRoot), stringInput(input, "id"), {
+          target: stringInput(input, "target"),
+          context: optionalStringInput(input, "context"),
+          createContext: optionalStringInput(input, "create_context") ?? optionalStringInput(input, "createContext"),
+          supersede: optionalStringInput(input, "supersede"),
+          note: optionalStringInput(input, "note")
+        })
+    },
+    {
+      name: "wm_events_reprocess",
+      description: "Create a pending stage-only Transaction by reprocessing an existing Event.",
+      run: async (input) => {
+        if (input?.stage_only !== true && input?.stageOnly !== true) {
+          throw new Error("wm_events_reprocess requires stage_only true.");
+        }
+
+        return reprocessEvent(rootFromInput(input, vaultRoot), stringInput(input, "id"));
+      }
+    },
+    {
       name: "wm_pack_context",
       description: "Pack deterministic lexical context for a question.",
       run: async (input) => retrieveContextForAnswer(rootFromInput(input, vaultRoot), stringInput(input, "question"))
@@ -346,6 +377,45 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
         const [id, state, ...noteParts] = commandText(input).split(/\s+/);
 
         return byName.get("wm_mark_review_item")!.run({ id, state, note: noteParts.join(" ") });
+      }
+    },
+    {
+      name: "/wm-review-apply",
+      description:
+        'Create a pending review-apply transaction. Args: <id> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]',
+      run: async (input) => {
+        const tokens = commandTokens(input);
+        const id = tokens[0];
+
+        if (!id) {
+          throw new Error("Usage: /wm-review-apply <id|path> --target <id|path> [--context <id|path> | --create-context <name>]");
+        }
+
+        return byName.get("wm_review_apply_staged")!.run({
+          id,
+          target: commandOption(tokens, "--target"),
+          context: commandOption(tokens, "--context"),
+          create_context: commandOption(tokens, "--create-context"),
+          supersede: commandOption(tokens, "--supersede"),
+          note: commandOption(tokens, "--note")
+        });
+      }
+    },
+    {
+      name: "/wm-event-reprocess",
+      description: "Create a pending stage-only reprocess transaction. Args: <event-id|path> --stage-only",
+      run: async (input) => {
+        const tokens = commandTokens(input);
+        const id = tokens[0];
+
+        if (!id) {
+          throw new Error("Usage: /wm-event-reprocess <event-id|path> --stage-only");
+        }
+
+        return byName.get("wm_events_reprocess")!.run({
+          id,
+          stage_only: tokens.includes("--stage-only")
+        });
       }
     },
     {
@@ -424,21 +494,46 @@ async function getCommandArgumentCompletions(
   vaultRoot: string,
   prefix: string
 ): Promise<AutocompleteItem[]> {
-  if (commandName !== "/wm-apply") {
-    return [];
+  const normalizedPrefix = toText(prefix);
+
+  if (commandName === "/wm-apply") {
+    const transactions = await listTransactions(vaultRoot);
+    const pendingTransactions = transactions.filter((transaction) => transaction.state === "pending");
+
+    return filterCompletions(
+      pendingTransactions.map((transaction) => ({
+        value: transaction.id,
+        label: transaction.id,
+        description: `${transaction.state} transaction`
+      })),
+      normalizedPrefix
+    );
   }
 
-  const transactions = await listTransactions(vaultRoot);
-  const pendingTransactions = transactions.filter((transaction) => transaction.state === "pending");
-  const rawItems = pendingTransactions.map((transaction) => ({
-    value: transaction.id,
-    label: transaction.id,
-    description: `${transaction.state} transaction`
-  }));
-  const normalizedPrefix = toText(prefix);
-  const items = normalizeCompletions(rawItems).filter((item) => item.value.startsWith(normalizedPrefix));
+  if (commandName === "/wm-review-show" || commandName === "/wm-review-mark") {
+    return filterCompletions(await reviewItemCompletions(vaultRoot), normalizedPrefix);
+  }
 
-  return items;
+  if (commandName === "/wm-review-apply") {
+    return filterCompletions(
+      [
+        ...(await reviewItemCompletions(vaultRoot)),
+        ...(await targetPageCompletions(vaultRoot)),
+        ...(await contextCompletions(vaultRoot))
+      ],
+      normalizedPrefix
+    );
+  }
+
+  if (commandName === "/wm-event-reprocess") {
+    return filterCompletions(await eventCompletions(vaultRoot), normalizedPrefix);
+  }
+
+  return [];
+}
+
+function filterCompletions(items: unknown, prefix: string): AutocompleteItem[] {
+  return normalizeCompletions(items).filter((item) => item.value.startsWith(prefix));
 }
 
 function normalizeCompletions(items: unknown): AutocompleteItem[] {
@@ -516,6 +611,8 @@ function toolLabel(name: WorkMemoryToolName): string {
     wm_list_review_items: "WM List Review Items",
     wm_show_review_item: "WM Show Review Item",
     wm_mark_review_item: "WM Mark Review Item",
+    wm_review_apply_staged: "WM Review Apply Staged",
+    wm_events_reprocess: "WM Events Reprocess",
     wm_pack_context: "WM Pack Context",
     wm_lint: "WM Lint"
   };
@@ -534,6 +631,12 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
   const reviewState = { type: "string" as const, enum: ["reviewed", "contested", "archived"] };
   const reason = { type: "string" as const, description: "Human-readable rejection reason." };
   const question = { type: "string" as const, description: "Question to pack context for." };
+  const target = { type: "string" as const, description: "Target Person or Topic ID/path for a staged claim." };
+  const context = { type: "string" as const, description: "Existing Context ID/path to scope a staged claim." };
+  const createContext = { type: "string" as const, description: "New Context name to create through review." };
+  const supersede = { type: "string" as const, description: "Existing claim ID to supersede through review." };
+  const reviewNote = { type: "string" as const, description: "Optional human review note." };
+  const stageOnly = { type: "boolean" as const, description: "Must be true; reprocessing only stages a transaction." };
 
   const baseProperties = { root };
 
@@ -549,9 +652,16 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
       return objectSchema({ ...baseProperties, id: reviewId }, ["id"]);
     case "wm_mark_review_item":
       return objectSchema(
-        { ...baseProperties, id: reviewId, state: reviewState, note: { type: "string", description: "Optional review note." } },
+        { ...baseProperties, id: reviewId, note: reviewNote, state: reviewState },
         ["id", "state"]
       );
+    case "wm_review_apply_staged":
+      return objectSchema(
+        { ...baseProperties, id: reviewId, target, context, create_context: createContext, supersede, note: reviewNote },
+        ["id", "target"]
+      );
+    case "wm_events_reprocess":
+      return objectSchema({ ...baseProperties, id: reviewId, stage_only: stageOnly }, ["id", "stage_only"]);
     case "wm_pack_context":
       return objectSchema({ ...baseProperties, question }, ["question"]);
     case "wm_validate":
@@ -564,7 +674,7 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
 }
 
 function objectSchema(
-  properties: Record<string, JsonSchema | { type: "string"; description?: string; enum?: string[] }>,
+  properties: Record<string, JsonSchema | { type: "string" | "boolean"; description?: string; enum?: string[] }>,
   required: string[] = []
 ): JsonSchema {
   return {
@@ -612,6 +722,72 @@ async function listTransactions(root: string): Promise<Array<{ id: string; state
   return transactions;
 }
 
+async function reviewItemCompletions(root: string): Promise<AutocompleteItem[]> {
+  const reviewItems = await listReviewItems(root, true);
+
+  return reviewItems.map((item) => ({
+    value: item.id,
+    label: item.id,
+    description: `${item.review_state} review: ${item.review_reason}`
+  }));
+}
+
+async function targetPageCompletions(root: string): Promise<AutocompleteItem[]> {
+  const files = await listVaultMarkdownFiles(root, "memory/**/*.md");
+  const items: AutocompleteItem[] = [];
+
+  for (const file of files) {
+    if (!file.startsWith("memory/people/") && !file.startsWith("memory/topics/")) {
+      continue;
+    }
+
+    items.push(...(await pageCompletions(root, file, "target")));
+  }
+
+  return items;
+}
+
+async function contextCompletions(root: string): Promise<AutocompleteItem[]> {
+  const files = await listVaultMarkdownFiles(root, "memory/contexts/**/*.md");
+  const items: AutocompleteItem[] = [];
+
+  for (const file of files) {
+    items.push(...(await pageCompletions(root, file, "context")));
+  }
+
+  return items;
+}
+
+async function eventCompletions(root: string): Promise<AutocompleteItem[]> {
+  const files = await listVaultMarkdownFiles(root, "memory/events/**/*.md");
+  const items: AutocompleteItem[] = [];
+
+  for (const file of files) {
+    const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+    const id = stringValue(parsed.frontmatter.id);
+
+    if (id) {
+      items.push({ value: id, label: id, description: `Event ${file}` });
+    }
+
+    items.push({ value: file, label: file, description: "Event path" });
+  }
+
+  return items;
+}
+
+async function pageCompletions(root: string, file: string, description: string): Promise<AutocompleteItem[]> {
+  const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+  const id = stringValue(parsed.frontmatter.id);
+  const items: AutocompleteItem[] = [{ value: file, label: file, description }];
+
+  if (id) {
+    items.unshift({ value: id, label: id, description: `${description} id` });
+  }
+
+  return items;
+}
+
 async function showTransaction(
   root: string,
   id: string
@@ -625,12 +801,63 @@ async function showTransaction(
   return found;
 }
 
-async function reviewInbox(root: string): Promise<Array<{ id?: string; path: string; review_reason?: string }>> {
-  return (await listReviewItems(root)).map((item) => ({
-    id: item.id,
-    path: item.path,
-    review_reason: item.review_reason
-  }));
+async function reviewInbox(root: string): Promise<{
+  items: Array<{
+    id: string;
+    path: string;
+    review_reason: string;
+    review_state: string;
+    affected_files: string[];
+    source_events: string[];
+    linked_transaction?: string;
+    staged_claim_ids: string[];
+    suggested_action: string;
+  }>;
+  groups: Array<{ review_reason: string; count: number; item_ids: string[]; suggested_action: string }>;
+}> {
+  const summaries = await listReviewItems(root);
+  const items = [];
+
+  for (const summary of summaries) {
+    const detail = await showReviewItem(root, summary.id);
+    const stagedClaimIds = parseClaimBlockRecords(detail.parsed.body)
+      .filter((claim) => stringValue(claim.fields.claim_state) === "staged")
+      .map((claim) => stringValue(claim.fields.claim_id))
+      .filter((claimId): claimId is string => Boolean(claimId));
+
+    items.push({
+      id: summary.id,
+      path: summary.path,
+      review_reason: summary.review_reason,
+      review_state: summary.review_state,
+      affected_files: stringArrayValue(detail.parsed.frontmatter.affected_files),
+      source_events: stringArrayValue(detail.parsed.frontmatter.source_events),
+      linked_transaction: stringValue(detail.parsed.frontmatter.linked_transaction),
+      staged_claim_ids: stagedClaimIds,
+      suggested_action: suggestedReviewAction(summary.review_reason)
+    });
+  }
+
+  const groupsByReason = new Map<string, { review_reason: string; count: number; item_ids: string[]; suggested_action: string }>();
+
+  for (const item of items) {
+    const group =
+      groupsByReason.get(item.review_reason) ??
+      {
+        review_reason: item.review_reason,
+        count: 0,
+        item_ids: [],
+        suggested_action: item.suggested_action
+      };
+    group.count += 1;
+    group.item_ids.push(item.id);
+    groupsByReason.set(item.review_reason, group);
+  }
+
+  return {
+    items,
+    groups: [...groupsByReason.values()].sort((left, right) => left.review_reason.localeCompare(right.review_reason))
+  };
 }
 
 async function findTransaction(
@@ -739,6 +966,21 @@ function reviewStateInput(input: Record<string, unknown> | undefined, key: strin
   throw new Error(`Invalid review state: ${value}`);
 }
 
+function suggestedReviewAction(reviewReason: string): string {
+  switch (reviewReason) {
+    case "unscoped_claim":
+      return "Use wm_review_apply_staged with --context or --create-context, or mark contested.";
+    case "role_change":
+      return "Use wm_review_apply_staged with --supersede only after human confirmation.";
+    case "reporting_change":
+      return "Use wm_review_apply_staged with --supersede only after human confirmation.";
+    case "claim_id_conflict":
+      return "Inspect the staged claim and target page before applying; do not auto-merge.";
+    default:
+      return "Inspect the ReviewItem, then apply staged, mark, or leave staged.";
+  }
+}
+
 function commandText(input: string | Record<string, unknown> | undefined): string {
   if (typeof input === "string") {
     return input.trim();
@@ -761,6 +1003,50 @@ function commandText(input: string | Record<string, unknown> | undefined): strin
   }
 
   return "";
+}
+
+function commandTokens(input: string | Record<string, unknown> | undefined): string[] {
+  const text = commandText(input);
+  const tokens: string[] = [];
+  let current = "";
+  let inQuote = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (char === '"') {
+      inQuote = !inQuote;
+      continue;
+    }
+
+    if (!inQuote && /\s/.test(char ?? "")) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function commandOption(tokens: string[], name: string): string | undefined {
+  const index = tokens.indexOf(name);
+
+  if (index === -1) {
+    return undefined;
+  }
+
+  const value = tokens[index + 1];
+  return value && !value.startsWith("--") ? value : undefined;
 }
 
 function recordInput(value: unknown): Record<string, unknown> {
@@ -789,6 +1075,10 @@ function formatResult(value: unknown): string {
 
 function stringValue(value: FrontmatterValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function stringArrayValue(value: FrontmatterValue | undefined): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function normalizePath(value: string): string {

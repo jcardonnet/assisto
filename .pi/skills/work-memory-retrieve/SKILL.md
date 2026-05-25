@@ -43,13 +43,17 @@ pnpm --filter @assisto/cli wm validate
    pnpm --filter @assisto/cli wm ask --pack-context "<question>"
    ```
 
-3. Read the context pack in this order:
-   - exact people/topic/context pages;
-   - linked ReviewItems and FollowUps;
-   - latest relevant Events only when the pack is sparse, contested, high-impact, or temporal.
+3. Read the structured result first, then the text pack:
+   - `matchedPages`;
+   - `activeClaims`;
+   - `uncertainClaims`;
+   - `linkedItems`;
+   - `evidenceEvents`;
+   - `warnings`;
+   - `contextPack`.
 4. Prefer active claims.
 5. Surface uncertainty explicitly when the pack marks claims as staged, partial, unknown-scope, superseded, rejected, or contested.
-6. If the user asks for an answer, answer from the context pack only and distinguish facts from uncertainty.
+6. If the user asks for an answer, answer from the context pack and structured fields only; distinguish facts from uncertainty and cite claim IDs/Event IDs when useful.
 7. If the user wants the answer saved, use the ingest workflow to create an Event and pending Transaction. Do not save the generated explanation directly.
 
 ## Forbidden Behavior
@@ -61,6 +65,7 @@ pnpm --filter @assisto/cli wm validate
 - Never treat context-pack output as canonical truth.
 - Never auto-resolve contradictions surfaced in the pack.
 - Never auto-merge entities that look similar.
+- Never invent an answer when `warnings` says no deterministic match was found.
 
 ## Required Invariants
 
@@ -69,6 +74,7 @@ pnpm --filter @assisto/cli wm validate
 - Active claims are preferred over staged, superseded, rejected, or contested claims.
 - Unscoped, partial, staged, and contested claims must carry uncertainty in the answer.
 - Every factual context claim should retain source Event citation coverage.
+- Relation questions about managers, reporting, owners, and roles are handled deterministically from claim text and claim IDs, not vector search.
 
 ## References
 
