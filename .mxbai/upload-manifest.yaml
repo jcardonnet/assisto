@@ -6,6 +6,8 @@ defaults:
     repo: assisto
 
 files:
+  # Mixedbread upload currently rejects JSON, YAML, and shell files for this store.
+  # Keep those configs out of the manifest instead of producing noisy 422 failures.
   - path: AGENTS.md
     metadata:
       kind: docs
@@ -18,41 +20,10 @@ files:
       domain: overview
       importance: high
 
-  - path: package.json
-    metadata:
-      kind: config
-      domain: workspace
-      importance: high
-
-  - path: pnpm-workspace.yaml
-    metadata:
-      kind: config
-      domain: workspace
-
-  - path: tsconfig.json
-    metadata:
-      kind: config
-      domain: typescript
-
-  - path: tsconfig.base.json
-    metadata:
-      kind: config
-      domain: typescript
-
   - path: eslint.config.mjs
     metadata:
       kind: config
       domain: lint
-
-  - path: ".mxbai/upload-manifest.yaml"
-    metadata:
-      kind: config
-      domain: mixedbread
-
-  - path: "scripts/**/*.sh"
-    metadata:
-      kind: tooling
-      domain: mixedbread
 
   - path: "docs/**/*.md"
     metadata:
@@ -74,16 +45,6 @@ files:
       kind: source
       package: core
 
-  - path: "packages/core/package.json"
-    metadata:
-      kind: config
-      package: core
-
-  - path: "packages/core/tsconfig.json"
-    metadata:
-      kind: config
-      package: core
-
   - path: "packages/cli/src/**/*.ts"
     metadata:
       kind: source
@@ -94,29 +55,9 @@ files:
       kind: source
       package: cli
 
-  - path: "packages/cli/package.json"
-    metadata:
-      kind: config
-      package: cli
-
-  - path: "packages/cli/tsconfig.json"
-    metadata:
-      kind: config
-      package: cli
-
   - path: "packages/pi-extension/src/**/*.ts"
     metadata:
       kind: source
-      package: pi-extension
-
-  - path: "packages/pi-extension/package.json"
-    metadata:
-      kind: config
-      package: pi-extension
-
-  - path: "packages/pi-extension/tsconfig.json"
-    metadata:
-      kind: config
       package: pi-extension
 
   - path: ".pi/**/*.md"
@@ -129,9 +70,5 @@ files:
       kind: test
 
   - path: "tests/**/*.md"
-    metadata:
-      kind: test
-
-  - path: "tests/**/*.json"
     metadata:
       kind: test
