@@ -1,5 +1,5 @@
 import { serializeMarkdownFile, type Frontmatter } from "../markdown";
-import type { ClaimBlock, FollowUpState, SupportedOperationType } from "../model";
+import type { FollowUpState, SupportedOperationType } from "../model";
 import { evaluateStagingPolicy, type StagingReason } from "../policies";
 import {
   slugify,
@@ -13,6 +13,7 @@ import {
   type ResolvedClaimCandidate,
   type ResolvedFollowUpCandidate
 } from "./candidates";
+import { renderClaimBlock } from "./page-upsert";
 
 interface PageClaimGroup {
   entityName: string;
@@ -62,6 +63,15 @@ export function buildIngestExtractionDraft(
 
     if (requiresScopeReview(policyCandidate)) {
       const write = renderScopeResolutionReviewWrite(context, policyCandidate, claim);
+      stagedReviewPaths.push(write.path);
+      writeOrder.push({ kind: "write", write });
+      continue;
+    }
+
+    const conflictReason = claimConflictReason(policyCandidate);
+
+    if (conflictReason) {
+      const write = renderClaimConflictReviewWrite(context, policyCandidate, claim, conflictReason);
       stagedReviewPaths.push(write.path);
       writeOrder.push({ kind: "write", write });
       continue;
@@ -254,6 +264,101 @@ function requiresScopeReview(candidate: ResolvedClaimCandidate): boolean {
     candidate.staging_reasons.includes("scope_near_match") ||
     candidate.staging_reasons.includes("scope_ambiguous")
   );
+}
+
+function claimConflictReason(candidate: ResolvedClaimCandidate): "role_change" | "reporting_change" | "claim_id_conflict" | null {
+  if (candidate.entity.claim_id_conflict_path) {
+    return "claim_id_conflict";
+  }
+
+  if (candidate.entity.resolution_state !== "exact_match" && candidate.entity.resolution_state !== "alias_match") {
+    return null;
+  }
+
+  const existingClaimIds = new Set(candidate.entity.existing_claim_ids);
+
+  if (existingClaimIds.has(candidate.claim_id)) {
+    return null;
+  }
+
+  const entitySlug = candidate.entity.slug.replace(/-/g, "_");
+
+  if (
+    candidate.claim_id.startsWith(`clm_${entitySlug}_reports_to_`) &&
+    [...existingClaimIds].some((claimId) => claimId.startsWith(`clm_${entitySlug}_reports_to_`))
+  ) {
+    return "reporting_change";
+  }
+
+  if (
+    candidate.claim_id.startsWith(`clm_${entitySlug}_role_`) &&
+    [...existingClaimIds].some((claimId) => claimId.startsWith(`clm_${entitySlug}_role_`))
+  ) {
+    return "role_change";
+  }
+
+  return null;
+}
+
+function renderClaimConflictReviewWrite(
+  context: IngestPipelineContext,
+  candidate: ResolvedClaimCandidate,
+  claim: CandidateClaim,
+  reason: "role_change" | "reporting_change" | "claim_id_conflict"
+): CandidateWrite {
+  const reviewId = `rev_${reason}_${slugify(candidate.entity.slug || candidate.entity.name)}`;
+  const stagedClaim: CandidateClaim = {
+    ...claim,
+    claim_state: "staged"
+  };
+  const frontmatter: Frontmatter = {
+    id: reviewId,
+    type: "review_item",
+    object_state: "active",
+    review_state: "staged",
+    review_reason: reason,
+    created_at: context.now,
+    source_events: [context.eventId],
+    affected_files: [stripMemoryPrefix(candidate.entity.path)],
+    linked_transaction: context.transactionId
+  };
+  const body = [
+    `# Review: ${candidate.entity.name}`,
+    "",
+    "## Issue",
+    "",
+    `${reason} requires explicit review before updating canonical memory.`,
+    "",
+    "## Evidence",
+    "",
+    `- Event: [[${context.eventLinkPath}]]`,
+    `- Candidate claim: \`${claim.claim_id}\``,
+    `- Source text: ${candidate.source_text}`,
+    "",
+    "## Existing claim IDs",
+    "",
+    ...claimConflictLines(candidate),
+    "",
+    "## Staged claims",
+    "",
+    renderClaimBlock(stagedClaim)
+  ].join("\n");
+
+  return {
+    path: `memory/review/${reviewId}.md`,
+    operation: "STAGE_REVIEW",
+    content: serializeMarkdownFile(frontmatter, body)
+  };
+}
+
+function claimConflictLines(candidate: ResolvedClaimCandidate): string[] {
+  const lines = candidate.entity.existing_claim_ids.map((claimId) => `- ${claimId}`);
+
+  if (candidate.entity.claim_id_conflict_path) {
+    lines.push(`- ${candidate.claim_id} already exists in ${stripMemoryPrefix(candidate.entity.claim_id_conflict_path)}`);
+  }
+
+  return lines.length > 0 ? lines : ["- None recorded on the matched entity."];
 }
 
 function contextEntityStagingReasons(candidate: ResolvedClaimCandidate): StagingReason[] {
@@ -577,23 +682,6 @@ function renderFollowUpPage(input: {
   ].join("\n");
 
   return serializeMarkdownFile(frontmatter, body);
-}
-
-function renderClaimBlock(claim: ClaimBlock): string {
-  return [
-    `- claim_id: ${claim.claim_id}`,
-    `  statement: ${claim.statement}`,
-    `  claim_kind: ${claim.claim_kind}`,
-    `  claim_state: ${claim.claim_state}`,
-    `  evidence_strength: ${claim.evidence_strength}`,
-    `  scope: ${claim.scope ?? "null"}`,
-    `  scope_state: ${claim.scope_state}`,
-    `  evidence: [${claim.evidence.join(", ")}]`,
-    `  recorded_at: ${claim.recorded_at}`,
-    `  observed_at: ${claim.observed_at ?? "null"}`,
-    `  valid_from: ${claim.valid_from ?? "null"}`,
-    `  valid_to: ${claim.valid_to ?? "null"}`
-  ].join("\n");
 }
 
 function buildOperations(writes: CandidateWrite[]): Array<{ operation: SupportedOperationType; description?: string }> {

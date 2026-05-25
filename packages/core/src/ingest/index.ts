@@ -1,5 +1,5 @@
-import { writeMarkdownPageAtomic } from "../fs";
-import { serializeMarkdownFile, type Frontmatter } from "../markdown";
+import { readMarkdownPage, writeMarkdownPageAtomic } from "../fs";
+import { getSection, parseMarkdownFile, serializeMarkdownFile, type Frontmatter, type FrontmatterValue } from "../markdown";
 import {
   applyTransaction,
   createTransactionDraft,
@@ -17,12 +17,17 @@ import {
 import { detectCandidateProposals } from "./detectors";
 import { resolveDetectorProposals } from "./entity-resolution";
 import { buildIngestExtractionDraft } from "./transaction-builder";
+import { mergeProposedWritesWithExistingPages } from "./page-upsert";
 
 export interface IngestNoteOptions {
   now?: string;
   observed_at?: string | null;
   source_actor?: string;
   apply?: boolean;
+}
+
+export interface ReprocessEventOptions {
+  now?: string;
 }
 
 export interface IngestNoteResult {
@@ -69,6 +74,7 @@ export async function ingestNote(
   const proposals = detectCandidateProposals(context);
   const resolvedCandidates = resolveDetectorProposals(proposals, index);
   const extraction = buildIngestExtractionDraft(context, resolvedCandidates);
+  const proposedWrites = await mergeProposedWritesWithExistingPages(root, extraction.writes);
   const eventMarkdown = renderEventMarkdown(context, {
     sourceActor: options.source_actor ?? "user",
     derivedClaimIds: extraction.claims.map((claim) => claim.claim_id),
@@ -78,10 +84,10 @@ export async function ingestNote(
 
   await writeMarkdownPageAtomic(root, eventPath, eventMarkdown);
 
-  const operations = extraction.writes.length === 0 ? [{ operation: "NOOP" as const }] : extraction.operations;
+  const operations = proposedWrites.length === 0 ? [{ operation: "NOOP" as const }] : extraction.operations;
   const affectedFiles = [
     stripMemoryPrefix(eventPath),
-    ...extraction.writes.map((write) => stripMemoryPrefix(write.path))
+    ...proposedWrites.map((write) => stripMemoryPrefix(write.path))
   ];
   const transaction = createTransactionDraft({
     id: transactionId,
@@ -89,12 +95,12 @@ export async function ingestNote(
     source_events: [eventId],
     operations,
     affected_files: affectedFiles,
-    risk_level: extraction.writes.length > 0 ? "medium" : "low",
+    risk_level: proposedWrites.length > 0 ? "medium" : "low",
     requires_review: extraction.stagedReviewPaths.length > 0,
     rollback_notes:
       "Preserve the source Event. If non-Event writes fail, mark this transaction failed and repair proposed page writes manually.",
     intent: extraction.intent,
-    proposed_file_writes: extraction.writes.map((write) => ({
+    proposed_file_writes: proposedWrites.map((write) => ({
       path: write.path,
       content: write.content
     }))
@@ -117,6 +123,102 @@ export async function ingestNote(
     staged_review_paths: extraction.stagedReviewPaths,
     followup_paths: extraction.followupPaths
   };
+}
+
+export async function reprocessEvent(
+  root: string,
+  eventIdOrPath: string,
+  options: ReprocessEventOptions = {}
+): Promise<IngestNoteResult> {
+  const now = options.now ?? defaultNow;
+  const index = await loadIndexOrEmpty(root);
+  const found = await findEvent(root, eventIdOrPath, index);
+  const parsedEvent = parseMarkdownFile(found.content);
+  const rawText = getSection(parsedEvent.body, "Raw text")?.trim();
+
+  if (!rawText) {
+    throw new Error(`Event has no Raw text section: ${eventIdOrPath}`);
+  }
+
+  const datePart = now.slice(0, 10);
+  const dateIdPart = datePart.replace(/-/g, "_");
+  const sequence = nextSequence(dateIdPart, index);
+  const transactionId = `tx_${dateIdPart}_${sequence}`;
+  const normalizedNote = normalizeWhitespace(rawText);
+  const observedAt = stringValue(parsedEvent.frontmatter.observed_at) ?? null;
+  const context: IngestPipelineContext = {
+    root,
+    note: normalizedNote,
+    now,
+    observedAt,
+    eventId: found.id,
+    eventPath: found.path,
+    eventLinkPath: stripMemoryPrefix(found.path).replace(/\.md$/i, ""),
+    transactionId
+  };
+  const proposals = detectCandidateProposals(context);
+  const resolvedCandidates = resolveDetectorProposals(proposals, index);
+  const extraction = buildIngestExtractionDraft(context, resolvedCandidates);
+  const proposedWrites = await mergeProposedWritesWithExistingPages(root, extraction.writes);
+  const operations = proposedWrites.length === 0 ? [{ operation: "NOOP" as const }] : extraction.operations;
+  const affectedFiles = proposedWrites.map((write) => stripMemoryPrefix(write.path));
+  const transaction = createTransactionDraft({
+    id: transactionId,
+    created_at: now,
+    source_events: [found.id],
+    operations,
+    affected_files: affectedFiles,
+    risk_level: proposedWrites.length > 0 ? "medium" : "low",
+    requires_review: extraction.stagedReviewPaths.length > 0,
+    rollback_notes:
+      "This reprocess transaction does not edit the source Event. If proposed writes fail, keep the Event unchanged and repair the pending transaction.",
+    intent:
+      proposedWrites.length === 0
+        ? "Reprocess existing Event and make no canonical page changes."
+        : "Reprocess existing Event and draft deterministic MVP memory mutations for review.",
+    proposed_file_writes: proposedWrites
+  });
+  const transactionPath = transactionFilePaths.pending(transactionId);
+
+  await writeMarkdownPageAtomic(root, transactionPath, serializeTransactionMarkdown(transaction));
+
+  return {
+    event_id: found.id,
+    event_path: found.path,
+    transaction_id: transactionId,
+    transaction_path: transactionPath,
+    transaction,
+    applied: false,
+    extracted_claim_ids: extraction.claims.map((claim) => claim.claim_id),
+    staged_review_paths: extraction.stagedReviewPaths,
+    followup_paths: extraction.followupPaths
+  };
+}
+
+async function findEvent(
+  root: string,
+  eventIdOrPath: string,
+  index: VaultIndex
+): Promise<{ id: string; path: string; content: string }> {
+  const normalized = eventIdOrPath.replace(/\\/g, "/").replace(/^memory\//, "");
+  const byIdPath = index.ids.get(eventIdOrPath);
+  const path =
+    byIdPath ??
+    (normalized.startsWith("events/") ? `memory/${normalized}` : normalized.startsWith("memory/") ? normalized : null);
+
+  if (!path) {
+    throw new Error(`Event not found: ${eventIdOrPath}`);
+  }
+
+  const content = await readMarkdownPage(root, path);
+  const parsed = parseMarkdownFile(content);
+  const id = stringValue(parsed.frontmatter.id);
+
+  if (!id || parsed.frontmatter.type !== "event") {
+    throw new Error(`Event not found: ${eventIdOrPath}`);
+  }
+
+  return { id, path, content };
 }
 
 async function loadIndexOrEmpty(root: string): Promise<VaultIndex> {
@@ -184,6 +286,10 @@ function nextSequence(dateIdPart: string, index: VaultIndex): string {
   const next = used.length === 0 ? 1 : Math.max(...used) + 1;
 
   return String(next).padStart(3, "0");
+}
+
+function stringValue(value: FrontmatterValue | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 export type { IngestPipelineContext };

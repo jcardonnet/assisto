@@ -216,6 +216,7 @@ pnpm test
 pnpm test:e2e
 pnpm eval:mvp
 pnpm eval:v2
+pnpm eval:v3
 ```
 
 Useful narrower test commands:
@@ -225,7 +226,7 @@ pnpm test:unit
 pnpm test:integration
 ```
 
-The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, lexical retrieval, CLI and Pi adapters, and MVP/v2 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, and `packages/pi-extension` remains a thin runtime adapter.
+The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, CLI and Pi adapters, and MVP/v2/v3 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, and `packages/pi-extension` remains a thin runtime adapter.
 
 ## Required commands
 

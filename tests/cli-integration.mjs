@@ -195,4 +195,88 @@ summary_generated_from: []
   } finally {
     await rm(lintRoot, { recursive: true, force: true });
   }
+
+  const v3CliRoot = await makeTempVault();
+
+  try {
+    await writeVaultFile(v3CliRoot, "memory/events/2026/2026-05/2026-05-20-001.md", `---
+id: ev_2026_05_20_001
+type: event
+object_state: active
+review_state: reviewed
+recorded_at: 2026-05-20T12:00:00-03:00
+observed_at: null
+source_type: user_note
+source_actor: user
+derived_claims: []
+---
+
+# Event ev_2026_05_20_001
+
+## Raw text
+
+I started new job this monday as a AI Engineer at SmartEquip
+
+## Candidate extraction
+
+- No durable claim candidates extracted.
+`);
+    await writeVaultFile(v3CliRoot, "memory/review/mysql-scope.md", `---
+id: rev_mysql_scope
+type: review_item
+object_state: active
+review_state: staged
+review_reason: unscoped_claim
+created_at: 2026-05-20T12:00:00-03:00
+source_events:
+  - ev_2026_05_20_001
+affected_files:
+  - topics/mysql.md
+---
+
+# Review: MySQL scope
+
+## Staged claims
+
+- claim_id: clm_mysql_used_unknown_scope
+  statement: We use MySQL.
+  claim_kind: fact
+  claim_state: staged
+  evidence_strength: explicit
+  scope: null
+  scope_state: unknown
+  evidence: [ev_2026_05_20_001]
+  recorded_at: 2026-05-20T12:00:00-03:00
+  observed_at: null
+  valid_from: null
+  valid_to: null
+`);
+
+    const applyReview = await runWm(v3CliRoot, [
+      "review",
+      "apply-staged",
+      "rev_mysql_scope",
+      "--target",
+      "memory/topics/mysql.md",
+      "--create-context",
+      "Inventory Project",
+      "--note",
+      "Scope confirmed"
+    ]);
+    const applyReviewId = /Pending review apply transaction: (tx_\d{4}_\d{2}_\d{2}_\d{3})/.exec(applyReview.stdout)?.[1];
+    assert.ok(applyReviewId);
+    assert.match(await readVaultFile(v3CliRoot, `memory/transactions/pending/${applyReviewId}.md`), /scope: ctx_inventory_project/);
+
+    const reprocess = await runWm(v3CliRoot, [
+      "events",
+      "reprocess",
+      "ev_2026_05_20_001",
+      "--stage-only"
+    ]);
+    const reprocessId = /Pending reprocess transaction: (tx_\d{4}_\d{2}_\d{2}_\d{3})/.exec(reprocess.stdout)?.[1];
+    assert.ok(reprocessId);
+    assert.match(await readVaultFile(v3CliRoot, `memory/transactions/pending/${reprocessId}.md`), /clm_user_job_ai_engineer_smartequip/);
+  } finally {
+    await rm(v3CliRoot, { recursive: true, force: true });
+  }
 }

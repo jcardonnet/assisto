@@ -16,6 +16,7 @@ import {
 interface ExistingEntity extends EntityResolutionCandidate {
   path: string;
   kind: CandidateEntityKind;
+  claimIds: string[];
 }
 
 export function resolveDetectorProposals(
@@ -36,10 +37,15 @@ function resolveClaimProposal(
   const matched = resolution.matchedCandidate as ExistingEntity | undefined;
   const resolutionState = cautiousResolutionState(resolution.state, proposal.entity_resolution_hint);
   const slug = matched ? slugFromPath(matched.path) : slugify(proposal.entity_name);
+  const proposedPath = matched?.path ?? pathForEntity(proposal.entity_kind, slug);
+  const existingClaimPath = index.claimIds.get(proposal.claim_id);
   const entity = entityForProposal(proposal, {
     slug,
     id: matched?.id,
-    path: matched?.path,
+    path: proposedPath,
+    existingClaimIds: matched?.claimIds ?? [],
+    claimIdConflictPath:
+      existingClaimPath && normalizePath(existingClaimPath) !== normalizePath(proposedPath) ? existingClaimPath : undefined,
     resolutionState,
     resolutionReason:
       resolutionState === resolution.state
@@ -79,6 +85,8 @@ function entityForProposal(
     slug: string;
     id?: string;
     path?: string;
+    existingClaimIds?: string[];
+    claimIdConflictPath?: string;
     resolutionState: ResolvedEntity["resolution_state"];
     resolutionReason: string;
   }
@@ -91,6 +99,8 @@ function entityForProposal(
     id: input.id ?? idForEntity(proposal.entity_kind, slug),
     slug,
     path: input.path ?? pathForEntity(proposal.entity_kind, slug),
+    existing_claim_ids: input.existingClaimIds ?? [],
+    claim_id_conflict_path: input.claimIdConflictPath,
     resolution_state: input.resolutionState,
     resolution_reason: input.resolutionReason
   };
@@ -106,6 +116,7 @@ function existingEntitiesForKind(index: VaultIndex, kind: CandidateEntityKind): 
       id: entry.id,
       name: entityNameFromPath(entry.path),
       aliases: entry.aliases,
+      claimIds: entry.claimIds,
       path: entry.path,
       kind
     }));
@@ -207,4 +218,8 @@ function entityNameFromPath(path: string): string {
 
 function slugFromPath(path: string): string {
   return path.split("/").pop()?.replace(/\.md$/i, "") ?? "";
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\/+/, "");
 }

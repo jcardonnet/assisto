@@ -65,6 +65,8 @@ export interface ResolvedEntity {
   id: string;
   slug: string;
   path: string;
+  existing_claim_ids: string[];
+  claim_id_conflict_path?: string;
   resolution_state: EntityResolutionState;
   resolution_reason: string;
 }
