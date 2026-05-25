@@ -26,6 +26,7 @@ import { ingestWithExtractionProvider, LlmExtractionProvider } from "../../core/
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
 import { retrieveContextForAnswer } from "../../core/src/retrieval";
+import { startWorkbenchServer } from "../../workbench/src/index";
 
 export interface CliIo {
   stdout: (text: string) => void;
@@ -79,6 +80,10 @@ export async function main(
 
     if (command === "ask") {
       return await commandAsk(parsed.root, rest, io);
+    }
+
+    if (command === "workbench") {
+      return await commandWorkbench(parsed.root, rest, io);
     }
 
     io.stderr(`Unknown command: ${command}\n\n`);
@@ -350,6 +355,28 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
   return 0;
 }
 
+async function commandWorkbench(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm workbench serve [--host 127.0.0.1] [--port 3721]\n");
+    return 0;
+  }
+
+  if (subcommand !== "serve") {
+    throw new Error("Usage: wm workbench serve [--host 127.0.0.1] [--port 3721]");
+  }
+
+  const host = optionValue(args, "--host") ?? "127.0.0.1";
+  const port = parsePort(optionValue(args, "--port") ?? "3721");
+  const running = await startWorkbenchServer({ root, host, port });
+
+  io.stdout(`Assisto Workbench listening at ${running.url}\n`);
+  io.stdout("Press Ctrl+C to stop.\n");
+
+  return 0;
+}
+
 async function findTransaction(
   root: string,
   id: string
@@ -429,6 +456,16 @@ function optionValue(args: string[], name: string): string | null {
   return value && !value.startsWith("--") ? value : null;
 }
 
+function parsePort(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+    throw new Error(`Invalid port: ${value}`);
+  }
+
+  return parsed;
+}
+
 function printValidationResult(result: ValidationResult, io: CliIo): void {
   if (result.passed) {
     io.stdout("Validation passed.\n");
@@ -491,6 +528,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] review apply-staged <id|path> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]',
       "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
+      "  wm [--root <path>] workbench serve [--host 127.0.0.1] [--port 3721]",
       ""
     ].join("\n")
   );

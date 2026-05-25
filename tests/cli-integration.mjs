@@ -56,6 +56,7 @@ export async function runCliIntegrationTests() {
   const help = { stdout: helpStdout.join("") };
   assert.equal(helpExitCode, 0);
   assert.match(help.stdout, /wm - local markdown work-memory MVP/);
+  assert.match(help.stdout, /workbench serve/);
 
   const txRoot = await makeTempVault();
 
