@@ -147,6 +147,30 @@ async function writeRetrievalFixture(root) {
   );
   await writeVaultFile(
     root,
+    "memory/people/maria.md",
+    personPage({
+      id: "per_maria",
+      name: "Maria",
+      claimId: "clm_maria_reports_to_jeff",
+      statement: "Maria reports to Jeff.",
+      evidence: "ev_2026_05_21_005",
+      scopeState: "complete"
+    })
+  );
+  await writeVaultFile(
+    root,
+    "memory/people/joel.md",
+    personPage({
+      id: "per_joel",
+      name: "Joel",
+      claimId: "clm_joel_owner_reporting",
+      statement: "Joel owns reporting dashboards.",
+      evidence: "ev_2026_05_21_006",
+      scopeState: "complete"
+    })
+  );
+  await writeVaultFile(
+    root,
     "memory/topics/solr.md",
     topicPage({
       id: "top_solr",
@@ -252,6 +276,16 @@ related: []
   );
   await writeVaultFile(
     root,
+    "memory/events/2026/2026-05/2026-05-21-005.md",
+    eventPage("ev_2026_05_21_005", "Maria reports to Jeff.", "2026-05-21T10:00:00-03:00")
+  );
+  await writeVaultFile(
+    root,
+    "memory/events/2026/2026-05/2026-05-21-006.md",
+    eventPage("ev_2026_05_21_006", "Joel owns reporting dashboards.", "2026-05-21T10:15:00-03:00")
+  );
+  await writeVaultFile(
+    root,
     "memory/events/2026/2026-05/2026-05-21-999.md",
     eventPage("ev_2026_05_21_999", "Unrelated meeting about payroll.", "2026-05-21T11:00:00-03:00")
   );
@@ -296,6 +330,9 @@ export async function runCoreRetrievalTests() {
     assert.match(pack, /memory\/topics\/solr\.md/);
     assert.match(pack, /memory\/topics\/qdrant\.md/);
     assert.match(pack, /scope_state=partial/);
+    assert.match(pack, /claim_id: clm_joe_search/);
+    assert.match(pack, /claim_kind: fact/);
+    assert.match(pack, /evidence: ev_2026_05_21_001/);
     assert.match(pack, /claim_state=staged/);
     assert.match(pack, /scope_state=unknown/);
     assert.doesNotMatch(pack, /payroll/);
@@ -303,6 +340,32 @@ export async function runCoreRetrievalTests() {
     const fullResult = await retrieval.retrieveContextForAnswer(root, query);
     assert.match(fullResult.contextPack, /# Context pack/);
     assert.match(fullResult.contextPack, /GPT was not called/);
+    assert.equal(fullResult.matchedPages.some((page) => page.path === "memory/people/joe.md"), true);
+    assert.equal(fullResult.activeClaims.some((claim) => claim.claim_id === "clm_joe_search"), true);
+    assert.equal(fullResult.uncertainClaims.some((claim) => claim.scope_state === "partial"), true);
+    assert.equal(fullResult.linkedItems.some((item) => item.id === "rev_qdrant_scope"), true);
+    assert.equal(fullResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_004"), true);
+
+    const managerResult = await retrieval.retrieveContextForAnswer(root, "Who is my manager?");
+    assert.equal(managerResult.activeClaims.some((claim) => claim.claim_id === "clm_mike_manager"), true);
+    assert.equal(managerResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_002"), true);
+
+    const reportingResult = await retrieval.retrieveContextForAnswer(root, "Who reports to Jeff?");
+    assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/maria.md"), true);
+    assert.equal(reportingResult.activeClaims.some((claim) => claim.claim_id === "clm_maria_reports_to_jeff"), true);
+    assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/mike.md"), false);
+    assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/joel.md"), false);
+
+    const sourceResult = await retrieval.retrieveContextForAnswer(root, "What source Event supports clm_joe_search?");
+    assert.equal(sourceResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
+
+    const reviewResult = await retrieval.retrieveContextForAnswer(root, "What do I need to review about Qdrant?");
+    assert.equal(reviewResult.linkedItems.some((item) => item.id === "rev_qdrant_scope"), true);
+
+    const noMatch = await retrieval.retrieveContextForAnswer(root, "What is the Neptune deploy key?");
+    assert.deepEqual(noMatch.matchedPages, []);
+    assert.equal(noMatch.warnings.some((warning) => /No named/.test(warning)), true);
+    assert.match(noMatch.contextPack, /No-match guidance/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

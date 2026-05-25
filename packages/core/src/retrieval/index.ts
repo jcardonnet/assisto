@@ -18,6 +18,7 @@ export interface RetrievalTarget {
   name: string;
   matched_terms: string[];
   score: number;
+  why_included?: string;
 }
 
 export interface LoadedRetrievalPage {
@@ -41,6 +42,59 @@ export interface ContextPackResult {
   reviewItems: LoadedRetrievalPage[];
   events: LoadedRetrievalPage[];
   contextPack: string;
+  matchedPages: PackedPageSummary[];
+  activeClaims: PackedClaim[];
+  uncertainClaims: PackedClaim[];
+  linkedItems: PackedLinkedItem[];
+  evidenceEvents: PackedEvidenceEvent[];
+  warnings: string[];
+}
+
+export interface PackedPageSummary {
+  path: string;
+  id?: string;
+  type?: string;
+  name: string;
+  matchedTerms: string[];
+  score: number;
+  whyIncluded: string;
+  uncertaintyMarkers: string[];
+}
+
+export interface PackedClaim {
+  page_path: string;
+  claim_id: string;
+  statement: string;
+  claim_kind: string;
+  claim_state: string;
+  scope: string | null;
+  scope_state: string;
+  evidence: string[];
+  evidence_strength?: string;
+  why_included: string;
+  uncertainty_markers: string[];
+}
+
+export interface PackedLinkedItem {
+  path: string;
+  id?: string;
+  type?: string;
+  review_state?: string;
+  review_reason?: string;
+  followup_state?: string;
+  source_events: string[];
+  affected_files: string[];
+  staged_claim_ids: string[];
+  why_included: string;
+  uncertainty_markers: string[];
+}
+
+export interface PackedEvidenceEvent {
+  path: string;
+  id?: string;
+  recorded_at?: string;
+  observed_at?: string;
+  why_included: string;
 }
 
 const stopWords = new Set([
@@ -52,26 +106,74 @@ const stopWords = new Set([
   "explain",
   "from",
   "how",
+  "is",
+  "my",
   "should",
   "the",
   "this",
   "that",
+  "to",
   "what",
   "when",
   "where",
+  "who",
+  "whom",
   "with"
 ]);
 
 const temporalTerms = new Set(["today", "yesterday", "recent", "recently", "latest", "current", "when"]);
-const highImpactTerms = new Set(["role", "owner", "decision", "deadline", "commitment", "manager", "dba"]);
+const highImpactTerms = new Set([
+  "role",
+  "owner",
+  "decision",
+  "deadline",
+  "commitment",
+  "manager",
+  "dba",
+  "reporting",
+  "reports"
+]);
+const evidenceTerms = new Set(["event", "events", "evidence", "source", "sources", "support", "supports", "cites"]);
+const reviewLookupTerms = new Set(["review", "reviews", "reviewed", "followup", "followups", "follow-up", "follow-ups", "open"]);
+const relationIntentTerms = new Set([
+  "manager",
+  "manages",
+  "report",
+  "reports",
+  "reporting",
+  "owner",
+  "owns",
+  "owned",
+  "role",
+  "title",
+  "cto",
+  "dba"
+]);
 
 export async function retrieveContextForAnswer(root: string, query: string): Promise<ContextPackResult> {
   const vaultIndex = await loadVaultIndexOrEmpty(root);
-  const targets = identifyNamedTargets(query, vaultIndex);
+  const targets = dedupeTargets([
+    ...identifyNamedTargets(query, vaultIndex),
+    ...(await identifyRelationTargets(root, query, vaultIndex))
+  ]).sort(sortTargets);
   const pages = await loadExactPages(root, targets);
-  const reviewItems = await loadLinkedReviewAndFollowupItems(root, pages);
+  const reviewItems = await loadLinkedReviewAndFollowupItems(root, pages, { query });
   const events = await loadLatestRelevantEvents(root, pages, { query });
-  const contextPack = packContextForAnswer(query, pages, reviewItems, events);
+  const matchedPages = summarizeMatchedPages(pages, targets);
+  const activeClaims = collectPackedClaims(pages, "active");
+  const uncertainClaims = collectPackedClaims(pages, "uncertain");
+  const linkedItems = summarizeLinkedItems(reviewItems, query);
+  const evidenceEvents = summarizeEvidenceEvents(events);
+  const warnings = retrievalWarnings(query, pages, uncertainClaims, events);
+  const contextPack = packContextForAnswer(query, pages, reviewItems, events, {
+    targets,
+    matchedPages,
+    activeClaims,
+    uncertainClaims,
+    linkedItems,
+    evidenceEvents,
+    warnings
+  });
 
   return {
     query,
@@ -79,12 +181,19 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     pages,
     reviewItems,
     events,
-    contextPack
+    contextPack,
+    matchedPages,
+    activeClaims,
+    uncertainClaims,
+    linkedItems,
+    evidenceEvents,
+    warnings
   };
 }
 
 export function identifyNamedTargets(query: string, vaultIndex: VaultIndex): RetrievalTarget[] {
   const terms = queryTerms(query);
+  const normalizedQuery = normalizeName(query);
   const targets: RetrievalTarget[] = [];
 
   for (const entry of vaultIndex.entries) {
@@ -95,7 +204,9 @@ export function identifyNamedTargets(query: string, vaultIndex: VaultIndex): Ret
     }
 
     const names = targetNames(entry);
-    const matchedTerms = terms.filter((term) => names.some((name) => tokenMatchesName(term, name)));
+    const matchedNameTerms = terms.filter((term) => names.some((name) => tokenMatchesName(term, name)));
+    const matchedClaimIds = (entry.claimIds ?? []).filter((claimId) => normalizedQuery.includes(normalizeName(claimId)));
+    const matchedTerms = [...matchedNameTerms, ...matchedClaimIds];
 
     if (matchedTerms.length === 0) {
       continue;
@@ -107,11 +218,63 @@ export function identifyNamedTargets(query: string, vaultIndex: VaultIndex): Ret
       id: entry.id,
       name: displayNameFromPath(entry.path),
       matched_terms: matchedTerms,
-      score: matchedTerms.length * 10 + (entry.id ? 1 : 0)
+      score: matchedNameTerms.length * 10 + matchedClaimIds.length * 25 + (entry.id ? 1 : 0),
+      why_included: `name/id matched: ${matchedTerms.join(", ")}`
     });
   }
 
-  return dedupeTargets(targets).sort((left, right) => right.score - left.score || left.path.localeCompare(right.path));
+  return dedupeTargets(targets).sort(sortTargets);
+}
+
+async function identifyRelationTargets(root: string, query: string, vaultIndex: VaultIndex): Promise<RetrievalTarget[]> {
+  const intentTerms = relationTermsInQuery(query);
+
+  if (intentTerms.length === 0) {
+    return [];
+  }
+
+  const terms = queryTerms(query);
+  const restrictiveTerms = terms.filter((term) => !relationIntentTerms.has(term));
+  const targets: RetrievalTarget[] = [];
+  const files = await listFilesOrEmpty(root, "memory/**/*.md");
+  const indexEntriesByPath = new Map(vaultIndex.entries.map((entry) => [normalizePath(entry.path), entry]));
+
+  for (const file of files) {
+    if (!isRetrievalPagePath(file)) {
+      continue;
+    }
+
+    const page = await loadPage(root, file);
+    const matchingClaims = page.claims.filter((claim) =>
+      relationClaimMatches(claim, intentTerms, restrictiveTerms)
+    );
+
+    if (matchingClaims.length === 0) {
+      continue;
+    }
+
+    const entry = indexEntriesByPath.get(normalizePath(file));
+    const kind = entry ? targetKind(entry) : targetKind({ path: file, aliases: [], wikilinks: [], claimIds: [] });
+
+    if (!kind) {
+      continue;
+    }
+
+    targets.push({
+      kind,
+      path: normalizePath(file),
+      id: entry?.id ?? stringValue(page.frontmatter.id),
+      name: displayNameFromPath(file),
+      matched_terms: [...new Set([...intentTerms, ...restrictiveTerms])],
+      score: 30 + matchingClaims.length * 5 + restrictiveTerms.length,
+      why_included: `relation claim matched: ${matchingClaims
+        .map((claim) => stringValue(claim.fields.claim_id))
+        .filter(Boolean)
+        .join(", ")}`
+    });
+  }
+
+  return dedupeTargets(targets).sort(sortTargets);
 }
 
 export async function loadExactPages(root: string, targets: RetrievalTarget[]): Promise<LoadedRetrievalPage[]> {
@@ -130,9 +293,10 @@ export async function loadExactPages(root: string, targets: RetrievalTarget[]): 
 
 export async function loadLinkedReviewAndFollowupItems(
   root: string,
-  pages: LoadedRetrievalPage[]
+  pages: LoadedRetrievalPage[],
+  options: { query?: string } = {}
 ): Promise<LoadedRetrievalPage[]> {
-  if (pages.length === 0) {
+  if (pages.length === 0 && !isReviewLookupQuery(options.query ?? "")) {
     return [];
   }
 
@@ -147,6 +311,7 @@ export async function loadLinkedReviewAndFollowupItems(
     )
   );
   const linked: LoadedRetrievalPage[] = [];
+  const linkedPaths = new Set<string>();
   const files = await listFilesOrEmpty(root, "memory/**/*.md");
 
   for (const file of files) {
@@ -156,7 +321,15 @@ export async function loadLinkedReviewAndFollowupItems(
 
     const page = await loadPage(root, file);
 
-    if (isLinkedPage(page, pagePaths, pageIds, pageEventIds, pageClaimIds)) {
+    if (
+      isLinkedPage(page, pagePaths, pageIds, pageEventIds, pageClaimIds) ||
+      isDirectReviewLookupMatch(page, options.query ?? "")
+    ) {
+      if (linkedPaths.has(page.path)) {
+        continue;
+      }
+
+      linkedPaths.add(page.path);
       linked.push(page);
     }
   }
@@ -200,8 +373,18 @@ export function packContextForAnswer(
   query: string,
   pages: LoadedRetrievalPage[],
   reviewItems: LoadedRetrievalPage[],
-  events: LoadedRetrievalPage[]
+  events: LoadedRetrievalPage[],
+  options: {
+    targets?: RetrievalTarget[];
+    matchedPages?: PackedPageSummary[];
+    activeClaims?: PackedClaim[];
+    uncertainClaims?: PackedClaim[];
+    linkedItems?: PackedLinkedItem[];
+    evidenceEvents?: PackedEvidenceEvent[];
+    warnings?: string[];
+  } = {}
 ): string {
+  const targetByPath = new Map((options.targets ?? []).map((target) => [target.path, target]));
   const lines = [
     "# Context pack",
     "",
@@ -212,6 +395,7 @@ export function packContextForAnswer(
     "## Retrieval policy",
     "",
     "- Lexical exact-page retrieval only.",
+    "- Relation intents use deterministic claim text and claim IDs only.",
     "- GPT was not called.",
     "- Generated explanations were not saved.",
     "",
@@ -223,9 +407,18 @@ export function packContextForAnswer(
     lines.push("No named people, topics, or contexts matched.", "");
   } else {
     for (const page of pages) {
-      lines.push(...renderPackedPage(page), "");
+      lines.push(...renderPackedPage(page, targetByPath.get(page.path)), "");
     }
   }
+
+  lines.push("## Structured result summary", "");
+  lines.push(`- matched_pages: ${options.matchedPages?.length ?? pages.length}`);
+  lines.push(`- active_claims: ${options.activeClaims?.length ?? collectPackedClaims(pages, "active").length}`);
+  lines.push(
+    `- uncertain_or_staged_claims: ${options.uncertainClaims?.length ?? collectPackedClaims(pages, "uncertain").length}`
+  );
+  lines.push(`- evidence_events: ${options.evidenceEvents?.length ?? events.length}`);
+  lines.push("");
 
   lines.push("## Linked review and follow-up items", "");
 
@@ -233,7 +426,7 @@ export function packContextForAnswer(
     lines.push("No linked staged review or follow-up items found.", "");
   } else {
     for (const item of reviewItems) {
-      lines.push(...renderLinkedItem(item), "");
+      lines.push(...renderLinkedItem(item, query), "");
     }
   }
 
@@ -245,6 +438,18 @@ export function packContextForAnswer(
     for (const event of events) {
       lines.push(...renderEvent(event), "");
     }
+  }
+
+  lines.push("## No-match guidance", "");
+
+  if ((options.warnings ?? []).length === 0) {
+    lines.push("- None.", "");
+  } else {
+    for (const warning of options.warnings ?? []) {
+      lines.push(`- ${warning}`);
+    }
+
+    lines.push("");
   }
 
   return `${lines.join("\n").trimEnd()}\n`;
@@ -339,6 +544,10 @@ function dedupeTargets(targets: RetrievalTarget[]): RetrievalTarget[] {
   return [...byPath.values()];
 }
 
+function sortTargets(left: RetrievalTarget, right: RetrievalTarget): number {
+  return right.score - left.score || left.path.localeCompare(right.path);
+}
+
 function isLinkedPage(
   page: LoadedRetrievalPage,
   pagePaths: Set<string>,
@@ -364,6 +573,10 @@ function isLinkedPage(
 function shouldLoadEvents(pages: LoadedRetrievalPage[], query: string): boolean {
   const terms = queryTerms(query);
 
+  if (terms.some((term) => evidenceTerms.has(term))) {
+    return true;
+  }
+
   if (terms.some((term) => temporalTerms.has(term))) {
     return true;
   }
@@ -385,6 +598,102 @@ function highImpactClaim(claim: ParsedClaimBlockRecord): boolean {
   return kind === "commitment" || [...highImpactTerms].some((term) => statement.includes(term));
 }
 
+function relationTermsInQuery(query: string): string[] {
+  const normalized = normalizeName(query);
+  const terms = queryTerms(query);
+  const matches = new Set<string>();
+
+  for (const term of terms) {
+    if (relationIntentTerms.has(term)) {
+      matches.add(term);
+    }
+  }
+
+  if (/\breports?\s+to\b/.test(normalized)) {
+    matches.add("reports");
+  }
+
+  if (/\bmanager\b/.test(normalized)) {
+    matches.add("manager");
+  }
+
+  if (/\bowner\b|\bowns\b/.test(normalized)) {
+    matches.add("owner");
+  }
+
+  if (/\brole\b|\btitle\b/.test(normalized)) {
+    matches.add("role");
+  }
+
+  return [...matches];
+}
+
+function relationClaimMatches(
+  claim: ParsedClaimBlockRecord,
+  intentTerms: string[],
+  restrictiveTerms: string[]
+): boolean {
+  const statement = stringValue(claim.fields.statement) ?? "";
+  const claimId = stringValue(claim.fields.claim_id) ?? "";
+  const text = normalizeName(`${claimId} ${statement} ${stringValue(claim.fields.scope) ?? ""}`);
+  const matchesIntent = intentTerms.some((term) => relationTermMatchesClaim(term, text));
+
+  if (!matchesIntent) {
+    return false;
+  }
+
+  if (restrictiveTerms.length === 0) {
+    return true;
+  }
+
+  return restrictiveTerms.some((term) => text.split(/\s+/).includes(term) || text.includes(term));
+}
+
+function relationTermMatchesClaim(term: string, normalizedClaimText: string): boolean {
+  if (term === "manager" || term === "manages") {
+    return /\bmanager\b|\bmanages\b/.test(normalizedClaimText);
+  }
+
+  if (term === "report" || term === "reports" || term === "reporting") {
+    return /\breports?\s+to\b|\breporting\b/.test(normalizedClaimText);
+  }
+
+  if (term === "owner" || term === "owns" || term === "owned") {
+    return /\bowner\b|\bowns\b|\bowned\b/.test(normalizedClaimText);
+  }
+
+  if (term === "role" || term === "title" || term === "cto" || term === "dba") {
+    return /\brole\b|\btitle\b|\bcto\b|\bdba\b|\bengineer\b|\bdirector\b/.test(normalizedClaimText);
+  }
+
+  return normalizedClaimText.split(/\s+/).includes(term);
+}
+
+function isRetrievalPagePath(path: string): boolean {
+  return (
+    path.startsWith("memory/people/") ||
+    path.startsWith("memory/topics/") ||
+    path.startsWith("memory/contexts/")
+  );
+}
+
+function isReviewLookupQuery(query: string): boolean {
+  return queryTerms(query).some((term) => reviewLookupTerms.has(term));
+}
+
+function isDirectReviewLookupMatch(page: LoadedRetrievalPage, query: string): boolean {
+  const terms = queryTerms(query);
+
+  if (terms.length === 0 || !terms.some((term) => reviewLookupTerms.has(term))) {
+    return false;
+  }
+
+  const restrictiveTerms = terms.filter((term) => !reviewLookupTerms.has(term));
+  const text = normalizeName(`${frontmatterText(page.frontmatter)}\n${page.body}`);
+
+  return restrictiveTerms.length === 0 || restrictiveTerms.some((term) => text.includes(term));
+}
+
 function referencedEventIds(page: LoadedRetrievalPage): string[] {
   const ids = new Set<string>();
 
@@ -401,14 +710,138 @@ function referencedEventIds(page: LoadedRetrievalPage): string[] {
   return [...ids];
 }
 
-function renderPackedPage(page: LoadedRetrievalPage): string[] {
+function summarizeMatchedPages(pages: LoadedRetrievalPage[], targets: RetrievalTarget[]): PackedPageSummary[] {
+  const targetsByPath = new Map(targets.map((target) => [target.path, target]));
+
+  return pages.map((page) => {
+    const target = targetsByPath.get(page.path);
+
+    return {
+      path: page.path,
+      id: stringValue(page.frontmatter.id),
+      type: stringValue(page.frontmatter.type),
+      name: displayNameFromPath(page.path),
+      matchedTerms: target?.matched_terms ?? [],
+      score: target?.score ?? 0,
+      whyIncluded: target?.why_included ?? "loaded from exact target match",
+      uncertaintyMarkers: page.uncertainty_markers
+    };
+  });
+}
+
+function collectPackedClaims(pages: LoadedRetrievalPage[], mode: "active" | "uncertain"): PackedClaim[] {
+  const claims: PackedClaim[] = [];
+
+  for (const page of pages) {
+    for (const claim of page.claims) {
+      const markers = claimUncertaintyMarkers(claim);
+      const claimState = stringValue(claim.fields.claim_state) ?? "unknown";
+
+      if (mode === "active" && claimState !== "active") {
+        continue;
+      }
+
+      if (mode === "uncertain" && claimState === "active" && markers.length === 0) {
+        continue;
+      }
+
+      claims.push(toPackedClaim(page, claim, markers));
+    }
+  }
+
+  return claims;
+}
+
+function toPackedClaim(
+  page: LoadedRetrievalPage,
+  claim: ParsedClaimBlockRecord,
+  markers = claimUncertaintyMarkers(claim)
+): PackedClaim {
+  const claimId = stringValue(claim.fields.claim_id) ?? "unknown";
+
+  return {
+    page_path: page.path,
+    claim_id: claimId,
+    statement: stringValue(claim.fields.statement) ?? "<missing statement>",
+    claim_kind: stringValue(claim.fields.claim_kind) ?? "unknown",
+    claim_state: stringValue(claim.fields.claim_state) ?? "unknown",
+    scope: stringValue(claim.fields.scope) ?? null,
+    scope_state: stringValue(claim.fields.scope_state) ?? "unknown",
+    evidence: stringArrayValue(claim.fields.evidence),
+    evidence_strength: stringValue(claim.fields.evidence_strength),
+    why_included: `claim on retrieved page ${page.path}`,
+    uncertainty_markers: markers
+  };
+}
+
+function summarizeLinkedItems(items: LoadedRetrievalPage[], query: string): PackedLinkedItem[] {
+  return items.map((item) => summarizeLinkedItem(item, query));
+}
+
+function summarizeLinkedItem(page: LoadedRetrievalPage, query: string): PackedLinkedItem {
+  const directMatch = isDirectReviewLookupMatch(page, query);
+
+  return {
+    path: page.path,
+    id: stringValue(page.frontmatter.id),
+    type: stringValue(page.frontmatter.type),
+    review_state: stringValue(page.frontmatter.review_state),
+    review_reason: stringValue(page.frontmatter.review_reason),
+    followup_state: stringValue(page.frontmatter.followup_state),
+    source_events: stringArrayValue(page.frontmatter.source_events),
+    affected_files: stringArrayValue(page.frontmatter.affected_files),
+    staged_claim_ids: page.claims
+      .map((claim) => stringValue(claim.fields.claim_id))
+      .filter((claimId): claimId is string => Boolean(claimId)),
+    why_included: directMatch ? "review/follow-up query text matched this item" : "linked to retrieved page, Event, or claim",
+    uncertainty_markers: page.uncertainty_markers
+  };
+}
+
+function summarizeEvidenceEvents(events: LoadedRetrievalPage[]): PackedEvidenceEvent[] {
+  return events.map((event) => ({
+    path: event.path,
+    id: stringValue(event.frontmatter.id),
+    recorded_at: stringValue(event.frontmatter.recorded_at),
+    observed_at: stringValue(event.frontmatter.observed_at),
+    why_included: "cited by retrieved claim evidence"
+  }));
+}
+
+function retrievalWarnings(
+  query: string,
+  pages: LoadedRetrievalPage[],
+  uncertainClaims: PackedClaim[],
+  events: LoadedRetrievalPage[]
+): string[] {
+  const warnings: string[] = [];
+
+  if (pages.length === 0) {
+    warnings.push(
+      "No named people, topics, contexts, claim IDs, or deterministic relation claims matched; answer should say memory has no match."
+    );
+  }
+
+  if (uncertainClaims.length > 0) {
+    warnings.push("Some retrieved claims are staged, partial, unknown-scope, superseded, rejected, or contested.");
+  }
+
+  if (queryTerms(query).some((term) => evidenceTerms.has(term)) && events.length === 0 && pages.length > 0) {
+    warnings.push("The query asks for source evidence, but no cited Event page was loaded.");
+  }
+
+  return warnings;
+}
+
+function renderPackedPage(page: LoadedRetrievalPage, target?: RetrievalTarget): string[] {
   const activeClaims = page.claims.filter((claim) => claim.fields.claim_state === "active");
   const otherClaims = page.claims.filter((claim) => claim.fields.claim_state !== "active");
   const lines = [
     `### ${page.path}`,
     "",
     `- id: ${stringValue(page.frontmatter.id) ?? "unknown"}`,
-    `- type: ${stringValue(page.frontmatter.type) ?? "unknown"}`
+    `- type: ${stringValue(page.frontmatter.type) ?? "unknown"}`,
+    `- why_included: ${target?.why_included ?? "loaded from exact target match"}`
   ];
 
   if (page.uncertainty_markers.length > 0) {
@@ -430,21 +863,39 @@ function renderPackedPage(page: LoadedRetrievalPage): string[] {
   return lines;
 }
 
-function renderLinkedItem(page: LoadedRetrievalPage): string[] {
+function renderLinkedItem(page: LoadedRetrievalPage, query: string): string[] {
+  const summary = summarizeLinkedItem(page, query);
   const lines = [
     `### ${page.path}`,
     "",
-    `- id: ${stringValue(page.frontmatter.id) ?? "unknown"}`,
-    `- type: ${stringValue(page.frontmatter.type) ?? "unknown"}`,
-    `- review_state: ${stringValue(page.frontmatter.review_state) ?? "unknown"}`
+    `- id: ${summary.id ?? "unknown"}`,
+    `- type: ${summary.type ?? "unknown"}`,
+    `- review_state: ${summary.review_state ?? "unknown"}`,
+    `- why_included: ${summary.why_included}`
   ];
 
-  if (page.frontmatter.followup_state) {
-    lines.push(`- followup_state: ${String(page.frontmatter.followup_state)}`);
+  if (summary.review_reason) {
+    lines.push(`- review_reason: ${summary.review_reason}`);
   }
 
-  if (page.uncertainty_markers.length > 0) {
-    lines.push(`- uncertainty: ${page.uncertainty_markers.join("; ")}`);
+  if (summary.followup_state) {
+    lines.push(`- followup_state: ${summary.followup_state}`);
+  }
+
+  if (summary.source_events.length > 0) {
+    lines.push(`- source_events: ${summary.source_events.join(", ")}`);
+  }
+
+  if (summary.affected_files.length > 0) {
+    lines.push(`- affected_files: ${summary.affected_files.join(", ")}`);
+  }
+
+  if (summary.staged_claim_ids.length > 0) {
+    lines.push(`- staged_claim_ids: ${summary.staged_claim_ids.join(", ")}`);
+  }
+
+  if (summary.uncertainty_markers.length > 0) {
+    lines.push(`- uncertainty: ${summary.uncertainty_markers.join("; ")}`);
   }
 
   return lines;
@@ -457,6 +908,7 @@ function renderEvent(page: LoadedRetrievalPage): string[] {
     `- id: ${stringValue(page.frontmatter.id) ?? "unknown"}`,
     `- recorded_at: ${stringValue(page.frontmatter.recorded_at) ?? "unknown"}`,
     `- observed_at: ${stringValue(page.frontmatter.observed_at) ?? "unknown"}`,
+    "- why_included: cited by retrieved claim evidence",
     "",
     firstSectionOrBody(page.body, "Raw text")
   ];
@@ -466,8 +918,14 @@ function renderClaimLine(claim: ParsedClaimBlockRecord): string {
   const statement = stringValue(claim.fields.statement) ?? "<missing statement>";
   const markers = claimUncertaintyMarkers(claim);
   const suffix = markers.length > 0 ? ` [uncertain: ${markers.join(", ")}]` : "";
+  const claimId = stringValue(claim.fields.claim_id) ?? "unknown";
+  const claimKind = stringValue(claim.fields.claim_kind) ?? "unknown";
+  const claimState = stringValue(claim.fields.claim_state) ?? "unknown";
+  const scope = stringValue(claim.fields.scope) ?? "null";
+  const scopeState = stringValue(claim.fields.scope_state) ?? "unknown";
+  const evidence = stringArrayValue(claim.fields.evidence).join(", ") || "none";
 
-  return `- ${statement}${suffix}`;
+  return `- ${statement} (claim_id: ${claimId}; claim_kind: ${claimKind}; claim_state: ${claimState}; scope: ${scope}; scope_state: ${scopeState}; evidence: ${evidence})${suffix}`;
 }
 
 function uncertaintyMarkers(frontmatter: Frontmatter, claims: ParsedClaimBlockRecord[]): string[] {

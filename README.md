@@ -323,6 +323,11 @@ wm_show_transaction
 wm_apply_transaction
 wm_reject_transaction
 wm_review_inbox
+wm_list_review_items
+wm_show_review_item
+wm_mark_review_item
+wm_review_apply_staged
+wm_events_reprocess
 wm_pack_context
 wm_lint
 ```
@@ -332,13 +337,17 @@ It registers these commands:
 ```text
 /wm-ingest
 /wm-review
+/wm-review-show
+/wm-review-mark
+/wm-review-apply
+/wm-event-reprocess
 /wm-apply
 /wm-ask
 /wm-validate
 /wm-lint
 ```
 
-The wrapper preserves MVP transaction invariants. Direct writes to `memory/people/`, `memory/topics/`, `memory/contexts/`, and `memory/followups/` are blocked unless invoked through `wm_apply_transaction`; `.obsidian/` writes are blocked; writes outside `memory/` and `.pi/` produce warnings. It does not implement MCP, vector search, separate memory semantics, or autonomous background linting.
+The wrapper preserves MVP transaction invariants. Direct writes to `memory/people/`, `memory/topics/`, `memory/contexts/`, and `memory/followups/` are blocked unless invoked through `wm_apply_transaction`; `.obsidian/` writes are blocked; writes outside `memory/` and `.pi/` produce warnings. Review apply and Event reprocess commands create pending Transactions only. It does not implement MCP, vector search, separate memory semantics, or autonomous background linting.
 
 ## Pi prompt templates
 
