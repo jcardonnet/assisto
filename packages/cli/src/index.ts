@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
   listReviewItems,
@@ -22,6 +23,7 @@ import {
   type ValidationResult
 } from "@assisto/core";
 import { ingestWithExtractionProvider, LlmExtractionProvider } from "../../core/src/extraction";
+import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
 import { retrieveContextForAnswer } from "../../core/src/retrieval";
 
@@ -69,6 +71,10 @@ export async function main(
 
     if (command === "review") {
       return await commandReview(parsed.root, rest, io);
+    }
+
+    if (command === "events") {
+      return await commandEvents(parsed.root, rest, io);
     }
 
     if (command === "ask") {
@@ -267,6 +273,31 @@ async function commandReview(root: string, args: string[], io: CliIo): Promise<n
     return 0;
   }
 
+  if (subcommand === "apply-staged") {
+    if (!idOrPath) {
+      throw new Error(
+        'Usage: wm review apply-staged <id|path> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]'
+      );
+    }
+
+    const target = optionValue(args, "--target");
+
+    if (!target) {
+      throw new Error("wm review apply-staged requires --target <id|path>.");
+    }
+
+    const result = await createReviewApplyTransaction(root, idOrPath, {
+      target,
+      context: optionValue(args, "--context") ?? undefined,
+      createContext: optionValue(args, "--create-context") ?? undefined,
+      supersede: optionValue(args, "--supersede") ?? undefined,
+      note: optionValue(args, "--note") ?? undefined
+    });
+    io.stdout(`Pending review apply transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+    io.stdout(`Review item: ${result.review_id} (${result.review_path})\n`);
+    return 0;
+  }
+
   if (subcommand === "mark" || isReviewActionState(subcommand)) {
     const target = subcommand === "mark" ? idOrPath : idOrPath;
     const state = subcommand === "mark" ? optionValue(args, "--state") : subcommand;
@@ -283,8 +314,27 @@ async function commandReview(root: string, args: string[], io: CliIo): Promise<n
   }
 
   throw new Error(
-    "Usage: wm review <list|inbox|show|mark|reviewed|contested|archived> [id|path] [--state <state>] [--note <text>]"
+    "Usage: wm review <list|inbox|show|mark|apply-staged|reviewed|contested|archived> [id|path] [--state <state>] [--note <text>]"
   );
+}
+
+async function commandEvents(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand, idOrPath] = args;
+
+  if (subcommand !== "reprocess" || !idOrPath || !args.includes("--stage-only")) {
+    throw new Error("Usage: wm events reprocess <event-id|path> --stage-only");
+  }
+
+  const result = await reprocessEvent(root, idOrPath);
+
+  io.stdout(`Event: ${result.event_id} (${result.event_path})\n`);
+  io.stdout(`Pending reprocess transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+
+  if (result.staged_review_paths.length > 0) {
+    io.stdout(`Staged review proposals: ${result.staged_review_paths.join(", ")}\n`);
+  }
+
+  return 0;
 }
 
 async function commandAsk(root: string, args: string[], io: CliIo): Promise<number> {
@@ -438,6 +488,8 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",
       "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",
+      '  wm [--root <path>] review apply-staged <id|path> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]',
+      "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
       ""
     ].join("\n")

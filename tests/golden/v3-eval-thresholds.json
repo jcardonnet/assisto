@@ -1,0 +1,8 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "unscopedActiveClaimsMax": 0,
+  "falseMergesMax": 0,
+  "silentRoleOrReportingOverwritesMax": 0,
+  "reviewApplySuccessMin": 1,
+  "eventReprocessSuccessMin": 1
+}

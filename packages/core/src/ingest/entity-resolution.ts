@@ -16,6 +16,7 @@ import {
 interface ExistingEntity extends EntityResolutionCandidate {
   path: string;
   kind: CandidateEntityKind;
+  claimIds: string[];
 }
 
 export function resolveDetectorProposals(
@@ -40,6 +41,7 @@ function resolveClaimProposal(
     slug,
     id: matched?.id,
     path: matched?.path,
+    existingClaimIds: matched?.claimIds ?? [],
     resolutionState,
     resolutionReason:
       resolutionState === resolution.state
@@ -79,6 +81,7 @@ function entityForProposal(
     slug: string;
     id?: string;
     path?: string;
+    existingClaimIds?: string[];
     resolutionState: ResolvedEntity["resolution_state"];
     resolutionReason: string;
   }
@@ -91,6 +94,7 @@ function entityForProposal(
     id: input.id ?? idForEntity(proposal.entity_kind, slug),
     slug,
     path: input.path ?? pathForEntity(proposal.entity_kind, slug),
+    existing_claim_ids: input.existingClaimIds ?? [],
     resolution_state: input.resolutionState,
     resolution_reason: input.resolutionReason
   };
@@ -106,6 +110,7 @@ function existingEntitiesForKind(index: VaultIndex, kind: CandidateEntityKind): 
       id: entry.id,
       name: entityNameFromPath(entry.path),
       aliases: entry.aliases,
+      claimIds: entry.claimIds,
       path: entry.path,
       kind
     }));

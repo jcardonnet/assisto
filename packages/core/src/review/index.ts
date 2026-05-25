@@ -1,5 +1,7 @@
 import {
+  parseClaimBlocks,
   parseMarkdownFile,
+  replaceSection,
   serializeMarkdownFile,
   type Frontmatter,
   type FrontmatterValue,
@@ -14,6 +16,9 @@ import {
   type ParsedTransaction
 } from "../transactions";
 import { loadVaultIndex, type VaultIndex } from "../vault";
+import type { ClaimBlock } from "../model";
+import { mergeProposedWritesWithExistingPages, renderClaimPageBody } from "../ingest/page-upsert";
+import { slugify } from "../ingest/candidates";
 
 export type ReviewActionState = "reviewed" | "contested" | "archived";
 
@@ -41,6 +46,15 @@ export interface ReviewStateTransactionResult {
   transaction: ParsedTransaction;
   review_path: string;
   review_id: string;
+}
+
+export interface CreateReviewApplyTransactionOptions {
+  target: string;
+  context?: string;
+  createContext?: string;
+  supersede?: string;
+  now?: string;
+  note?: string;
 }
 
 const defaultNow = "2026-05-21T12:00:00-03:00";
@@ -125,6 +139,100 @@ export async function createReviewStateTransaction(
   };
 }
 
+export async function createReviewApplyTransaction(
+  root: string,
+  idOrPath: string,
+  options: CreateReviewApplyTransactionOptions
+): Promise<ReviewStateTransactionResult> {
+  const now = options.now ?? defaultNow;
+  const found = await showReviewItem(root, idOrPath);
+  const index = await loadIndexOrEmpty(root);
+  const stagedClaim = parseClaimBlocks(found.parsed.body)[0];
+
+  if (!stagedClaim) {
+    throw new Error(`Review item has no staged claim block: ${idOrPath}`);
+  }
+
+  if (options.context && options.createContext) {
+    throw new Error("Use either --context or --create-context, not both.");
+  }
+
+  const contextResolution = options.createContext
+    ? createContextResolution(options.createContext)
+    : options.context
+      ? resolveExistingContext(index, options.context)
+      : null;
+  const claim = applyReviewClaimResolution(stagedClaim, contextResolution?.id ?? null);
+
+  if (claim.scope_state === "unknown") {
+    throw new Error("Applying an unknown-scope claim requires --context or --create-context.");
+  }
+
+  const target = resolveTarget(index, options.target, claim);
+  const targetWrite = renderTargetWrite(target, claim, now);
+  const contextWrite = contextResolution?.write
+    ? {
+        path: contextResolution.write.path,
+        content: renderContextPage(contextResolution.id, contextResolution.name, now, claim.evidence)
+      }
+    : null;
+  const nextReviewFrontmatter: Frontmatter = {
+    ...found.parsed.frontmatter,
+    object_state: "active",
+    review_state: "reviewed"
+  };
+  const reviewWrite = {
+    path: found.path,
+    content: serializeMarkdownFile(
+      nextReviewFrontmatter,
+      appendReviewNote(removeStagedClaimBlocks(found.parsed.body, claim.claim_id), now, "reviewed", options.note)
+    )
+  };
+  const mergedTargetWrites = await mergeProposedWritesWithExistingPages(root, [targetWrite], {
+    supersedeClaimIds: options.supersede ? [options.supersede] : []
+  });
+  const writes = [...(contextWrite ? [contextWrite] : []), ...mergedTargetWrites, reviewWrite];
+  const dateIdPart = now.slice(0, 10).replace(/-/g, "_");
+  const transactionId = `tx_${dateIdPart}_${nextSequence(dateIdPart, index)}`;
+  const operations = [
+    ...(options.supersede
+      ? [{ operation: "SUPERSEDE_CLAIM" as const, description: `supersede ${options.supersede}` }]
+      : []),
+    { operation: "UPSERT_CLAIM" as const, description: `apply staged claim ${claim.claim_id}` },
+    { operation: "STAGE_REVIEW" as const, description: `mark ${stripMemoryPrefix(found.path)} reviewed` }
+  ];
+  const transaction = createTransactionDraft({
+    id: transactionId,
+    created_at: now,
+    source_events: claim.evidence,
+    operations,
+    affected_files: writes.map((write) => stripMemoryPrefix(write.path)),
+    risk_level: options.supersede ? "medium" : "low",
+    requires_review: false,
+    rollback_notes:
+      "If this reviewed application is wrong, create a new review transaction that stages the corrected claim or supersedes the applied claim.",
+    intent: `Apply staged review item ${found.id} to ${stripMemoryPrefix(target.path)}.`,
+    proposed_file_writes: writes
+  });
+  const validation = await validateTransaction(root, transaction);
+
+  if (!validation.passed) {
+    throw new Error(
+      `Review apply transaction validation failed: ${validation.errors.map((error) => error.code).join(", ")}`
+    );
+  }
+
+  await writeMarkdownPageAtomic(root, transactionFilePaths.pending(transactionId), serializeTransactionMarkdown(transaction));
+
+  return {
+    transaction_id: transactionId,
+    transaction_path: transactionFilePaths.pending(transactionId),
+    transaction,
+    review_path: found.path,
+    review_id: found.id
+  };
+}
+
 async function findReviewItem(root: string, idOrPath: string): Promise<ReviewItemDetail | null> {
   const normalized = normalizeReviewPath(idOrPath);
   const files = await listReviewFiles(root);
@@ -188,6 +296,119 @@ function appendReviewNote(body: string, now: string, state: ReviewActionState, n
   return `${body.trimEnd()}\n\n## Review notes\n\n${line}\n`;
 }
 
+function removeStagedClaimBlocks(body: string, claimId: string): string {
+  return replaceSection(body, "Staged claims", `Applied claim: ${claimId}`);
+}
+
+function applyReviewClaimResolution(claim: ClaimBlock, contextId: string | null): ClaimBlock {
+  if (!contextId) {
+    return {
+      ...claim,
+      claim_state: "active"
+    };
+  }
+
+  return {
+    ...claim,
+    claim_state: "active",
+    scope: contextId,
+    scope_state: "complete"
+  };
+}
+
+function createContextResolution(name: string): { id: string; name: string; write: { path: string } } {
+  const normalizedName = name.trim().replace(/\s+/g, " ");
+  const slug = slugify(normalizedName);
+
+  if (!slug) {
+    throw new Error("--create-context requires a non-empty context name.");
+  }
+
+  return {
+    id: `ctx_${slug.replace(/-/g, "_")}`,
+    name: normalizedName,
+    write: {
+      path: `memory/contexts/${slug}.md`
+    }
+  };
+}
+
+function resolveExistingContext(index: VaultIndex, idOrPath: string): { id: string; name: string; write: null } {
+  const normalized = normalizePath(idOrPath);
+  const path = index.ids.get(idOrPath) ?? (normalized.startsWith("memory/") ? normalized : `memory/${normalized}`);
+  const entry = index.entries.find((candidate) => candidate.path === path || candidate.id === idOrPath);
+
+  if (!entry?.id || entry.type !== "context") {
+    throw new Error(`Context not found: ${idOrPath}`);
+  }
+
+  return {
+    id: entry.id,
+    name: titleFromPath(entry.path),
+    write: null
+  };
+}
+
+function resolveTarget(
+  index: VaultIndex,
+  target: string,
+  claim: ClaimBlock
+): { path: string; id: string; type: "person" | "topic"; title: string } {
+  const normalized = normalizePath(target);
+  const path = index.ids.get(target) ?? (normalized.startsWith("memory/") ? normalized : `memory/${normalized}`);
+  const type = path.includes("/people/") ? "person" : "topic";
+  const slug = path.split("/").pop()?.replace(/\.md$/i, "") ?? slugify(claim.claim_id);
+  const existing = index.entries.find((entry) => entry.path === path);
+
+  return {
+    path,
+    id: existing?.id ?? `${type === "person" ? "per" : "top"}_${slug.replace(/-/g, "_")}`,
+    type,
+    title: `# ${titleFromPath(path)}`
+  };
+}
+
+function renderTargetWrite(
+  target: { path: string; id: string; type: "person" | "topic"; title: string },
+  claim: ClaimBlock,
+  now: string
+): { path: string; content: string } {
+  const frontmatter: Frontmatter = {
+    id: target.id,
+    type: target.type,
+    object_state: "active",
+    review_state: "reviewed",
+    created_at: now,
+    updated_at: now,
+    aliases: [],
+    source_events: claim.evidence,
+    related: [],
+    summary_generated_from: [claim.claim_id]
+  };
+
+  return {
+    path: target.path,
+    content: serializeMarkdownFile(frontmatter, renderClaimPageBody(target.title, claim.statement, [claim]))
+  };
+}
+
+function renderContextPage(id: string, name: string, now: string, sourceEvents: string[]): string {
+  const frontmatter: Frontmatter = {
+    id,
+    type: "context",
+    object_state: "active",
+    review_state: "reviewed",
+    created_at: now,
+    updated_at: now,
+    aliases: [],
+    source_events: sourceEvents,
+    related: []
+  };
+  const body = `# ${name}`;
+
+  return serializeMarkdownFile(frontmatter, body);
+}
+
 async function loadIndexOrEmpty(root: string): Promise<VaultIndex> {
   try {
     return await loadVaultIndex(root);
@@ -234,6 +455,19 @@ function normalizeReviewPath(value: string): string {
 
 function normalizePath(value: string): string {
   return value.replace(/\\/g, "/").trim();
+}
+
+function titleFromPath(value: string): string {
+  return (
+    normalizePath(value)
+      .split("/")
+      .pop()
+      ?.replace(/\.md$/i, "")
+      .split("-")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") ?? "Memory Page"
+  );
 }
 
 function stripMemoryPrefix(path: string): string {

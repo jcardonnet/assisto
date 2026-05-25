@@ -14,14 +14,23 @@ function context(note) {
   };
 }
 
-function index(entries = []) {
+function index(input = []) {
+  const entries = Array.isArray(input) ? input : input.entries ?? [];
+
   return {
     entries,
     ids: new Map(entries.flatMap((entry) => (entry.id ? [[entry.id, entry.path]] : []))),
     paths: new Set(entries.map((entry) => entry.path)),
     wikilinks: new Map(entries.map((entry) => [entry.path, entry.wikilinks ?? []])),
     eventIds: new Set(),
-    claimIds: new Map(),
+    claimIds:
+      Array.isArray(input) || !input.claimIds
+        ? new Map(
+            entries.flatMap((entry) =>
+              (entry.claimIds ?? []).map((claimId) => [claimId, entry.path])
+            )
+          )
+        : input.claimIds,
     transactionIds: new Set()
   };
 }
@@ -136,4 +145,62 @@ export async function runCoreIngestPipelineTests() {
   assert.equal(ambiguousDraft.writes.some((write) => write.path === "memory/people/joe.md"), false);
   assert.equal(ambiguousDraft.writes.some((write) => write.path.startsWith("memory/review/")), true);
   assert.match(ambiguousDraft.writes.map((write) => write.content).join("\n"), /ambiguous entity resolution/);
+
+  const orgChartContext = context(
+    "Kuastav, the Sr. Director of Software Engineering, is my manager. He reports to Jeff, the CTO."
+  );
+  const orgChartProposals = detectors.detectCandidateProposals(orgChartContext);
+
+  assert.deepEqual(
+    orgChartProposals
+      .filter((proposal) => proposal.kind === "claim")
+      .map((proposal) => proposal.claim_id),
+    [
+      "clm_kuastav_manager",
+      "clm_kuastav_role_sr_director_of_software_engineering",
+      "clm_kuastav_reports_to_jeff",
+      "clm_jeff_role_cto"
+    ]
+  );
+
+  const orgChartDraft = builder.buildIngestExtractionDraft(
+    orgChartContext,
+    entityResolution.resolveDetectorProposals(orgChartProposals, index())
+  );
+  const kuastavPage = orgChartDraft.writes.find((write) => write.path === "memory/people/kuastav.md")?.content ?? "";
+  const jeffPage = orgChartDraft.writes.find((write) => write.path === "memory/people/jeff.md")?.content ?? "";
+
+  assert.match(kuastavPage, /Kuastav is my manager\./);
+  assert.match(kuastavPage, /Kuastav is the Sr\. Director of Software Engineering\./);
+  assert.match(kuastavPage, /Kuastav reports to Jeff\./);
+  assert.match(kuastavPage, /evidence: \[ev_2026_05_20_001\]/);
+  assert.match(jeffPage, /Jeff is the CTO\./);
+
+  const reportingConflictIndex = index({
+    entries: [
+      {
+        path: "memory/people/kuastav.md",
+        id: "per_kuastav",
+        type: "person",
+        aliases: [],
+        wikilinks: [],
+        claimIds: ["clm_kuastav_reports_to_jeff"]
+      }
+    ],
+    claimIds: new Map([["clm_kuastav_reports_to_jeff", "memory/people/kuastav.md"]])
+  });
+  const reportingConflictContext = context("Kuastav reports to Alice.");
+  const reportingConflictDraft = builder.buildIngestExtractionDraft(
+    reportingConflictContext,
+    entityResolution.resolveDetectorProposals(
+      detectors.detectCandidateProposals(reportingConflictContext),
+      reportingConflictIndex
+    )
+  );
+
+  assert.equal(reportingConflictDraft.writes.some((write) => write.path === "memory/people/kuastav.md"), false);
+  assert.match(
+    reportingConflictDraft.writes.map((write) => write.content).join("\n"),
+    /review_reason: reporting_change/
+  );
 }

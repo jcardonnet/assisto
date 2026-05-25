@@ -59,6 +59,43 @@ pnpm eval:mvp
 pnpm eval:v2
 ```
 
+## v3 implementation track
+
+v3 keeps the MVP safety model and hardens deterministic real-work behavior.
+
+Current v3 scope:
+
+- schema markdown mirrors the actual validator rules;
+- org-chart extraction covers manager, title, and reports-to statements;
+- current-page writes preserve existing claims, aliases, related links, and source Events;
+- repeated claim IDs are deduped instead of appended;
+- role/reporting changes stage ReviewItems instead of silently changing current pages;
+- staged ReviewItems can be applied through a new pending Transaction;
+- existing Events can be reprocessed into a new pending Transaction without rewriting raw Event text;
+- `pnpm eval:v3` checks deterministic hardening metrics.
+
+Still deferred:
+
+- live LLM client wiring;
+- vector search;
+- graph database;
+- MCP integration;
+- autonomous merges;
+- autonomous contradiction resolution;
+- full transcript ingestion.
+
+Validation for v3 behavior changes:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm eval:mvp
+pnpm eval:v2
+pnpm eval:v3
+```
+
 ---
 
 ## Principles for using Codex

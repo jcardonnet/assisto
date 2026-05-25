@@ -77,6 +77,7 @@ export function detectCandidateProposals(context: IngestPipelineContext): Detect
     proposals.push(mysqlClaim);
   }
 
+  proposals.push(...detectOrgChartClaims(context, spans));
   proposals.push(...detectMikeProfileClaims(context, spans));
 
   const discussionClaim = detectDiscussionClaim(context, spans);
@@ -231,22 +232,6 @@ function detectMikeProfileClaims(
   const claims: ExtractedClaimCandidate[] = [];
   const mikePattern = /\bmike\b/i;
 
-  if (/\bmike\s+is\s+my\s+manager\b/i.test(context.note)) {
-    claims.push({
-      kind: "claim",
-      source_text: sourceTextForPattern(spans, /\bmike\s+is\s+my\s+manager\b/i),
-      entity_kind: "person",
-      entity_name: "Mike",
-      claim_id: "clm_mike_manager",
-      statement: "Mike is my manager.",
-      claim_kind: "fact",
-      evidence_strength: "explicit",
-      scope: "current-work-context",
-      scope_state: "partial",
-      page_summary: "Mike is my manager."
-    });
-  }
-
   if (/\bgeneralist\b/i.test(context.note) && /\bjava\b/i.test(context.note)) {
     claims.push({
       kind: "claim",
@@ -311,6 +296,147 @@ function detectMikeProfileClaims(
   }
 
   return claims;
+}
+
+function detectOrgChartClaims(
+  context: IngestPipelineContext,
+  spans: CandidateSpan[]
+): ExtractedClaimCandidate[] {
+  const claims: ExtractedClaimCandidate[] = [];
+  const recentPeople: string[] = [];
+  const managerPattern =
+    /\b(?<name>[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*)*)\s*(?:,\s*the\s+(?<title>[^,.!?]+(?:\.[^,.!?]+)?[^,.!?]*?)\s*,)?\s+is\s+my\s+manager\b/g;
+  let managerMatch: RegExpExecArray | null;
+
+  while ((managerMatch = managerPattern.exec(context.note)) !== null) {
+    const name = normalizePersonName(managerMatch.groups?.name ?? "");
+    const title = normalizeTitle(managerMatch.groups?.title ?? "");
+
+    if (!name) {
+      continue;
+    }
+
+    recentPeople.push(name);
+    claims.push(personFactClaim(spans, orgChartSourcePattern(name), {
+      entityName: name,
+      claimId: `clm_${idSlug(name)}_manager`,
+      statement: `${name} is my manager.`,
+      summary: `${name} is my manager.`
+    }));
+
+    if (title) {
+      claims.push(personRoleClaim(spans, name, title, orgChartSourcePattern(name)));
+    }
+  }
+
+  const reportsPattern =
+    /\b(?<subject>[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*)*|He|She|They|he|she|they)\s+reports\s+to\s+(?<manager>[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*)*)\s*(?:,\s*the\s+(?<managerTitle>[^,.!?]+(?:\.[^,.!?]+)?[^,.!?]*?))?(?:[.?!]|$)/g;
+  let reportsMatch: RegExpExecArray | null;
+
+  while ((reportsMatch = reportsPattern.exec(context.note)) !== null) {
+    const rawSubject = reportsMatch.groups?.subject ?? "";
+    const rawManager = reportsMatch.groups?.manager ?? "";
+    const subject = resolvePronoun(rawSubject, recentPeople);
+    const manager = /^[A-Z]/.test(rawManager) ? normalizePersonName(rawManager) : "";
+    const managerTitle = normalizeTitle(reportsMatch.groups?.managerTitle ?? "");
+
+    if (!subject || !manager) {
+      continue;
+    }
+
+    recentPeople.push(subject, manager);
+    claims.push(personFactClaim(spans, orgChartSourcePattern(subject), {
+      entityName: subject,
+      claimId: `clm_${idSlug(subject)}_reports_to_${idSlug(manager)}`,
+      statement: `${subject} reports to ${manager}.`,
+      summary: `${subject} reports to ${manager}.`
+    }));
+
+    if (managerTitle) {
+      claims.push(personRoleClaim(spans, manager, managerTitle, orgChartSourcePattern(manager)));
+    }
+  }
+
+  return dedupeClaims(claims);
+}
+
+function personFactClaim(
+  spans: CandidateSpan[],
+  sourcePattern: RegExp,
+  input: {
+    entityName: string;
+    claimId: string;
+    statement: string;
+    summary: string;
+  }
+): ExtractedClaimCandidate {
+  return {
+    kind: "claim",
+    source_text: sourceTextForPattern(spans, sourcePattern),
+    entity_kind: "person",
+    entity_name: input.entityName,
+    claim_id: input.claimId,
+    statement: input.statement,
+    claim_kind: "fact",
+    evidence_strength: "explicit",
+    scope: "current-work-context",
+    scope_state: "partial",
+    page_summary: input.summary
+  };
+}
+
+function personRoleClaim(
+  spans: CandidateSpan[],
+  name: string,
+  title: string,
+  sourcePattern: RegExp
+): ExtractedClaimCandidate {
+  return personFactClaim(spans, sourcePattern, {
+    entityName: name,
+    claimId: `clm_${idSlug(name)}_role_${idSlug(title)}`,
+    statement: `${name} is the ${title}.`,
+    summary: `${name} is the ${title}.`
+  });
+}
+
+function normalizePersonName(value: string): string {
+  return normalizePhrase(value).replace(/\s+/g, " ");
+}
+
+function normalizeTitle(value: string): string {
+  return normalizePhrase(value).replace(/\s+/g, " ");
+}
+
+function resolvePronoun(value: string, recentPeople: string[]): string {
+  if (/^(he|she|they)$/i.test(value)) {
+    return recentPeople.at(-1) ?? "";
+  }
+
+  if (!/^[A-Z]/.test(value)) {
+    return "";
+  }
+
+  return normalizePersonName(value);
+}
+
+function orgChartSourcePattern(name: string): RegExp {
+  return new RegExp(`\\b${escapeRegExp(name.split(" ")[0] ?? name)}\\b`, "i");
+}
+
+function dedupeClaims(claims: ExtractedClaimCandidate[]): ExtractedClaimCandidate[] {
+  const seen = new Set<string>();
+  const deduped: ExtractedClaimCandidate[] = [];
+
+  for (const claim of claims) {
+    if (seen.has(claim.claim_id)) {
+      continue;
+    }
+
+    seen.add(claim.claim_id);
+    deduped.push(claim);
+  }
+
+  return deduped;
 }
 
 function detectDiscussionClaim(
