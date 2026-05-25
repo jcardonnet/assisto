@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { loadTsModule } from "./ts-module-loader.mjs";
 import { makeTempVault, readVaultFile, writeVaultFile } from "./helpers/temp-vault.mjs";
 
@@ -144,15 +144,25 @@ Jeff is my manager.
 
 export async function runWorkbenchTests() {
   const workbench = await loadTsModule("packages/workbench/src/index.ts");
+  const cliSource = await readFile("packages/cli/src/index.ts", "utf8");
+  const workbenchPackage = JSON.parse(await readFile("packages/workbench/package.json", "utf8"));
+  const cliPackage = JSON.parse(await readFile("packages/cli/package.json", "utf8"));
+
+  assert.match(cliSource, /from "@assisto\/workbench"/);
+  assert.equal(workbenchPackage.dependencies["@assisto/core"], "workspace:*");
+  assert.equal(cliPackage.dependencies["@assisto/workbench"], "workspace:*");
+
   const root = await makeTempVault("assisto-workbench-");
 
   try {
     await writeWorkbenchFixture(root);
     const beforePersonPage = await readVaultFile(root, "memory/people/jeff.md");
     const snapshot = await workbench.createWorkbenchSnapshot(root, {
-      query: "Who is my manager?"
+      query: "Who is my manager?",
+      now: "2026-05-25T12:34:56.000Z"
     });
 
+    assert.equal(snapshot.generated_at, "2026-05-25T12:34:56.000Z");
     assert.equal(snapshot.review.items.length, 1);
     assert.equal(snapshot.review.items[0].id, "rev_mysql_scope");
     assert.equal(snapshot.transactions.items.length, 1);
@@ -175,12 +185,33 @@ export async function runWorkbenchTests() {
     const review = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/review" })).body);
     assert.equal(review.items[0].id, "rev_mysql_scope");
 
+    const routeSnapshot = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/snapshot" })).body
+    );
+    assert.equal(routeSnapshot.health, null);
+
     const ask = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask?q=Who%20is%20my%20manager%3F" }))
         .body
     );
     assert.equal(ask.query, "Who is my manager?");
     assert.equal(ask.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+
+    const askWithoutQuery = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask" });
+    assert.equal(askWithoutQuery.status, 400);
+
+    await writeVaultFile(root, "memory/followups/broken.md", "---\nid: fu_broken\n");
+    await writeVaultFile(root, "memory/topics/broken.md", "---\nid: top_broken\n");
+
+    const followups = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/followups" })).body
+    );
+    assert.equal(followups.items.length, 1);
+    assert.equal(followups.warnings.some((warning) => warning.path === "memory/followups/broken.md"), true);
+
+    const health = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/health" })).body);
+    assert.equal(health.counts.pending_transactions, 1);
+    assert.equal(health.warnings.some((warning) => /memory\/topics\/broken\.md/.test(warning)), true);
 
     const readOnly = await workbench.handleWorkbenchRoute(root, { method: "POST", url: "/api/review" });
     assert.equal(readOnly.status, 405);

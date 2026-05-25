@@ -7,3 +7,4 @@ export * from "./transactions";
 export * from "./policies";
 export * from "./ingest";
 export * from "./review";
+export * from "./retrieval";

@@ -7,18 +7,17 @@ import {
   parseTransactionMarkdown,
   readMarkdownPage,
   showReviewItem,
+  retrieveContextForAnswer,
+  type ContextPackResult,
   type Frontmatter,
   type FrontmatterValue,
-  type ParsedClaimBlockRecord,
   type ReviewItemSummary
-} from "../../core/src/index";
-import {
-  retrieveContextForAnswer,
-  type ContextPackResult
-} from "../../core/src/retrieval";
+} from "@assisto/core";
 
 export interface WorkbenchSnapshotOptions {
   query?: string;
+  includeHealth?: boolean;
+  now?: string;
 }
 
 export interface WorkbenchSnapshot {
@@ -26,7 +25,7 @@ export interface WorkbenchSnapshot {
   review: WorkbenchReviewInbox;
   transactions: WorkbenchTransactionList;
   followups: WorkbenchFollowupList;
-  health: WorkbenchHealthSummary;
+  health: WorkbenchHealthSummary | null;
   ask: ContextPackResult | null;
 }
 
@@ -64,6 +63,7 @@ export interface WorkbenchTransactionSummary {
 
 export interface WorkbenchFollowupList {
   items: WorkbenchFollowupSummary[];
+  warnings: WorkbenchReadWarning[];
 }
 
 export interface WorkbenchFollowupSummary {
@@ -91,6 +91,11 @@ export interface WorkbenchHealthSummary {
   warnings: string[];
 }
 
+export interface WorkbenchReadWarning {
+  path: string;
+  message: string;
+}
+
 export interface WorkbenchServerOptions {
   root: string;
   host?: string;
@@ -116,32 +121,37 @@ export interface RunningWorkbenchServer {
   close: () => Promise<void>;
 }
 
-interface ParsedPageSummary {
+interface PageSummary {
   path: string;
   frontmatter: Frontmatter;
-  claims: ParsedClaimBlockRecord[];
 }
 
-const defaultGeneratedAt = "2026-05-25T00:00:00.000Z";
+interface PageSummaryResult {
+  pages: PageSummary[];
+  warnings: WorkbenchReadWarning[];
+}
 
 export async function createWorkbenchSnapshot(
   root: string,
   options: WorkbenchSnapshotOptions = {}
 ): Promise<WorkbenchSnapshot> {
-  const [review, transactions, followups, pageSummaries, ask] = await Promise.all([
+  const [review, transactions, followups, ask] = await Promise.all([
     collectReviewInbox(root),
     collectTransactions(root),
     collectFollowups(root),
-    collectPageSummaries(root),
     options.query ? retrieveContextForAnswer(root, options.query) : Promise.resolve(null)
   ]);
+  const health =
+    options.includeHealth === false
+      ? null
+      : summarizeHealth(review, transactions, followups, await collectPageSummaries(root));
 
   return {
-    generated_at: defaultGeneratedAt,
+    generated_at: options.now ?? new Date().toISOString(),
     review,
     transactions,
     followups,
-    health: summarizeHealth(review, transactions, followups, pageSummaries),
+    health,
     ask
   };
 }
@@ -229,7 +239,7 @@ export async function handleWorkbenchRoute(
   }
 
   if (requestUrl.pathname === "/api/snapshot") {
-    return jsonRoute(200, await createWorkbenchSnapshot(root, { query: optionalQuery(requestUrl) }));
+    return jsonRoute(200, await createWorkbenchSnapshot(root, { query: optionalQuery(requestUrl), includeHealth: false }));
   }
 
   if (requestUrl.pathname === "/api/review") {
@@ -242,7 +252,9 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/ask") {
     const query = optionalQuery(requestUrl);
-    return jsonRoute(200, query ? await retrieveContextForAnswer(root, query) : { query: "", warnings: [] });
+    return query
+      ? jsonRoute(200, await retrieveContextForAnswer(root, query))
+      : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
   if (requestUrl.pathname === "/api/followups") {
@@ -332,9 +344,17 @@ async function collectFollowups(root: string): Promise<WorkbenchFollowupList> {
     ...(await listFilesOrEmpty(root, "memory/followups/**/*.md"))
   ]);
   const items: WorkbenchFollowupSummary[] = [];
+  const warnings: WorkbenchReadWarning[] = [];
 
   for (const file of files) {
-    const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+    let parsed: ReturnType<typeof parseMarkdownFile>;
+
+    try {
+      parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+    } catch (error) {
+      warnings.push(readWarning(file, error));
+      continue;
+    }
 
     if (parsed.frontmatter.type !== "followup") {
       continue;
@@ -355,37 +375,45 @@ async function collectFollowups(root: string): Promise<WorkbenchFollowupList> {
 
   items.sort((left, right) => left.path.localeCompare(right.path));
 
-  return { items };
+  return { items, warnings };
 }
 
-async function collectPageSummaries(root: string): Promise<ParsedPageSummary[]> {
+async function collectPageSummaries(root: string): Promise<PageSummaryResult> {
   const files = await listFilesOrEmpty(root, "memory/**/*.md");
-  const pages: ParsedPageSummary[] = [];
+  const pages: PageSummary[] = [];
+  const warnings: WorkbenchReadWarning[] = [];
 
   for (const file of files) {
-    const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+    let parsed: ReturnType<typeof parseMarkdownFile>;
+
+    try {
+      parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+    } catch (error) {
+      warnings.push(readWarning(file, error));
+      continue;
+    }
+
     pages.push({
       path: file,
-      frontmatter: parsed.frontmatter,
-      claims: parseClaimBlockRecords(parsed.body)
+      frontmatter: parsed.frontmatter
     });
   }
 
-  return pages;
+  return { pages, warnings };
 }
 
 function summarizeHealth(
   review: WorkbenchReviewInbox,
   transactions: WorkbenchTransactionList,
   followups: WorkbenchFollowupList,
-  pages: ParsedPageSummary[]
+  pageSummaries: PageSummaryResult
 ): WorkbenchHealthSummary {
   const pendingTransactions = transactions.items.filter((transaction) => transaction.transaction_state === "pending");
   const openFollowups = followups.items.filter(
     (followup) => !["closed", "rejected"].includes(followup.followup_state) && followup.object_state !== "archived"
   );
-  const contestedPages = pages.filter((page) => page.frontmatter.review_state === "contested");
-  const archivedPages = pages.filter((page) => page.frontmatter.object_state === "archived");
+  const contestedPages = pageSummaries.pages.filter((page) => page.frontmatter.review_state === "contested");
+  const archivedPages = pageSummaries.pages.filter((page) => page.frontmatter.object_state === "archived");
   const affectedFiles = new Set<string>();
 
   for (const item of review.items) {
@@ -404,14 +432,18 @@ function summarizeHealth(
     },
     review_reasons: review.grouped_by_reason,
     affected_files: [...affectedFiles].sort(),
-    warnings: healthWarnings(review, pendingTransactions, contestedPages)
+    warnings: [
+      ...healthWarnings(review, pendingTransactions, contestedPages),
+      ...formatReadWarnings("Skipped malformed follow-up", followups.warnings),
+      ...formatReadWarnings("Skipped malformed memory page", pageSummaries.warnings)
+    ]
   };
 }
 
 function healthWarnings(
   review: WorkbenchReviewInbox,
   pendingTransactions: WorkbenchTransactionSummary[],
-  contestedPages: ParsedPageSummary[]
+  contestedPages: PageSummary[]
 ): string[] {
   const warnings: string[] = [];
 
@@ -428,6 +460,17 @@ function healthWarnings(
   }
 
   return warnings;
+}
+
+function readWarning(path: string, error: unknown): WorkbenchReadWarning {
+  return {
+    path,
+    message: error instanceof Error ? error.message : String(error)
+  };
+}
+
+function formatReadWarnings(prefix: string, warnings: WorkbenchReadWarning[]): string[] {
+  return warnings.map((warning) => `${prefix}: ${warning.path} (${warning.message})`);
 }
 
 function groupReviewReasons(items: WorkbenchReviewItem[]): WorkbenchReviewReasonGroup[] {
@@ -696,6 +739,7 @@ function workbenchClientJs(): string {
   return `const view = document.querySelector("#view");
 const status = document.querySelector("#status");
 let snapshot = null;
+let health = null;
 let activeTab = "review";
 
 for (const button of document.querySelectorAll("[data-tab]")) {
@@ -770,17 +814,26 @@ function render() {
   }
 
   if (activeTab === "health") {
-    const counts = snapshot.health.counts;
-    renderCards(
-      Object.keys(counts).map((key) => ({ key, count: counts[key] })),
-      (item) => item.key.replaceAll("_", " "),
-      (item) => String(item.count),
-      () => snapshot.health.warnings
-    );
+    void renderHealth();
     return;
   }
 
   view.innerHTML = \`<article class="item"><h2>Briefs</h2><p class="meta">Scheduled for PR5.</p></article>\`;
+}
+
+async function renderHealth() {
+  if (!health) {
+    view.innerHTML = '<article class="item"><h2>Loading health</h2><p class="meta">Reading markdown state.</p></article>';
+    health = await fetchJson("/api/health");
+  }
+
+  const counts = health.counts;
+  renderCards(
+    Object.keys(counts).map((key) => ({ key, count: counts[key] })),
+    (item) => item.key.replaceAll("_", " "),
+    (item) => String(item.count),
+    () => health.warnings
+  );
 }
 
 function renderCards(items, title, badge, details) {

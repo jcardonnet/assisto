@@ -26,7 +26,7 @@ import { ingestWithExtractionProvider, LlmExtractionProvider } from "../../core/
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
 import { retrieveContextForAnswer } from "../../core/src/retrieval";
-import { startWorkbenchServer } from "../../workbench/src/index";
+import { startWorkbenchServer } from "@assisto/workbench";
 
 export interface CliIo {
   stdout: (text: string) => void;

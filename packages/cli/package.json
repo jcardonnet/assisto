@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@assisto/core": "workspace:*"
+    "@assisto/core": "workspace:*",
+    "@assisto/workbench": "workspace:*"
   },
   "devDependencies": {}
 }

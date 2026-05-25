@@ -29,6 +29,9 @@ importers:
       '@assisto/core':
         specifier: workspace:*
         version: link:../core
+      '@assisto/workbench':
+        specifier: workspace:*
+        version: link:../workbench
 
   packages/core: {}
 
@@ -38,7 +41,11 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/workbench: {}
+  packages/workbench:
+    dependencies:
+      '@assisto/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

@@ -60,12 +60,16 @@ async function buildModuleUrl(filePath) {
 }
 
 function shouldRewriteSpecifier(specifier) {
-  return specifier.startsWith(".") || specifier === "@assisto/core";
+  return specifier.startsWith(".") || specifier === "@assisto/core" || specifier === "@assisto/workbench";
 }
 
 function resolveSpecifier(fromPath, specifier) {
   if (specifier === "@assisto/core") {
     return path.join(workspaceRoot, "packages/core/src/index.ts");
+  }
+
+  if (specifier === "@assisto/workbench") {
+    return path.join(workspaceRoot, "packages/workbench/src/index.ts");
   }
 
   const basePath = path.resolve(path.dirname(fromPath), specifier);

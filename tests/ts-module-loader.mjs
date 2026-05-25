@@ -7,7 +7,8 @@ const moduleUrlCache = new Map();
 const importSpecifierPattern = /(from\s+["'])([^"']+)(["'])/g;
 const workspacePackages = new Map([
   ["@assisto/core", "packages/core/src/index.ts"],
-  ["@assisto/cli", "packages/cli/src/index.ts"]
+  ["@assisto/cli", "packages/cli/src/index.ts"],
+  ["@assisto/workbench", "packages/workbench/src/index.ts"]
 ]);
 
 export async function loadTsModule(entryPath) {
