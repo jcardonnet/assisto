@@ -29,10 +29,19 @@ importers:
       '@assisto/core':
         specifier: workspace:*
         version: link:../core
+      '@assisto/workbench':
+        specifier: workspace:*
+        version: link:../workbench
 
   packages/core: {}
 
   packages/pi-extension:
+    dependencies:
+      '@assisto/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/workbench:
     dependencies:
       '@assisto/core':
         specifier: workspace:*

@@ -8,6 +8,7 @@ import { runCoreV3MemoryHardeningTests } from "./core-v3-memory-hardening.mjs";
 import { runCoreLintTests } from "./core-lint.mjs";
 import { runCliIntegrationTests } from "./cli-integration.mjs";
 import { runPiExtensionTests } from "./pi-extension.mjs";
+import { runWorkbenchTests } from "./workbench.mjs";
 
 export async function runIntegrationTests() {
   assertRequiredPaths();
@@ -20,6 +21,7 @@ export async function runIntegrationTests() {
   await runCoreLintTests();
   await runCliIntegrationTests();
   await runPiExtensionTests();
+  await runWorkbenchTests();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

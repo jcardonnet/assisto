@@ -11,6 +11,11 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@assisto/core": ["packages/core/src/index.ts"],
+      "@assisto/workbench": ["packages/workbench/src/index.ts"]
+    }
   }
 }

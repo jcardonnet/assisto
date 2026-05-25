@@ -538,3 +538,49 @@ Negative:
 - Mocked LLM output tests.
 - Optional provider interface.
 - Extraction prompt tuning.
+
+---
+
+## ADR-012 — Local Workbench is a derived UI first
+
+Status: Accepted
+Date: 2026-05-25
+
+### Context
+
+Assisto needs a richer local review and retrieval surface than CLI text or Pi commands alone. The browser UI must not become a second source of truth or introduce an opaque runtime database.
+
+### Decision
+
+Add a dependency-light local Workbench package with a Node HTTP server and vanilla browser client.
+
+The first Workbench slice is read-only. It serves derived JSON snapshots for:
+
+- staged ReviewItems;
+- Transactions;
+- retrieval query results;
+- FollowUps;
+- memory health counts.
+
+The server binds to `127.0.0.1` by default. Future write actions must call existing transaction-backed core helpers or validated wrappers.
+
+### Consequences
+
+Positive:
+
+- A usable local Memory Workbench can grow without changing canonical storage.
+- UI state is derived from markdown and can be rebuilt at any time.
+- Review/action flows keep the same transaction boundary as CLI and Pi.
+
+Negative:
+
+- Browser tests and route tests are now part of the product surface.
+- Health summaries need separate read-only checks before PR4 adds explicit staging actions.
+
+### Deferred work
+
+- Review resolution actions.
+- Answer-basis contract rendering.
+- Health center checks with explicit staging.
+- Disposable session briefs.
+- Browser E2E coverage and `eval:v4`.
