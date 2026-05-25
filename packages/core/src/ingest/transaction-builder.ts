@@ -267,6 +267,10 @@ function requiresScopeReview(candidate: ResolvedClaimCandidate): boolean {
 }
 
 function claimConflictReason(candidate: ResolvedClaimCandidate): "role_change" | "reporting_change" | "claim_id_conflict" | null {
+  if (candidate.entity.claim_id_conflict_path) {
+    return "claim_id_conflict";
+  }
+
   if (candidate.entity.resolution_state !== "exact_match" && candidate.entity.resolution_state !== "alias_match") {
     return null;
   }
@@ -275,10 +279,6 @@ function claimConflictReason(candidate: ResolvedClaimCandidate): "role_change" |
 
   if (existingClaimIds.has(candidate.claim_id)) {
     return null;
-  }
-
-  if (existingClaimIds.size > 0 && existingClaimIds.has(candidate.claim_id)) {
-    return "claim_id_conflict";
   }
 
   const entitySlug = candidate.entity.slug.replace(/-/g, "_");
@@ -337,7 +337,7 @@ function renderClaimConflictReviewWrite(
     "",
     "## Existing claim IDs",
     "",
-    ...candidate.entity.existing_claim_ids.map((claimId) => `- ${claimId}`),
+    ...claimConflictLines(candidate),
     "",
     "## Staged claims",
     "",
@@ -349,6 +349,16 @@ function renderClaimConflictReviewWrite(
     operation: "STAGE_REVIEW",
     content: serializeMarkdownFile(frontmatter, body)
   };
+}
+
+function claimConflictLines(candidate: ResolvedClaimCandidate): string[] {
+  const lines = candidate.entity.existing_claim_ids.map((claimId) => `- ${claimId}`);
+
+  if (candidate.entity.claim_id_conflict_path) {
+    lines.push(`- ${candidate.claim_id} already exists in ${stripMemoryPrefix(candidate.entity.claim_id_conflict_path)}`);
+  }
+
+  return lines.length > 0 ? lines : ["- None recorded on the matched entity."];
 }
 
 function contextEntityStagingReasons(candidate: ResolvedClaimCandidate): StagingReason[] {

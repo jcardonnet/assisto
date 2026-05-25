@@ -98,6 +98,58 @@ export async function runCoreV3MemoryHardeningTests() {
     await rm(reviewRoot, { recursive: true, force: true });
   }
 
+  const unsafeTargetRoot = await makeTempVault();
+
+  try {
+    await writeVaultFile(unsafeTargetRoot, "memory/events/2026/2026-05/2026-05-20-001.md", eventPage("ev_2026_05_20_001"));
+    await writeVaultFile(unsafeTargetRoot, "memory/review/mysql-scope.md", mysqlScopeReviewItem());
+
+    await assert.rejects(
+      () =>
+        review.createReviewApplyTransaction(unsafeTargetRoot, "rev_mysql_scope", {
+          target: "memory/events/2026/2026-05/2026-05-20-001.md",
+          createContext: "Inventory Project",
+          now
+        }),
+      /Review apply target must be a Person or Topic markdown page/
+    );
+    await assert.rejects(
+      () =>
+        review.createReviewApplyTransaction(unsafeTargetRoot, "rev_mysql_scope", {
+          target: "memory/topics/mysql",
+          createContext: "Inventory Project",
+          now
+        }),
+      /Review apply target must end with \.md/
+    );
+  } finally {
+    await rm(unsafeTargetRoot, { recursive: true, force: true });
+  }
+
+  const contextCollisionRoot = await makeTempVault();
+
+  try {
+    await writeVaultFile(contextCollisionRoot, "memory/events/2026/2026-05/2026-05-20-001.md", eventPage("ev_2026_05_20_001"));
+    await writeVaultFile(contextCollisionRoot, "memory/review/mysql-scope.md", mysqlScopeReviewItem());
+    await writeVaultFile(
+      contextCollisionRoot,
+      "memory/contexts/inventory-project.md",
+      contextPage("ctx_inventory_project", "Inventory Project")
+    );
+
+    await assert.rejects(
+      () =>
+        review.createReviewApplyTransaction(contextCollisionRoot, "rev_mysql_scope", {
+          target: "memory/topics/mysql.md",
+          createContext: "Inventory Project",
+          now
+        }),
+      /Context already exists; use --context/
+    );
+  } finally {
+    await rm(contextCollisionRoot, { recursive: true, force: true });
+  }
+
   const supersedeRoot = await makeTempVault();
 
   try {
@@ -266,6 +318,25 @@ affected_files:
   observed_at: null
   valid_from: null
   valid_to: null
+`;
+}
+
+function contextPage(id, name) {
+  return `---
+id: ${id}
+type: context
+object_state: active
+review_state: reviewed
+created_at: 2026-05-20T12:00:00-03:00
+updated_at: 2026-05-20T12:00:00-03:00
+aliases: []
+source_events:
+  - ev_2026_05_20_001
+related: []
+summary_generated_from: []
+---
+
+# ${name}
 `;
 }
 

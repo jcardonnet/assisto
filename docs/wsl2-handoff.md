@@ -65,7 +65,6 @@ pnpm test:e2e
 pnpm eval:mvp
 pnpm eval:v2
 pnpm eval:v3
-pnpm eval:v3
 ```
 
 If cloning from the Windows working tree, check line endings before committing. The Windows repo has shown LF-to-CRLF warnings. Prefer Git settings that keep repo text stable in WSL2.

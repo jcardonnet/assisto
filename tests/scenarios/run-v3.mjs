@@ -159,10 +159,32 @@ function assertAtLeast(label, actual, expected) {
   assert.equal(actual >= expected, true, `${label}: expected >= ${expected}, got ${actual}`);
 }
 
+assert.equal(addMinutes("2026-05-20T12:00:00-03:00", 1), "2026-05-20T12:01:00-03:00");
+
 function addMinutes(iso, minutes) {
-  const date = new Date(iso);
-  date.setUTCMinutes(date.getUTCMinutes() + minutes);
-  return date.toISOString().replace(".000Z", "-03:00");
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-]\d{2}:\d{2})$/.exec(iso);
+
+  if (!match) {
+    throw new Error(`Unsupported timestamp format: ${iso}`);
+  }
+
+  const [, year, month, day, hour, minute, second, offset] = match;
+  const localDate = new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute) + minutes,
+      Number(second)
+    )
+  );
+
+  return `${localDate.getUTCFullYear()}-${pad2(localDate.getUTCMonth() + 1)}-${pad2(localDate.getUTCDate())}T${pad2(localDate.getUTCHours())}:${pad2(localDate.getUTCMinutes())}:${pad2(localDate.getUTCSeconds())}${offset}`;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }
 
 function eventPage(id) {

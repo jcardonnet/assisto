@@ -203,4 +203,40 @@ export async function runCoreIngestPipelineTests() {
     reportingConflictDraft.writes.map((write) => write.content).join("\n"),
     /review_reason: reporting_change/
   );
+
+  const claimIdConflictContext = context("Joe is the DBA.");
+  const claimIdConflictIndex = index({
+    entries: [
+      {
+        path: "memory/people/joe.md",
+        id: "per_joe",
+        type: "person",
+        aliases: [],
+        wikilinks: [],
+        claimIds: []
+      },
+      {
+        path: "memory/topics/mysql.md",
+        id: "top_mysql",
+        type: "topic",
+        aliases: [],
+        wikilinks: [],
+        claimIds: ["clm_joe_role_dba"]
+      }
+    ],
+    claimIds: new Map([["clm_joe_role_dba", "memory/topics/mysql.md"]])
+  });
+  const claimIdConflictDraft = builder.buildIngestExtractionDraft(
+    claimIdConflictContext,
+    entityResolution.resolveDetectorProposals(
+      detectors.detectCandidateProposals(claimIdConflictContext),
+      claimIdConflictIndex
+    )
+  );
+
+  assert.equal(claimIdConflictDraft.writes.some((write) => write.path === "memory/people/joe.md"), false);
+  assert.match(
+    claimIdConflictDraft.writes.map((write) => write.content).join("\n"),
+    /review_reason: claim_id_conflict/
+  );
 }

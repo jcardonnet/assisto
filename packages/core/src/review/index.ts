@@ -158,7 +158,7 @@ export async function createReviewApplyTransaction(
   }
 
   const contextResolution = options.createContext
-    ? createContextResolution(options.createContext)
+    ? createContextResolution(options.createContext, index)
     : options.context
       ? resolveExistingContext(index, options.context)
       : null;
@@ -316,7 +316,7 @@ function applyReviewClaimResolution(claim: ClaimBlock, contextId: string | null)
   };
 }
 
-function createContextResolution(name: string): { id: string; name: string; write: { path: string } } {
+function createContextResolution(name: string, index: VaultIndex): { id: string; name: string; write: { path: string } } {
   const normalizedName = name.trim().replace(/\s+/g, " ");
   const slug = slugify(normalizedName);
 
@@ -324,11 +324,18 @@ function createContextResolution(name: string): { id: string; name: string; writ
     throw new Error("--create-context requires a non-empty context name.");
   }
 
+  const id = `ctx_${slug.replace(/-/g, "_")}`;
+  const path = `memory/contexts/${slug}.md`;
+
+  if (index.ids.has(id) || index.paths.has(path) || index.entries.some((entry) => entry.id === id || entry.path === path)) {
+    throw new Error(`Context already exists; use --context ${id} instead.`);
+  }
+
   return {
-    id: `ctx_${slug.replace(/-/g, "_")}`,
+    id,
     name: normalizedName,
     write: {
-      path: `memory/contexts/${slug}.md`
+      path
     }
   };
 }
@@ -356,9 +363,21 @@ function resolveTarget(
 ): { path: string; id: string; type: "person" | "topic"; title: string } {
   const normalized = normalizePath(target);
   const path = index.ids.get(target) ?? (normalized.startsWith("memory/") ? normalized : `memory/${normalized}`);
-  const type = path.includes("/people/") ? "person" : "topic";
+  const type = targetTypeFromPath(path);
   const slug = path.split("/").pop()?.replace(/\.md$/i, "") ?? slugify(claim.claim_id);
   const existing = index.entries.find((entry) => entry.path === path);
+
+  if (!path.endsWith(".md")) {
+    throw new Error("Review apply target must end with .md.");
+  }
+
+  if (!type) {
+    throw new Error("Review apply target must be a Person or Topic markdown page.");
+  }
+
+  if (existing?.type && existing.type !== type) {
+    throw new Error("Review apply target must match an existing Person or Topic page.");
+  }
 
   return {
     path,
@@ -366,6 +385,18 @@ function resolveTarget(
     type,
     title: `# ${titleFromPath(path)}`
   };
+}
+
+function targetTypeFromPath(path: string): "person" | "topic" | null {
+  if (path.startsWith("memory/people/")) {
+    return "person";
+  }
+
+  if (path.startsWith("memory/topics/")) {
+    return "topic";
+  }
+
+  return null;
 }
 
 function renderTargetWrite(
