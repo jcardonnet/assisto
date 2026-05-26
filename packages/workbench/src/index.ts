@@ -52,12 +52,16 @@ export interface WorkbenchReviewInbox {
 export interface WorkbenchReviewReasonGroup {
   review_reason: string;
   count: number;
+  item_ids: string[];
+  suggested_action: string;
 }
 
 export interface WorkbenchReviewItem extends ReviewItemSummary {
   source_events: string[];
   affected_files: string[];
+  linked_transaction?: string;
   staged_claim_ids: string[];
+  suggested_action: string;
 }
 
 export interface WorkbenchTransactionList {
@@ -521,16 +525,19 @@ async function enrichReviewItem(root: string, summary: ReviewItemSummary): Promi
       ...summary,
       source_events: stringArrayValue(detail.parsed.frontmatter.source_events),
       affected_files: stringArrayValue(detail.parsed.frontmatter.affected_files),
+      linked_transaction: stringValue(detail.parsed.frontmatter.linked_transaction),
       staged_claim_ids: parseClaimBlockRecords(detail.parsed.body)
         .map((claim) => stringValue(claim.fields.claim_id))
-        .filter((claimId): claimId is string => Boolean(claimId))
+        .filter((claimId): claimId is string => Boolean(claimId)),
+      suggested_action: suggestedReviewAction(summary.review_reason)
     };
   } catch {
     return {
       ...summary,
       source_events: [],
       affected_files: [],
-      staged_claim_ids: []
+      staged_claim_ids: [],
+      suggested_action: suggestedReviewAction(summary.review_reason)
     };
   }
 }
@@ -611,15 +618,39 @@ function readWarning(path: string, error: unknown): WorkbenchReadWarning {
 }
 
 function groupReviewReasons(items: WorkbenchReviewItem[]): WorkbenchReviewReasonGroup[] {
-  const counts = new Map<string, number>();
+  const groups = new Map<string, WorkbenchReviewReasonGroup>();
 
   for (const item of items) {
-    counts.set(item.review_reason, (counts.get(item.review_reason) ?? 0) + 1);
+    const group =
+      groups.get(item.review_reason) ??
+      {
+        review_reason: item.review_reason,
+        count: 0,
+        item_ids: [],
+        suggested_action: item.suggested_action
+      };
+
+    group.count += 1;
+    group.item_ids.push(item.id);
+    groups.set(item.review_reason, group);
   }
 
-  return [...counts.entries()]
-    .map(([reviewReason, count]) => ({ review_reason: reviewReason, count }))
-    .sort((left, right) => left.review_reason.localeCompare(right.review_reason));
+  return [...groups.values()].sort((left, right) => left.review_reason.localeCompare(right.review_reason));
+}
+
+function suggestedReviewAction(reviewReason: string): string {
+  switch (reviewReason) {
+    case "unscoped_claim":
+      return "Apply staged claim with an explicit Context, create Context through review, or mark contested.";
+    case "role_change":
+      return "Apply with explicit supersession only after confirming the role change.";
+    case "reporting_change":
+      return "Apply with explicit supersession only after confirming the reporting change.";
+    case "claim_id_conflict":
+      return "Inspect the staged claim and target page before applying; do not auto-merge.";
+    default:
+      return "Inspect the ReviewItem, then apply staged, mark, or leave staged.";
+  }
 }
 
 async function listFilesOrEmpty(root: string, globPattern: string): Promise<string[]> {
@@ -922,6 +953,41 @@ h1 {
   padding-top: 12px;
 }
 
+.summary-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.reason-filter {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  min-height: 72px;
+  padding: 12px;
+  text-align: left;
+}
+
+.reason-filter[aria-pressed="true"] {
+  background: var(--soft);
+  border-color: var(--accent);
+}
+
+.reason-filter strong {
+  display: block;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.reason-filter span {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .action-output {
   margin-top: 12px;
 }
@@ -1031,6 +1097,7 @@ const status = document.querySelector("#status");
 let snapshot = null;
 let health = null;
 let activeTab = "review";
+let reviewReasonFilter = "all";
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -1117,12 +1184,15 @@ function render() {
 }
 
 function renderReview() {
-  const items = snapshot.review.items;
+  const items = reviewReasonFilter === "all"
+    ? snapshot.review.items
+    : snapshot.review.items.filter((item) => item.review_reason === reviewReasonFilter);
   const cards = items.length
     ? items.map((item) => reviewCardHtml(item)).join("")
     : '<article class="item"><h2>Empty</h2><p class="meta">No matching memory objects.</p></article>';
 
-  view.innerHTML = \`<article class="item">
+  view.innerHTML = \`\${reviewSummaryHtml(snapshot.review)}
+  <article class="item">
     <h2>Event reprocess</h2>
     <form id="event-reprocess-form" class="action-row">
       <input name="eventId" placeholder="Event id or path">
@@ -1132,18 +1202,56 @@ function renderReview() {
   </article>
   <div class="grid">\${cards}</div>
   <div id="action-output" class="action-output"></div>\`;
+  bindReviewFilters();
   bindReviewActions();
+}
+
+function reviewSummaryHtml(review) {
+  const total = review.items.length;
+  const groups = review.grouped_by_reason ?? [];
+  const groupButtons = groups.map((group) => \`<button type="button" class="reason-filter" data-review-reason="\${escapeHtml(group.review_reason)}" aria-pressed="\${String(reviewReasonFilter === group.review_reason)}">
+    <strong>\${escapeHtml(group.review_reason.replaceAll("_", " "))}</strong>
+    <span>\${escapeHtml(String(group.count))} item\${group.count === 1 ? "" : "s"}</span>
+    <span>\${escapeHtml(group.suggested_action)}</span>
+  </button>\`).join("");
+
+  return \`<section>
+    <h2>Review summary</h2>
+    <div class="summary-strip">
+      <button type="button" class="reason-filter" data-review-reason="all" aria-pressed="\${String(reviewReasonFilter === "all")}">
+        <strong>All review</strong>
+        <span>\${escapeHtml(String(total))} item\${total === 1 ? "" : "s"}</span>
+        <span>Inspect staged memory before applying changes.</span>
+      </button>
+      \${groupButtons}
+    </div>
+  </section>\`;
+}
+
+function bindReviewFilters() {
+  for (const button of document.querySelectorAll("[data-review-reason]")) {
+    button.addEventListener("click", () => {
+      reviewReasonFilter = button.dataset.reviewReason ?? "all";
+      renderReview();
+    });
+  }
 }
 
 function reviewCardHtml(item) {
   const defaultTarget = item.affected_files[0] ? memoryPath(item.affected_files[0]) : "";
+  const details = [
+    ["Review path", item.path],
+    ["Source Events", item.source_events.join(", ") || "none"],
+    ["Affected files", item.affected_files.join(", ") || "none"],
+    ["Linked transaction", item.linked_transaction ?? "none"],
+    ["Staged claims", item.staged_claim_ids.join(", ") || "none"],
+    ["Suggested action", item.suggested_action]
+  ];
 
   return \`<article class="item">
     <h2>\${escapeHtml(item.id)}</h2>
     <p class="pill">\${escapeHtml(item.review_reason)} · \${escapeHtml(item.review_state)}</p>
-    <p class="meta">\${escapeHtml(item.path)}</p>
-    <p class="meta">\${escapeHtml(item.source_events.join(", "))}</p>
-    <p class="meta">\${escapeHtml(item.staged_claim_ids.join(", "))}</p>
+    \${detailListHtml(details)}
     <div class="action-stack">
       <form class="review-apply-form" data-review-id="\${escapeHtml(item.id)}">
         <div class="action-row">
