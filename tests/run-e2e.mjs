@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import path from "node:path";
-import { makeTempVault, readVaultFile } from "./helpers/temp-vault.mjs";
+import { makeTempVault, readVaultFile, writeVaultFile } from "./helpers/temp-vault.mjs";
 
 const execFileAsync = promisify(execFile);
 const wmBin = path.resolve("packages/cli/bin/wm.mjs");
@@ -311,12 +311,6 @@ No durable claims were extracted from the Event.
   await writeVaultFile(root, "memory/events/2026/2026-05/2026-05-21-001.md", eventPage("ev_2026_05_21_001", "Jeff is my manager."));
   await writeVaultFile(root, "memory/events/2026/2026-05/2026-05-21-002.md", eventPage("ev_2026_05_21_002", "We use MySQL."));
   await writeVaultFile(root, "memory/events/2026/2026-05/2026-05-21-003.md", eventPage("ev_2026_05_21_003", "I started new job this monday as a AI Engineer at SmartEquip"));
-}
-
-async function writeVaultFile(root, relativePath, content) {
-  const target = path.join(root, relativePath);
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, content, "utf8");
 }
 
 function eventPage(id, rawText) {
