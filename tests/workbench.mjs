@@ -55,6 +55,7 @@ source_events:
   - ev_2026_05_21_002
 affected_files:
   - topics/mysql.md
+linked_transaction: tx_2026_05_21_001
 ---
 
 # Review: MySQL scope
@@ -409,6 +410,9 @@ export async function runWorkbenchTests() {
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
+    assert.match(client.body, /reviewSummaryHtml/);
+    assert.match(client.body, /data-review-reason/);
+    assert.match(client.body, /Suggested action/);
     assert.match(client.body, /renderAnswerBasis/);
     assert.match(client.body, /renderActionResult/);
     assert.match(client.body, /Pending transaction created/);
@@ -424,6 +428,16 @@ export async function runWorkbenchTests() {
     const review = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/review" })).body);
     assert.equal(review.items[0].id, "rev_mysql_scope");
     assert.deepEqual(review.items[0].staged_claim_ids, ["clm_mysql_used_unknown_scope"]);
+    assert.equal(review.items[0].linked_transaction, "tx_2026_05_21_001");
+    assert.match(review.items[0].suggested_action, /explicit Context/);
+    assert.deepEqual(review.grouped_by_reason, [
+      {
+        review_reason: "unscoped_claim",
+        count: 1,
+        item_ids: ["rev_mysql_scope"],
+        suggested_action: review.items[0].suggested_action
+      }
+    ]);
 
     const routeSnapshot = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/snapshot" })).body

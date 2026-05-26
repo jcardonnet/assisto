@@ -115,10 +115,15 @@ async function runWorkbenchBrowserE2e() {
     assert.match(client, /renderAnswerBasis/);
     assert.match(client, /renderBrief/);
     assert.match(client, /renderActionResult/);
+    assert.match(client, /reviewSummaryHtml/);
+    assert.match(client, /data-review-reason/);
     assert.match(client, /Proposed file writes/);
 
     const review = await fetchJson(`${running.url}/api/review`);
     assert.equal(review.items.some((item) => item.id === "rev_mysql_scope"), true);
+    assert.equal(review.grouped_by_reason.some((group) => group.review_reason === "unscoped_claim"), true);
+    assert.equal(review.grouped_by_reason.some((group) => group.item_ids.includes("rev_mysql_scope")), true);
+    assert.equal(review.items.some((item) => /explicit Context/.test(item.suggested_action)), true);
 
     const preview = await postJson(`${running.url}/api/review/apply-staged/preview`, {
       reviewId: "rev_mysql_scope",
