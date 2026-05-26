@@ -324,7 +324,13 @@ export async function handleWorkbenchRoute(
       return jsonRoute(400, { error: "Missing required query parameter: id." });
     }
 
-    return jsonRoute(200, await getTransactionDetail(root, transactionId));
+    try {
+      return jsonRoute(200, await getTransactionDetail(root, transactionId));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = /^Transaction not found:/.test(message) ? 404 : 400;
+      return jsonRoute(status, { error: message });
+    }
   }
 
   if (requestUrl.pathname === "/api/ask") {
@@ -1369,12 +1375,13 @@ async function loadSnapshot() {
 
 async function fetchJson(path) {
   const response = await fetch(path);
+  const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new Error(payload?.error ?? "Request failed");
   }
 
-  return response.json();
+  return payload;
 }
 
 async function postJson(path, body) {
@@ -1577,8 +1584,16 @@ function bindTransactionActions() {
 }
 
 async function loadTransactionDetail(transactionId) {
-  transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(transactionId)}\`);
-  renderTransactions();
+  const output = document.querySelector("#transaction-action-output");
+
+  try {
+    transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(transactionId)}\`);
+    renderTransactions();
+  } catch (error) {
+    if (output) {
+      output.innerHTML = \`<pre>Failed to load transaction detail: \${escapeHtml(error.message)}</pre>\`;
+    }
+  }
 }
 
 async function runTransactionAction(path, body) {

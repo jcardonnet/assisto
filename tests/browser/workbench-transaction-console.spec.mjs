@@ -65,3 +65,35 @@ test("transaction console previews, applies, and rejects pending transactions", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("transaction console renders detail load failures", async ({ page }) => {
+  const root = await makeTempVault("assisto-browser-transaction-console-error-");
+  const workbench = await loadTsModule("packages/workbench/src/index.ts");
+  let server;
+
+  try {
+    await writeWorkbenchFixture(root);
+    server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
+    await page.route("**/api/transactions/detail?id=tx_2026_05_21_apply", async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ error: "Transaction not found: tx_2026_05_21_apply" })
+      });
+    });
+
+    await page.goto(server.url);
+    await page.getByRole("button", { name: "Transactions" }).click();
+    await page
+      .locator("article.item")
+      .filter({ hasText: "tx_2026_05_21_apply" })
+      .getByRole("button", { name: "Details" })
+      .click();
+
+    await expect(page.getByText("Failed to load transaction detail: Transaction not found")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Transaction detail" })).toBeVisible();
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

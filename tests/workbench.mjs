@@ -635,6 +635,27 @@ export async function runWorkbenchTests() {
       url: "/api/transactions/detail"
     });
     assert.equal(missingTransactionDetail.status, 400);
+    assert.deepEqual(JSON.parse(missingTransactionDetail.body), { error: "Missing required query parameter: id." });
+
+    const unknownTransactionDetail = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/transactions/detail?id=tx_missing"
+    });
+    assert.equal(unknownTransactionDetail.status, 404);
+    assert.match(JSON.parse(unknownTransactionDetail.body).error, /Transaction not found: tx_missing/);
+
+    await writeVaultFile(
+      root,
+      "memory/transactions/pending/tx_broken.md",
+      "---\nid: tx_broken\ntype: transaction\ntransaction_state: pending\n"
+    );
+    const brokenTransactionDetail = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/transactions/detail?id=memory%2Ftransactions%2Fpending%2Ftx_broken.md"
+    });
+    assert.equal(brokenTransactionDetail.status, 400);
+    assert.match(JSON.parse(brokenTransactionDetail.body).error, /frontmatter/);
+    await rm(path.join(root, "memory/transactions/pending/tx_broken.md"), { force: true });
 
     const transactionApplyPreview = JSON.parse(
       (
