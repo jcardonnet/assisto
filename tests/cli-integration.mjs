@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadTsModule } from "./ts-module-loader.mjs";
 import { writeHealthFixture } from "./core-health.mjs";
+import { writeBriefFixture } from "./core-briefs.mjs";
 
 let cliModule = null;
 
@@ -58,6 +59,7 @@ export async function runCliIntegrationTests() {
   assert.equal(helpExitCode, 0);
   assert.match(help.stdout, /wm - local markdown work-memory MVP/);
   assert.match(help.stdout, /workbench serve/);
+  assert.match(help.stdout, /brief <today\|person\|context\|review\|followups>/);
 
   const txRoot = await makeTempVault();
 
@@ -140,6 +142,25 @@ export async function runCliIntegrationTests() {
     assert.match(answerBasis.contextPack, /# Context pack/);
   } finally {
     await rm(askRoot, { recursive: true, force: true });
+  }
+
+  const briefRoot = await makeTempVault();
+
+  try {
+    await writeBriefFixture(briefRoot);
+    const brief = await runWm(briefRoot, ["brief", "person", "per_jeff"]);
+    assert.match(brief.stdout, /# Session brief: Jeff/);
+    assert.match(brief.stdout, /Jeff is my manager/);
+    assert.match(brief.stdout, /Open follow-ups/);
+    assert.match(brief.stdout, /fu_ask_jeff/);
+    assert.match(brief.stdout, /Generated explanations were not saved/);
+
+    const followups = await runWm(briefRoot, ["brief", "followups"]);
+    assert.match(followups.stdout, /# Session brief: Follow-ups/);
+    assert.match(followups.stdout, /fu_ask_jeff/);
+    assert.doesNotMatch(followups.stdout, /fu_closed/);
+  } finally {
+    await rm(briefRoot, { recursive: true, force: true });
   }
 
   const rejectRoot = await makeTempVault();
