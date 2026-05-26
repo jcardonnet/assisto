@@ -566,6 +566,17 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /data-review-reason/);
     assert.match(client.body, /Suggested action/);
     assert.match(client.body, /renderAnswerBasis/);
+    assert.match(client.body, /renderAskResult/);
+    assert.match(client.body, /copy-derived-text/);
+    assert.match(client.body, /Answer candidates/);
+    assert.match(client.body, /Supporting claims/);
+    assert.match(client.body, /Linked ReviewItems/);
+    assert.match(client.body, /Linked FollowUps/);
+    assert.match(client.body, /Matched pages/);
+    assert.match(client.body, /Context pack/);
+    assert.match(client.body, /Derived text only; not saved/);
+    assert.match(client.body, /data-copy-target="#context-pack-text"/);
+    assert.doesNotMatch(client.body, /data-copy-text="\\\$\{escapeHtml\(text\)\}">Copy context pack/);
     assert.match(client.body, /renderActionResult/);
     assert.match(client.body, /Pending transaction created/);
     assert.match(client.body, /Preview only/);
@@ -734,6 +745,25 @@ export async function runWorkbenchTests() {
     assert.equal(ask.query, "Who is my manager?");
     assert.equal(ask.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
     assert.equal(ask.answerCandidates.some((candidate) => candidate.claim_id === "clm_jeff_manager"), true);
+    assert.equal(ask.supportingClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(ask.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
+    assert.equal(ask.linkedFollowUps.some((item) => item.id === "fu_ask_jeff"), true);
+    assert.equal(ask.matchedPages.some((page) => page.path === "memory/people/jeff.md"), true);
+    assert.match(ask.contextPack, /clm_jeff_manager/);
+    assert.match(ask.contextPack, /ev_2026_05_21_001/);
+
+    const noMatchAsk = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/ask?q=What%20is%20the%20Neptune%20deploy%20key%3F"
+        })
+      ).body
+    );
+    assert.equal(noMatchAsk.answerCandidates.length, 0);
+    assert.equal(noMatchAsk.matchedPages.length, 0);
+    assert.equal(noMatchAsk.missingInformation.some((item) => item.code === "no_match"), true);
+    assert.match(noMatchAsk.warnings.join("\n"), /memory has no match/);
 
     const askWithoutQuery = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask" });
     assert.equal(askWithoutQuery.status, 400);

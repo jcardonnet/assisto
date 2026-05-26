@@ -1179,6 +1179,73 @@ h1 {
   padding-top: 12px;
 }
 
+.ask-result {
+  display: grid;
+  gap: 14px;
+}
+
+.ask-result section {
+  display: grid;
+  gap: 8px;
+}
+
+.ask-result section h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.ask-card {
+  display: grid;
+  gap: 8px;
+}
+
+.ask-card p {
+  margin: 0;
+}
+
+.citation-list {
+  display: grid;
+  gap: 2px;
+}
+
+.copy-derived-text {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--accent);
+  cursor: pointer;
+  justify-self: start;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.copy-output {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: block;
+  min-height: 0;
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+.copy-output:empty {
+  display: none;
+}
+
+.context-pack {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.context-pack summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .summary-strip {
   display: grid;
   gap: 8px;
@@ -1419,12 +1486,27 @@ function render() {
     view.innerHTML = \`<form class="toolbar" id="ask-form">
       <input id="ask-input" name="q" value="Who is my manager?">
       <button type="submit">Ask</button>
-    </form><div id="ask-result" class="grid"></div>\`;
+    </form>
+    <div id="ask-result" class="ask-result"></div>
+    <output id="copy-output" class="copy-output" aria-live="polite"></output>\`;
     document.querySelector("#ask-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      clearCopyOutput();
       const question = document.querySelector("#ask-input").value.trim();
-      const result = await fetchJson(\`/api/ask?q=\${encodeURIComponent(question)}\`);
-      renderAnswerBasis(result);
+
+      if (!question) {
+        document.querySelector("#ask-result").innerHTML = '<article class="item"><h2>Ask</h2><p class="meta">Enter a question to retrieve deterministic memory context.</p></article>';
+        return;
+      }
+
+      document.querySelector("#ask-result").innerHTML = '<article class="item"><h2>Loading</h2><p class="meta">Reading markdown memory.</p></article>';
+
+      try {
+        const result = await fetchJson(\`/api/ask?q=\${encodeURIComponent(question)}\`);
+        renderAnswerBasis(result);
+      } catch (error) {
+        document.querySelector("#ask-result").innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+      }
     });
     return;
   }
@@ -1840,31 +1922,218 @@ function plainListHtml(label, items) {
 }
 
 function renderAnswerBasis(result) {
+  renderAskResult(result);
+}
+
+function renderAskResult(result) {
+  clearCopyOutput();
+  const cannotConfirm = [
+    ...(result.missingInformation ?? []).map((item) => ({
+      title: item.code,
+      badge: "missing information",
+      body: item.message,
+      details: []
+    })),
+    ...(result.warnings ?? []).map((warning) => ({
+      title: "warning",
+      badge: "retrieval warning",
+      body: warning,
+      details: []
+    }))
+  ];
   const sections = [
-    sectionHtml(
-      "What memory can say",
-      result.answerCandidates,
-      (candidate) => candidate.claim_id,
-      (candidate) => candidate.statement,
-      (candidate) => [candidate.page_path, candidate.evidence.join(", "), candidate.scope_state]
-    ),
-    sectionHtml(
-      "What memory cannot confirm",
-      [...result.missingInformation, ...result.uncertainClaims],
-      (item) => item.code ?? item.claim_id,
-      (item) => item.message ?? item.statement,
-      (item) => item.page_path ? [item.page_path, item.uncertainty_markers.join(", ")] : []
-    ),
-    sectionHtml(
-      "Evidence Events",
-      result.evidenceEvents,
-      (event) => event.id,
-      (event) => event.path,
-      (event) => [event.recorded_at, event.observed_at]
-    )
+    askSectionHtml("Answer candidates", result.answerCandidates ?? [], answerCandidateHtml, "No active answer candidates found."),
+    askSectionHtml("Supporting claims", result.supportingClaims ?? [], claimHtml, "No active supporting claims were loaded."),
+    askSectionHtml("What memory cannot confirm", cannotConfirm, missingInfoHtml, "No missing information detected for loaded active claims."),
+    askSectionHtml("Uncertainty", result.uncertainClaims ?? [], uncertainClaimHtml, "No staged, partial, superseded, rejected, or contested claims were loaded."),
+    askSectionHtml("Evidence Events", result.evidenceEvents ?? [], eventHtml, "No cited Event pages were loaded."),
+    askSectionHtml("Linked ReviewItems", result.linkedReviewItems ?? [], linkedItemHtml, "No linked ReviewItems."),
+    askSectionHtml("Linked FollowUps", result.linkedFollowUps ?? [], linkedItemHtml, "No linked FollowUps."),
+    askSectionHtml("Matched pages", result.matchedPages ?? [], pageSummaryHtml, "No matched people, topics, or contexts."),
+    contextPackHtml(result.contextPack)
   ];
 
   document.querySelector("#ask-result").innerHTML = sections.join("");
+  bindCopyControls();
+}
+
+function askSectionHtml(label, items, renderItem, emptyText) {
+  const body = items.length
+    ? \`<div class="grid">\${items.map(renderItem).join("")}</div>\`
+    : \`<article class="item"><h3>Empty</h3><p class="meta">\${escapeHtml(emptyText)}</p></article>\`;
+  return \`<section data-ask-section="\${escapeHtml(sectionSlug(label))}"><h2>\${escapeHtml(label)}</h2>\${body}</section>\`;
+}
+
+function answerCandidateHtml(candidate) {
+  const lines = claimCitationLines(candidate);
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(candidate.claim_id)}</h3>
+    <p>\${escapeHtml(candidate.statement)}</p>
+    <p class="pill">\${escapeHtml(candidate.basis)} · \${escapeHtml(candidate.scope_state)}</p>
+    \${citationLinesHtml(lines)}
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function claimHtml(claim) {
+  const lines = claimCitationLines(claim);
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(claim.claim_id)}</h3>
+    <p>\${escapeHtml(claim.statement)}</p>
+    <p class="pill">\${escapeHtml(claim.claim_state)} · \${escapeHtml(claim.claim_kind)} · \${escapeHtml(claim.scope_state)}</p>
+    \${citationLinesHtml(lines)}
+    <p class="meta">\${escapeHtml(claim.why_included ?? "")}</p>
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function uncertainClaimHtml(claim) {
+  const lines = claimCitationLines(claim);
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(claim.claim_id)}</h3>
+    <p>\${escapeHtml(claim.statement)}</p>
+    <p class="pill">\${escapeHtml(claim.claim_state)} · \${escapeHtml(claim.scope_state)}</p>
+    \${citationLinesHtml(lines)}
+    \${plainListHtml("Uncertainty markers", claim.uncertainty_markers ?? [])}
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function eventHtml(event) {
+  const lines = [
+    \`event: \${event.id ?? "unknown"}\`,
+    \`path: \${event.path}\`,
+    \`recorded: \${event.recorded_at ?? "unknown"}\`,
+    \`observed: \${event.observed_at ?? "unknown"}\`
+  ];
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(event.id ?? event.path)}</h3>
+    <p class="pill">source Event</p>
+    \${citationLinesHtml(lines)}
+    <p class="meta">\${escapeHtml(event.why_included ?? "")}</p>
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function linkedItemHtml(item) {
+  const sourceEvents = (item.source_events ?? []).join(", ") || "none";
+  const affectedFiles = (item.affected_files ?? []).join(", ") || "none";
+  const stagedClaims = (item.staged_claim_ids ?? []).join(", ") || "none";
+  const lines = [
+    \`id: \${item.id ?? "unknown"}\`,
+    \`path: \${item.path}\`,
+    \`events: \${sourceEvents}\`
+  ];
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(item.id ?? item.path)}</h3>
+    <p class="pill">\${escapeHtml(item.type ?? "linked item")} · \${escapeHtml(item.review_state ?? item.followup_state ?? "unknown")}</p>
+    \${detailListHtml([
+      ["Path", item.path],
+      ["Source Events", sourceEvents],
+      ["Affected files", affectedFiles],
+      ["Staged claims", stagedClaims],
+      ["Why included", item.why_included ?? "linked to retrieved memory"]
+    ])}
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function pageSummaryHtml(page) {
+  const lines = [
+    \`page: \${page.path}\`,
+    \`id: \${page.id ?? "unknown"}\`,
+    \`why: \${page.whyIncluded ?? "loaded from deterministic match"}\`
+  ];
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(page.name)}</h3>
+    <p class="pill">\${escapeHtml(page.type ?? "page")} · score \${escapeHtml(page.score ?? 0)}</p>
+    \${citationLinesHtml(lines)}
+    \${plainListHtml("Matched terms", page.matchedTerms ?? [])}
+    \${plainListHtml("Uncertainty markers", page.uncertaintyMarkers ?? [])}
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function missingInfoHtml(item) {
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(item.title)}</h3>
+    <p class="pill">\${escapeHtml(item.badge)}</p>
+    <p>\${escapeHtml(item.body)}</p>
+  </article>\`;
+}
+
+function contextPackHtml(contextPack) {
+  const text = contextPack ?? "";
+  return \`<section data-ask-section="context-pack"><h2>Context pack</h2>
+    <details class="context-pack">
+      <summary>Show raw compatibility pack</summary>
+      <pre id="context-pack-text">\${escapeHtml(text)}</pre>
+    </details>
+    <button type="button" class="copy-derived-text" data-copy-target="#context-pack-text">Copy context pack</button>
+  </section>\`;
+}
+
+function claimCitationLines(claim) {
+  return [
+    \`claim_id: \${claim.claim_id}\`,
+    \`page: \${claim.page_path}\`,
+    \`events: \${(claim.evidence ?? []).join(", ") || "none"}\`,
+    \`scope: \${claim.scope ?? "null"}\`,
+    \`scope_state: \${claim.scope_state ?? "unknown"}\`
+  ];
+}
+
+function sectionSlug(label) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function citationLinesHtml(lines) {
+  return \`<div class="citation-list">\${lines.map((line) => \`<p class="meta">\${escapeHtml(line)}</p>\`).join("")}</div>\`;
+}
+
+function bindCopyControls() {
+  for (const button of document.querySelectorAll(".copy-derived-text")) {
+    button.addEventListener("click", async () => {
+      await copyDerivedText(copyTextForButton(button));
+    });
+  }
+}
+
+function copyTextForButton(button) {
+  const target = button.dataset.copyTarget;
+
+  if (target) {
+    return document.querySelector(target)?.textContent ?? "";
+  }
+
+  return button.dataset.copyText ?? "";
+}
+
+async function copyDerivedText(text) {
+  let prefix = "Derived text only; not saved.";
+
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      prefix = "Copied. Derived text only; not saved.";
+    }
+  } catch {
+    prefix = "Derived text only; not saved.";
+  }
+
+  const output = document.querySelector("#copy-output");
+
+  if (output) {
+    output.textContent = \`\${prefix}\\n\${text}\`;
+  }
+}
+
+function clearCopyOutput() {
+  const output = document.querySelector("#copy-output");
+
+  if (output) {
+    output.textContent = "";
+  }
 }
 
 function renderBriefs() {
