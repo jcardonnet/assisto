@@ -8,6 +8,7 @@ import { runCorePolicyTests } from "./core-policies.mjs";
 import { runCoreIngestPipelineTests } from "./core-ingest-pipeline.mjs";
 import { runCoreExtractionTests } from "./core-extraction.mjs";
 import { runCoreRetrievalTests } from "./core-retrieval.mjs";
+import { runCoreHealthTests } from "./core-health.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -19,6 +20,7 @@ export async function runUnitTests() {
   await runCoreIngestPipelineTests();
   await runCoreExtractionTests();
   await runCoreRetrievalTests();
+  await runCoreHealthTests();
 }
 
 export function assertRequiredPaths() {

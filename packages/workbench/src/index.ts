@@ -3,6 +3,8 @@ import http, { type IncomingMessage, type Server, type ServerResponse } from "no
 import os from "node:os";
 import path from "node:path";
 import {
+  checkMemoryHealth,
+  createHealthReviewTransaction,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -15,9 +17,10 @@ import {
   showReviewItem,
   retrieveContextForAnswer,
   type ContextPackResult,
-  type Frontmatter,
   type FrontmatterValue,
   type IngestNoteResult,
+  type HealthReviewTransactionResult,
+  type MemoryHealthResult,
   type ParsedTransaction,
   type ReviewActionState,
   type ReviewStateTransactionResult,
@@ -88,18 +91,7 @@ export interface WorkbenchFollowupSummary {
   related: string[];
 }
 
-export interface WorkbenchHealthSummary {
-  counts: {
-    staged_review_items: number;
-    pending_transactions: number;
-    open_followups: number;
-    contested_pages: number;
-    archived_pages: number;
-  };
-  review_reasons: WorkbenchReviewReasonGroup[];
-  affected_files: string[];
-  warnings: string[];
-}
+export type WorkbenchHealthSummary = MemoryHealthResult;
 
 export interface WorkbenchReadWarning {
   path: string;
@@ -132,7 +124,11 @@ export interface RunningWorkbenchServer {
   close: () => Promise<void>;
 }
 
-export type WorkbenchReviewResolutionAction = "apply_staged_claim" | "mark_review_item" | "reprocess_event";
+export type WorkbenchReviewResolutionAction =
+  | "apply_staged_claim"
+  | "mark_review_item"
+  | "reprocess_event"
+  | "stage_health_review";
 
 export interface ReviewResolutionPreview {
   action: WorkbenchReviewResolutionAction;
@@ -152,30 +148,17 @@ export interface ReviewResolutionPreview {
   event_path?: string;
 }
 
-interface PageSummary {
-  path: string;
-  frontmatter: Frontmatter;
-}
-
-interface PageSummaryResult {
-  pages: PageSummary[];
-  warnings: WorkbenchReadWarning[];
-}
-
 export async function createWorkbenchSnapshot(
   root: string,
   options: WorkbenchSnapshotOptions = {}
 ): Promise<WorkbenchSnapshot> {
-  const [review, transactions, followups, ask] = await Promise.all([
+  const [review, transactions, followups, ask, health] = await Promise.all([
     collectReviewInbox(root),
     collectTransactions(root),
     collectFollowups(root),
-    options.query ? retrieveContextForAnswer(root, options.query) : Promise.resolve(null)
+    options.query ? retrieveContextForAnswer(root, options.query) : Promise.resolve(null),
+    options.includeHealth === false ? Promise.resolve(null) : checkMemoryHealth(root, { now: options.now })
   ]);
-  const health =
-    options.includeHealth === false
-      ? null
-      : summarizeHealth(review, transactions, followups, await collectPageSummaries(root));
 
   return {
     generated_at: options.now ?? new Date().toISOString(),
@@ -298,13 +281,7 @@ export async function handleWorkbenchRoute(
   }
 
   if (requestUrl.pathname === "/api/health") {
-    const [review, transactions, followups, pages] = await Promise.all([
-      collectReviewInbox(root),
-      collectTransactions(root),
-      collectFollowups(root),
-      collectPageSummaries(root)
-    ]);
-    return jsonRoute(200, summarizeHealth(review, transactions, followups, pages));
+    return jsonRoute(200, await checkMemoryHealth(root));
   }
 
   return jsonRoute(404, { error: "Not found." });
@@ -346,6 +323,14 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/events/reprocess") {
       return jsonRoute(200, await createEventReprocessPreview(root, input, true));
+    }
+
+    if (pathname === "/api/health/stage-review/preview") {
+      return jsonRoute(200, await createHealthStagePreview(root, input, false));
+    }
+
+    if (pathname === "/api/health/stage-review") {
+      return jsonRoute(200, await createHealthStagePreview(root, input, true));
     }
 
     return jsonRoute(405, { error: "Unsupported workbench write route." });
@@ -407,6 +392,21 @@ async function createEventReprocessPreview(
   return ingestTransactionPreview("reprocess_event", result, created);
 }
 
+async function createHealthStagePreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ReviewResolutionPreview> {
+  const note = optionalStringInput(input, "note");
+  const result = created
+    ? await createHealthReviewTransaction(root, await checkMemoryHealth(root), { note })
+    : await withPreviewRoot(root, async (previewRoot) =>
+        createHealthReviewTransaction(previewRoot, await checkMemoryHealth(previewRoot), { note })
+      );
+
+  return healthTransactionPreview("stage_health_review", result, created);
+}
+
 function reviewTransactionPreview(
   action: WorkbenchReviewResolutionAction,
   result: ReviewStateTransactionResult,
@@ -429,6 +429,14 @@ function ingestTransactionPreview(
     event_id: result.event_id,
     event_path: result.event_path
   };
+}
+
+function healthTransactionPreview(
+  action: WorkbenchReviewResolutionAction,
+  result: HealthReviewTransactionResult,
+  created: boolean
+): ReviewResolutionPreview {
+  return transactionPreviewFields(action, result.transaction, result.transaction_path, created);
 }
 
 function transactionPreviewFields(
@@ -583,99 +591,11 @@ async function collectFollowups(root: string): Promise<WorkbenchFollowupList> {
   return { items, warnings };
 }
 
-async function collectPageSummaries(root: string): Promise<PageSummaryResult> {
-  const files = await listFilesOrEmpty(root, "memory/**/*.md");
-  const pages: PageSummary[] = [];
-  const warnings: WorkbenchReadWarning[] = [];
-
-  for (const file of files) {
-    let parsed: ReturnType<typeof parseMarkdownFile>;
-
-    try {
-      parsed = parseMarkdownFile(await readMarkdownPage(root, file));
-    } catch (error) {
-      warnings.push(readWarning(file, error));
-      continue;
-    }
-
-    pages.push({
-      path: file,
-      frontmatter: parsed.frontmatter
-    });
-  }
-
-  return { pages, warnings };
-}
-
-function summarizeHealth(
-  review: WorkbenchReviewInbox,
-  transactions: WorkbenchTransactionList,
-  followups: WorkbenchFollowupList,
-  pageSummaries: PageSummaryResult
-): WorkbenchHealthSummary {
-  const pendingTransactions = transactions.items.filter((transaction) => transaction.transaction_state === "pending");
-  const openFollowups = followups.items.filter(
-    (followup) => !["closed", "rejected"].includes(followup.followup_state) && followup.object_state !== "archived"
-  );
-  const contestedPages = pageSummaries.pages.filter((page) => page.frontmatter.review_state === "contested");
-  const archivedPages = pageSummaries.pages.filter((page) => page.frontmatter.object_state === "archived");
-  const affectedFiles = new Set<string>();
-
-  for (const item of review.items) {
-    for (const file of item.affected_files) {
-      affectedFiles.add(file);
-    }
-  }
-
-  return {
-    counts: {
-      staged_review_items: review.items.length,
-      pending_transactions: pendingTransactions.length,
-      open_followups: openFollowups.length,
-      contested_pages: contestedPages.length,
-      archived_pages: archivedPages.length
-    },
-    review_reasons: review.grouped_by_reason,
-    affected_files: [...affectedFiles].sort(),
-    warnings: [
-      ...healthWarnings(review, pendingTransactions, contestedPages),
-      ...formatReadWarnings("Skipped malformed follow-up", followups.warnings),
-      ...formatReadWarnings("Skipped malformed memory page", pageSummaries.warnings)
-    ]
-  };
-}
-
-function healthWarnings(
-  review: WorkbenchReviewInbox,
-  pendingTransactions: WorkbenchTransactionSummary[],
-  contestedPages: PageSummary[]
-): string[] {
-  const warnings: string[] = [];
-
-  if (review.items.length > 0) {
-    warnings.push(`${review.items.length} staged review item(s) need human resolution.`);
-  }
-
-  if (pendingTransactions.length > 0) {
-    warnings.push(`${pendingTransactions.length} pending transaction(s) are awaiting apply/reject.`);
-  }
-
-  if (contestedPages.length > 0) {
-    warnings.push(`${contestedPages.length} page(s) contain contested memory.`);
-  }
-
-  return warnings;
-}
-
 function readWarning(path: string, error: unknown): WorkbenchReadWarning {
   return {
     path,
     message: error instanceof Error ? error.message : String(error)
   };
-}
-
-function formatReadWarnings(prefix: string, warnings: WorkbenchReadWarning[]): string[] {
-  return warnings.map((warning) => `${prefix}: ${warning.path} (${warning.message})`);
 }
 
 function groupReviewReasons(items: WorkbenchReviewItem[]): WorkbenchReviewReasonGroup[] {
@@ -1285,13 +1205,44 @@ async function renderHealth() {
     health = await fetchJson("/api/health");
   }
 
-  const counts = health.counts;
-  renderCards(
+  renderHealthCenter(health);
+}
+
+function renderHealthCenter(result) {
+  const counts = result.counts;
+  const countCards = cardsHtml(
     Object.keys(counts).map((key) => ({ key, count: counts[key] })),
     (item) => item.key.replaceAll("_", " "),
     (item) => String(item.count),
-    () => health.warnings
+    () => result.warnings
   );
+  const findingCards = cardsHtml(
+    result.findings,
+    (finding) => finding.code.replaceAll("_", " "),
+    (finding) => finding.severity,
+    (finding) => [finding.message, finding.affected_files.join(", "), finding.source_events.join(", "), finding.suggested_action]
+  );
+
+  view.innerHTML = \`<article class="item">
+    <h2>Stage health review</h2>
+    <form id="health-stage-form" class="action-row">
+      <input name="note" placeholder="Note">
+      <button type="submit" name="mode" value="preview" class="secondary">Preview</button>
+      <button type="submit" name="mode" value="apply">Stage</button>
+    </form>
+  </article>
+  \${countCards}
+  <section><h2>Findings</h2>\${findingCards}</section>
+  <div id="action-output" class="action-output"></div>\`;
+  document.querySelector("#health-stage-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    const preview = submitter?.value === "preview";
+    await runAction(preview ? "/api/health/stage-review/preview" : "/api/health/stage-review", {
+      note: form.elements.note.value
+    });
+  });
 }
 
 function renderCards(items, title, badge, details) {

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadTsModule } from "./ts-module-loader.mjs";
+import { writeHealthFixture } from "./core-health.mjs";
 
 let cliModule = null;
 
@@ -205,6 +206,39 @@ summary_generated_from: []
     assert.match(await readVaultFile(lintRoot, "memory/topics/mysql.md"), /object_state: active/);
   } finally {
     await rm(lintRoot, { recursive: true, force: true });
+  }
+
+  const healthRoot = await makeTempVault();
+
+  try {
+    await writeHealthFixture(healthRoot);
+
+    const healthCheck = await runWm(healthRoot, ["health", "check"]);
+    assert.match(healthCheck.stdout, /Memory health/);
+    assert.match(healthCheck.stdout, /staged_review_items\s+1/);
+    assert.match(healthCheck.stdout, /stale_noop_events\s+1/);
+    assert.match(healthCheck.stdout, /pages_missing_source_events\s+1/);
+    assert.match(healthCheck.stdout, /Suggested manual actions/);
+
+    const healthStage = await runWm(healthRoot, [
+      "health",
+      "check",
+      "--stage-review",
+      "--note",
+      "Manual health triage."
+    ]);
+    const healthTransactionId = /Pending health review transaction: (tx_\d{4}_\d{2}_\d{2}_\d{3})/.exec(
+      healthStage.stdout
+    )?.[1];
+    assert.ok(healthTransactionId);
+    assert.match(
+      await readVaultFile(healthRoot, `memory/transactions/pending/${healthTransactionId}.md`),
+      /health-stale_noop_event/
+    );
+    await expectMissing(healthRoot, "memory/review/health-stale_noop_event.md");
+    assert.match(await readVaultFile(healthRoot, "memory/topics/mysql.md"), /review_state: contested/);
+  } finally {
+    await rm(healthRoot, { recursive: true, force: true });
   }
 
   const v3CliRoot = await makeTempVault();

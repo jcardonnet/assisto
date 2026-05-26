@@ -228,7 +228,7 @@ pnpm test:unit
 pnpm test:integration
 ```
 
-The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, CLI and Pi adapters, a local Workbench, and MVP/v2/v3/retrieval deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
+The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, deterministic memory health checks, CLI and Pi adapters, a local Workbench, and MVP/v2/v3/retrieval deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 
 ## Workbench
 
@@ -244,7 +244,14 @@ The server binds to `127.0.0.1:3721` by default. Override only when needed:
 wm workbench serve --host 127.0.0.1 --port 3721
 ```
 
-Workbench endpoints under `/api/*` expose review inbox, transactions, retrieval query results, follow-ups, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while apply/mark/reprocess actions create pending Transactions through core helpers. Health staging and brief generation are staged for later v4 PRs and must remain transaction-backed when added.
+Workbench endpoints under `/api/*` expose review inbox, transactions, retrieval query results, follow-ups, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while apply/mark/reprocess and explicit health staging actions create pending Transactions through core helpers. Brief generation is staged for a later v4 PR and must remain derived unless routed through ingestion.
+
+Run health checks from the CLI:
+
+```bash
+wm health check
+wm health check --stage-review --note "Weekly manual triage"
+```
 
 ## Required commands
 
