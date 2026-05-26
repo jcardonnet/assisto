@@ -410,6 +410,10 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /renderAnswerBasis/);
+    assert.match(client.body, /renderActionResult/);
+    assert.match(client.body, /Pending transaction created/);
+    assert.match(client.body, /Preview only/);
+    assert.match(client.body, /Proposed file writes/);
     assert.match(client.body, /health-stage-form/);
     assert.match(client.body, /renderHealthCenter/);
     assert.match(client.body, /brief-form/);

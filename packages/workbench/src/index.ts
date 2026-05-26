@@ -926,6 +926,47 @@ h1 {
   margin-top: 12px;
 }
 
+.action-result {
+  display: grid;
+  gap: 10px;
+}
+
+.detail-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+
+.detail-list div {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.detail-list dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.detail-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plain-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.plain-list li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+
 .grid {
   display: grid;
   gap: 12px;
@@ -1186,10 +1227,59 @@ async function runAction(path, body) {
     snapshot = await fetchJson("/api/snapshot");
     health = null;
     render();
-    document.querySelector("#action-output").innerHTML = \`<pre>\${escapeHtml(JSON.stringify(result, null, 2))}</pre>\`;
+    document.querySelector("#action-output").innerHTML = renderActionResult(result);
   } catch (error) {
     output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
   }
+}
+
+function renderActionResult(result) {
+  const mode = result.created ? "Pending transaction created" : "Preview only";
+  const summary = [
+    ["Action", formatAction(result.action)],
+    ["Mode", mode],
+    ["Transaction", result.transaction_id],
+    ["Transaction path", result.transaction_path],
+    ["State", result.transaction_state],
+    ["Risk", result.risk_level ?? "unspecified"],
+    ["Requires review", String(Boolean(result.requires_review))]
+  ];
+
+  if (result.review_id) {
+    summary.push(["Review", result.review_path ? \`\${result.review_id} · \${result.review_path}\` : result.review_id]);
+  }
+
+  if (result.event_id) {
+    summary.push(["Event", result.event_path ? \`\${result.event_id} · \${result.event_path}\` : result.event_id]);
+  }
+
+  return \`<article class="item action-result">
+    <h2>\${escapeHtml(mode)}</h2>
+    <p class="pill">\${escapeHtml(formatAction(result.action))}</p>
+    \${detailListHtml(summary)}
+    \${plainListHtml("Operations", result.operations)}
+    \${plainListHtml("Affected files", result.affected_files)}
+    \${plainListHtml("Source Events", result.source_events)}
+    \${plainListHtml("Proposed file writes", result.proposed_file_writes)}
+  </article>\`;
+}
+
+function formatAction(action) {
+  return String(action ?? "action").replaceAll("_", " ");
+}
+
+function detailListHtml(items) {
+  return \`<dl class="detail-list">\${items.map(([label, value]) => \`<div><dt>\${escapeHtml(label)}</dt><dd>\${escapeHtml(value)}</dd></div>\`).join("")}</dl>\`;
+}
+
+function plainListHtml(label, items) {
+  const values = (items ?? []).filter(Boolean);
+
+  if (!values.length) {
+    return "";
+  }
+
+  return \`<section><h3>\${escapeHtml(label)}</h3><ul class="plain-list">\${values.map((item) => \`<li>\${escapeHtml(item)}</li>\`).join("")}</ul></section>\`;
 }
 
 function renderAnswerBasis(result) {

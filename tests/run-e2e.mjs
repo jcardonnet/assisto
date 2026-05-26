@@ -114,6 +114,8 @@ async function runWorkbenchBrowserE2e() {
     const client = await fetchText(`${running.url}/assets/workbench.js`);
     assert.match(client, /renderAnswerBasis/);
     assert.match(client, /renderBrief/);
+    assert.match(client, /renderActionResult/);
+    assert.match(client, /Proposed file writes/);
 
     const review = await fetchJson(`${running.url}/api/review`);
     assert.equal(review.items.some((item) => item.id === "rev_mysql_scope"), true);
