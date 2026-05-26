@@ -219,6 +219,7 @@ pnpm eval:mvp
 pnpm eval:v2
 pnpm eval:v3
 pnpm eval:retrieval
+pnpm eval:v4
 ```
 
 Useful narrower test commands:
@@ -228,7 +229,7 @@ pnpm test:unit
 pnpm test:integration
 ```
 
-The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, and MVP/v2/v3/retrieval deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
+The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, and MVP/v2/v3/retrieval/v4 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 
 ## Workbench
 
@@ -245,6 +246,8 @@ wm workbench serve --host 127.0.0.1 --port 3721
 ```
 
 Workbench endpoints under `/api/*` expose review inbox, transactions, retrieval query results, follow-ups, derived session briefs, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while apply/mark/reprocess and explicit health staging actions create pending Transactions through core helpers. Briefs are disposable derived views; they cite active claims, open follow-ups, staged review, and source Events without persisting generated explanations.
+
+`pnpm test:e2e` includes a browser-style Workbench HTTP flow that loads the shell/assets and exercises review triage, staged claim application, Event reprocessing, Ask, Health, and Brief endpoints. `pnpm eval:v4` gates the same v4 safety shape: no unsafe canonical writes, no generated persistence, no autonomous supersession, no Event raw text rewrites, cited derived output, review flow success, health detection, no-match guidance, and session brief generation.
 
 Run health checks from the CLI:
 

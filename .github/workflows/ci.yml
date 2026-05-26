@@ -60,3 +60,6 @@ jobs:
 
       - name: Retrieval eval
         run: pnpm eval:retrieval
+
+      - name: v4 eval
+        run: pnpm eval:v4
