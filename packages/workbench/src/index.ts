@@ -1491,6 +1491,7 @@ function render() {
     <output id="copy-output" class="copy-output" aria-live="polite"></output>\`;
     document.querySelector("#ask-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      clearCopyOutput();
       const question = document.querySelector("#ask-input").value.trim();
 
       if (!question) {
@@ -1925,6 +1926,7 @@ function renderAnswerBasis(result) {
 }
 
 function renderAskResult(result) {
+  clearCopyOutput();
   const cannotConfirm = [
     ...(result.missingInformation ?? []).map((item) => ({
       title: item.code,
@@ -2065,9 +2067,9 @@ function contextPackHtml(contextPack) {
   return \`<section data-ask-section="context-pack"><h2>Context pack</h2>
     <details class="context-pack">
       <summary>Show raw compatibility pack</summary>
-      <pre>\${escapeHtml(text)}</pre>
+      <pre id="context-pack-text">\${escapeHtml(text)}</pre>
     </details>
-    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(text)}">Copy context pack</button>
+    <button type="button" class="copy-derived-text" data-copy-target="#context-pack-text">Copy context pack</button>
   </section>\`;
 }
 
@@ -2092,9 +2094,19 @@ function citationLinesHtml(lines) {
 function bindCopyControls() {
   for (const button of document.querySelectorAll(".copy-derived-text")) {
     button.addEventListener("click", async () => {
-      await copyDerivedText(button.dataset.copyText ?? "");
+      await copyDerivedText(copyTextForButton(button));
     });
   }
+}
+
+function copyTextForButton(button) {
+  const target = button.dataset.copyTarget;
+
+  if (target) {
+    return document.querySelector(target)?.textContent ?? "";
+  }
+
+  return button.dataset.copyText ?? "";
 }
 
 async function copyDerivedText(text) {
@@ -2113,6 +2125,14 @@ async function copyDerivedText(text) {
 
   if (output) {
     output.textContent = \`\${prefix}\\n\${text}\`;
+  }
+}
+
+function clearCopyOutput() {
+  const output = document.querySelector("#copy-output");
+
+  if (output) {
+    output.textContent = "";
   }
 }
 

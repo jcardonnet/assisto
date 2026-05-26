@@ -575,6 +575,8 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /Matched pages/);
     assert.match(client.body, /Context pack/);
     assert.match(client.body, /Derived text only; not saved/);
+    assert.match(client.body, /data-copy-target="#context-pack-text"/);
+    assert.doesNotMatch(client.body, /data-copy-text="\\\$\{escapeHtml\(text\)\}">Copy context pack/);
     assert.match(client.body, /renderActionResult/);
     assert.match(client.body, /Pending transaction created/);
     assert.match(client.body, /Preview only/);
