@@ -96,6 +96,33 @@ pnpm eval:v2
 pnpm eval:v3
 ```
 
+## v4 implementation track
+
+v4 keeps the deterministic safety model and adds the local Memory Workbench surface.
+
+Current v4 scope:
+
+- local Workbench shell and read APIs;
+- transaction-backed review resolution actions from the UI;
+- structured answer-basis retrieval output;
+- memory health checks and explicit health review staging;
+- disposable session briefs;
+- browser-style E2E and `pnpm eval:v4` safety gates.
+
+Validation for v4 Workbench, retrieval, health, brief, or eval behavior changes:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm eval:mvp
+pnpm eval:v2
+pnpm eval:v3
+pnpm eval:retrieval
+pnpm eval:v4
+```
+
 ---
 
 ## Principles for using Codex

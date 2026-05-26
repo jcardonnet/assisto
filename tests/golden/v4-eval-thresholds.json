@@ -1,0 +1,11 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "generatedPersistenceViolationsMax": 0,
+  "autonomousSupersessionsMax": 0,
+  "eventRawTextRewritesMax": 0,
+  "citationCoverageMin": 3,
+  "reviewResolutionFlowMin": 1,
+  "sessionBriefGenerationMin": 1,
+  "healthDetectionMin": 1,
+  "noMatchGuidanceMin": 1
+}
