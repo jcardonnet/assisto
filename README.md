@@ -220,6 +220,7 @@ pnpm eval:v2
 pnpm eval:v3
 pnpm eval:retrieval
 pnpm eval:v4
+pnpm test:browser
 ```
 
 Useful narrower test commands:
@@ -229,7 +230,9 @@ pnpm test:unit
 pnpm test:integration
 ```
 
-The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, and MVP/v2/v3/retrieval/v4 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
+`pnpm test:browser` runs Chromium-only Playwright tests for Workbench DOM flows.
+
+The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, Playwright browser coverage, and MVP/v2/v3/retrieval/v4 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 
 ## Workbench
 
@@ -245,9 +248,9 @@ The server binds to `127.0.0.1:3721` by default. Override only when needed:
 wm workbench serve --host 127.0.0.1 --port 3721
 ```
 
-Workbench endpoints under `/api/*` expose review inbox, transactions, retrieval query results, follow-ups, derived session briefs, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while apply/mark/reprocess and explicit health staging actions create pending Transactions through core helpers. The browser UI groups review items by `review_reason`, surfaces suggested manual actions, and renders action previews and created results with operations, affected files, source Events, and proposed file writes instead of relying on raw JSON. Briefs are disposable derived views; they cite active claims, open follow-ups, staged review, and source Events without persisting generated explanations.
+Workbench endpoints under `/api/*` expose review inbox, transaction summaries and details, retrieval query results, follow-ups, derived session briefs, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while apply/mark/reprocess and explicit health staging actions create pending Transactions through core helpers. The Transactions tab can inspect parsed transaction bodies, proposed file writes, validation results, source Events, affected files, and application/rejection notes; explicit apply/reject actions call core transaction helpers and never bypass validation. The browser UI groups review items by `review_reason`, surfaces suggested manual actions, and renders action previews and created results with operations, affected files, source Events, and proposed file writes instead of relying on raw JSON. Briefs are disposable derived views; they cite active claims, open follow-ups, staged review, and source Events without persisting generated explanations.
 
-`pnpm test:e2e` includes a browser-style Workbench HTTP flow that loads the shell/assets and exercises review triage, staged claim application, Event reprocessing, Ask, Health, and Brief endpoints. `pnpm eval:v4` gates the same v4 safety shape: no unsafe canonical writes, no generated persistence, no autonomous supersession, no Event raw text rewrites, cited derived output, review flow success, health detection, no-match guidance, and session brief generation.
+`pnpm test:e2e` includes a browser-style Workbench HTTP flow that loads the shell/assets and exercises review triage, staged claim application, Event reprocessing, Ask, Health, and Brief endpoints. `pnpm test:browser` adds DOM-level Chromium coverage for the Transaction Console apply/reject flow. `pnpm eval:v4` gates the same v4 safety shape: no unsafe canonical writes, no generated persistence, no autonomous supersession, no Event raw text rewrites, cited derived output, review flow success, health detection, no-match guidance, and session brief generation.
 
 Run health checks from the CLI:
 

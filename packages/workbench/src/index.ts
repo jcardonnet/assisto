@@ -3,6 +3,7 @@ import http, { type IncomingMessage, type Server, type ServerResponse } from "no
 import os from "node:os";
 import path from "node:path";
 import {
+  applyTransaction,
   checkMemoryHealth,
   buildSessionBrief,
   createHealthReviewTransaction,
@@ -14,9 +15,12 @@ import {
   parseMarkdownFile,
   parseTransactionMarkdown,
   readMarkdownPage,
+  rejectTransaction,
   reprocessEvent,
   showReviewItem,
+  transactionFilePaths,
   retrieveContextForAnswer,
+  validateTransaction,
   type ContextPackResult,
   type FrontmatterValue,
   type IngestNoteResult,
@@ -26,7 +30,8 @@ import {
   type ReviewActionState,
   type ReviewStateTransactionResult,
   type ReviewItemSummary,
-  type SessionBriefKind
+  type SessionBriefKind,
+  type ValidationResult
 } from "@assisto/core";
 
 export interface WorkbenchSnapshotOptions {
@@ -80,6 +85,37 @@ export interface WorkbenchTransactionSummary {
   requires_review?: boolean;
 }
 
+export interface WorkbenchTransactionDetail extends WorkbenchTransactionSummary {
+  body: string;
+  content: string;
+  intent?: string;
+  rollback_notes?: string;
+  application_log?: string;
+  proposed_file_writes: WorkbenchTransactionFileWrite[];
+  validation: ValidationResult;
+}
+
+export interface WorkbenchTransactionFileWrite {
+  path: string;
+  content: string;
+}
+
+export interface WorkbenchTransactionActionResult {
+  action: "apply_transaction" | "reject_transaction";
+  created: boolean;
+  transaction_id: string;
+  transaction_path: string;
+  transaction_state: string;
+  operations: string[];
+  affected_files: string[];
+  source_events: string[];
+  proposed_file_writes: string[];
+  validation: ValidationResult;
+  risk_level?: string;
+  requires_review?: boolean;
+  reason?: string;
+}
+
 export interface WorkbenchFollowupList {
   items: WorkbenchFollowupSummary[];
   warnings: WorkbenchReadWarning[];
@@ -128,6 +164,12 @@ export interface RunningWorkbenchServer {
   port: number;
   url: string;
   close: () => Promise<void>;
+}
+
+interface WorkbenchTransactionRecord {
+  path: string;
+  content: string;
+  transaction: ParsedTransaction;
 }
 
 export type WorkbenchReviewResolutionAction =
@@ -275,6 +317,16 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await collectTransactions(root));
   }
 
+  if (requestUrl.pathname === "/api/transactions/detail") {
+    const transactionId = optionalTarget(requestUrl);
+
+    if (!transactionId) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    return jsonRoute(200, await getTransactionDetail(root, transactionId));
+  }
+
   if (requestUrl.pathname === "/api/ask") {
     const query = optionalQuery(requestUrl);
     return query
@@ -347,6 +399,22 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/health/stage-review") {
       return jsonRoute(200, await createHealthStagePreview(root, input, true));
+    }
+
+    if (pathname === "/api/transactions/apply/preview") {
+      return jsonRoute(200, await createTransactionApplyPreview(root, input, false));
+    }
+
+    if (pathname === "/api/transactions/apply") {
+      return jsonRoute(200, await createTransactionApplyPreview(root, input, true));
+    }
+
+    if (pathname === "/api/transactions/reject/preview") {
+      return jsonRoute(200, await createTransactionRejectPreview(root, input, false));
+    }
+
+    if (pathname === "/api/transactions/reject") {
+      return jsonRoute(200, await createTransactionRejectPreview(root, input, true));
     }
 
     return jsonRoute(405, { error: "Unsupported workbench write route." });
@@ -423,6 +491,56 @@ async function createHealthStagePreview(
   return healthTransactionPreview("stage_health_review", result, created);
 }
 
+async function createTransactionApplyPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<WorkbenchTransactionActionResult> {
+  const record = await findTransaction(root, requiredStringInput(input, "id", "transactionId", "transaction_id", "path"));
+  ensurePendingTransaction(record.transaction);
+  const validation = await validateTransaction(root, record.transaction);
+
+  if (created) {
+    if (!validation.passed) {
+      throw new Error(`Transaction validation failed with ${validation.errors.length} error(s).`);
+    }
+
+    await applyTransaction(root, record.transaction.id);
+    return transactionActionResult(
+      "apply_transaction",
+      await readTransactionAt(root, transactionFilePaths.applied(record.transaction.id)),
+      true,
+      validation
+    );
+  }
+
+  return transactionActionResult("apply_transaction", record, false, validation);
+}
+
+async function createTransactionRejectPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<WorkbenchTransactionActionResult> {
+  const record = await findTransaction(root, requiredStringInput(input, "id", "transactionId", "transaction_id", "path"));
+  ensurePendingTransaction(record.transaction);
+  const reason = requiredStringInput(input, "reason", "note");
+  const validation = await validateTransaction(root, record.transaction);
+
+  if (created) {
+    await rejectTransaction(root, record.transaction.id, reason);
+    return transactionActionResult(
+      "reject_transaction",
+      await readTransactionAt(root, transactionFilePaths.rejected(record.transaction.id)),
+      true,
+      validation,
+      reason
+    );
+  }
+
+  return transactionActionResult("reject_transaction", record, false, validation, reason);
+}
+
 function reviewTransactionPreview(
   action: WorkbenchReviewResolutionAction,
   result: ReviewStateTransactionResult,
@@ -473,6 +591,30 @@ function transactionPreviewFields(
     proposed_file_writes: transaction.proposed_file_writes.map((write) => write.path),
     risk_level: transaction.risk_level,
     requires_review: transaction.requires_review
+  };
+}
+
+function transactionActionResult(
+  action: WorkbenchTransactionActionResult["action"],
+  record: WorkbenchTransactionRecord,
+  created: boolean,
+  validation: ValidationResult,
+  reason?: string
+): WorkbenchTransactionActionResult {
+  return {
+    action,
+    created,
+    transaction_id: record.transaction.id,
+    transaction_path: record.path,
+    transaction_state: record.transaction.transaction_state,
+    operations: record.transaction.operations.map((operation) => operation.operation),
+    affected_files: record.transaction.affected_files,
+    source_events: record.transaction.source_events,
+    proposed_file_writes: record.transaction.proposed_file_writes.map((write) => write.path),
+    validation,
+    risk_level: record.transaction.risk_level,
+    requires_review: record.transaction.requires_review,
+    reason
   };
 }
 
@@ -570,6 +712,80 @@ async function collectTransactions(root: string): Promise<WorkbenchTransactionLi
   return { items };
 }
 
+async function getTransactionDetail(root: string, idOrPath: string): Promise<WorkbenchTransactionDetail> {
+  const record = await findTransaction(root, idOrPath);
+  const parsed = parseMarkdownFile(record.content);
+
+  return {
+    ...transactionSummaryFromRecord(record),
+    body: parsed.body,
+    content: record.content,
+    intent: record.transaction.intent,
+    rollback_notes: record.transaction.rollback_notes,
+    application_log: record.transaction.application_log,
+    proposed_file_writes: record.transaction.proposed_file_writes.map((write) => ({
+      path: write.path,
+      content: write.content
+    })),
+    validation: await validateTransaction(root, record.transaction)
+  };
+}
+
+async function findTransaction(root: string, idOrPath: string): Promise<WorkbenchTransactionRecord> {
+  const normalized = normalizeWorkbenchPath(idOrPath);
+
+  if (normalized.startsWith("memory/transactions/") && normalized.endsWith(".md")) {
+    return readTransactionAt(root, normalized);
+  }
+
+  const files = await listFilesOrEmpty(root, "memory/transactions/**/*.md");
+
+  for (const file of files) {
+    let record: WorkbenchTransactionRecord;
+
+    try {
+      record = await readTransactionAt(root, file);
+    } catch {
+      continue;
+    }
+
+    if (record.transaction.id === idOrPath || record.path === normalized) {
+      return record;
+    }
+  }
+
+  throw new Error(`Transaction not found: ${idOrPath}`);
+}
+
+async function readTransactionAt(root: string, file: string): Promise<WorkbenchTransactionRecord> {
+  const content = await readMarkdownPage(root, file);
+  return {
+    path: file,
+    content,
+    transaction: parseTransactionMarkdown(content)
+  };
+}
+
+function transactionSummaryFromRecord(record: WorkbenchTransactionRecord): WorkbenchTransactionSummary {
+  return {
+    id: record.transaction.id,
+    path: record.path,
+    transaction_state: record.transaction.transaction_state,
+    created_at: record.transaction.created_at,
+    source_events: record.transaction.source_events,
+    operations: record.transaction.operations.map((operation) => operation.operation),
+    affected_files: record.transaction.affected_files,
+    risk_level: record.transaction.risk_level,
+    requires_review: record.transaction.requires_review
+  };
+}
+
+function ensurePendingTransaction(transaction: ParsedTransaction): void {
+  if (transaction.transaction_state !== "pending") {
+    throw new Error(`Only pending transactions can be changed from the Workbench: ${transaction.id}.`);
+  }
+}
+
 async function collectFollowups(root: string): Promise<WorkbenchFollowupList> {
   const files = await uniqueSorted([
     ...(await listFilesOrEmpty(root, "memory/followups/*.md")),
@@ -663,6 +879,10 @@ async function listFilesOrEmpty(root: string, globPattern: string): Promise<stri
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function normalizeWorkbenchPath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\/+/, "").trim();
 }
 
 function optionalQuery(requestUrl: URL): string | undefined {
@@ -1039,6 +1259,21 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.transaction-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+}
+
+.transaction-layout > .grid {
+  align-content: start;
+  grid-template-columns: 1fr;
+}
+
+.detail-panel {
+  min-width: 0;
+}
+
 .item {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1075,6 +1310,17 @@ pre {
   padding: 12px;
 }
 
+.write-detail {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.write-detail summary {
+  cursor: pointer;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 640px) {
   .shell {
     width: min(100vw - 20px, 1180px);
@@ -1087,6 +1333,10 @@ pre {
     align-items: stretch;
     flex-direction: column;
   }
+
+  .transaction-layout {
+    grid-template-columns: 1fr;
+  }
 }
 `;
 }
@@ -1098,6 +1348,8 @@ let snapshot = null;
 let health = null;
 let activeTab = "review";
 let reviewReasonFilter = "all";
+let transactionStateFilter = "pending";
+let transactionDetail = null;
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -1152,12 +1404,7 @@ function render() {
   }
 
   if (activeTab === "transactions") {
-    renderCards(
-      snapshot.transactions.items,
-      (item) => item.id,
-      (item) => \`\${item.transaction_state} · \${item.operations.join(", ")}\`,
-      (item) => [item.path, item.source_events.join(", "), item.affected_files.join(", ")]
-    );
+    renderTransactions();
     return;
   }
 
@@ -1181,6 +1428,173 @@ function render() {
   }
 
   renderBriefs();
+}
+
+function renderTransactions() {
+  const items = transactionStateFilter === "all"
+    ? snapshot.transactions.items
+    : snapshot.transactions.items.filter((item) => item.transaction_state === transactionStateFilter);
+  const filters = ["pending", "applied", "rejected", "failed", "all"];
+  const filterButtons = filters.map((state) => \`<button type="button" class="reason-filter" data-transaction-state="\${escapeHtml(state)}" aria-pressed="\${String(transactionStateFilter === state)}">
+    <strong>\${escapeHtml(state)}</strong>
+    <span>\${escapeHtml(String(countTransactions(state)))} transaction\${countTransactions(state) === 1 ? "" : "s"}</span>
+    <span>\${state === "pending" ? "Preview before applying or rejecting." : "Inspect transaction history."}</span>
+  </button>\`).join("");
+  const cards = items.length
+    ? items.map((item) => transactionCardHtml(item)).join("")
+    : '<article class="item"><h2>Empty</h2><p class="meta">No matching transactions.</p></article>';
+
+  view.innerHTML = \`<section>
+    <h2>Transaction summary</h2>
+    <div class="summary-strip">\${filterButtons}</div>
+  </section>
+  <section class="transaction-layout">
+    <div class="grid">\${cards}</div>
+    <div id="transaction-detail" class="detail-panel">\${transactionDetail ? transactionDetailHtml(transactionDetail) : '<article class="item"><h2>Transaction detail</h2><p class="meta">Select a transaction to inspect proposed writes, validation, and action notes.</p></article>'}</div>
+  </section>
+  <div id="transaction-action-output" class="action-output"></div>\`;
+  bindTransactionActions();
+}
+
+function countTransactions(state) {
+  if (state === "all") {
+    return snapshot.transactions.items.length;
+  }
+
+  return snapshot.transactions.items.filter((item) => item.transaction_state === state).length;
+}
+
+function transactionCardHtml(item) {
+  return \`<article class="item">
+    <h2>\${escapeHtml(item.id)}</h2>
+    <p class="pill">\${escapeHtml(item.transaction_state)} · \${escapeHtml(item.operations.join(", ") || "NOOP")}</p>
+    \${detailListHtml([
+      ["Path", item.path],
+      ["Source Events", item.source_events.join(", ") || "none"],
+      ["Affected files", item.affected_files.join(", ") || "none"]
+    ])}
+    <div class="action-row">
+      <button type="button" class="secondary transaction-detail-button" data-transaction-id="\${escapeHtml(item.id)}">Details</button>
+    </div>
+  </article>\`;
+}
+
+function transactionDetailHtml(detail) {
+  const validationLabel = detail.validation?.passed ? "passed" : "failed";
+  const validationMessages = [
+    ...(detail.validation?.errors ?? []).map((error) => \`\${error.code}: \${error.message}\`),
+    ...(detail.validation?.warnings ?? []).map((warning) => \`\${warning.code}: \${warning.message}\`)
+  ];
+
+  return \`<article class="item transaction-detail-card">
+    <h2>\${escapeHtml(detail.id)}</h2>
+    <p class="pill">\${escapeHtml(detail.transaction_state)} · validation \${escapeHtml(validationLabel)}</p>
+    \${detailListHtml([
+      ["Path", detail.path],
+      ["Created", detail.created_at ?? "unknown"],
+      ["Risk", detail.risk_level ?? "unspecified"],
+      ["Requires review", String(Boolean(detail.requires_review))],
+      ["Intent", detail.intent ?? "none"],
+      ["Rollback / repair notes", detail.rollback_notes ?? "none"],
+      ["Application / rejection notes", detail.application_log ?? "none"]
+    ])}
+    \${plainListHtml("Operations", detail.operations)}
+    \${plainListHtml("Affected files", detail.affected_files)}
+    \${plainListHtml("Source Events", detail.source_events)}
+    \${plainListHtml("Validation notes", validationMessages)}
+    \${proposedWritesHtml(detail.proposed_file_writes)}
+    \${detail.transaction_state === "pending" ? transactionActionFormsHtml(detail.id) : ""}
+  </article>\`;
+}
+
+function proposedWritesHtml(writes) {
+  const values = writes ?? [];
+
+  if (!values.length) {
+    return '<section><h3>Proposed file writes</h3><p class="meta">No explicit proposed writes.</p></section>';
+  }
+
+  return \`<section><h3>Proposed file writes</h3>\${values.map((write) => \`<details class="write-detail">
+    <summary>\${escapeHtml(write.path)}</summary>
+    <pre>\${escapeHtml(write.content)}</pre>
+  </details>\`).join("")}</section>\`;
+}
+
+function transactionActionFormsHtml(transactionId) {
+  return \`<div class="action-stack">
+    <form class="transaction-apply-form" data-transaction-id="\${escapeHtml(transactionId)}">
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview apply</button>
+        <button type="submit" name="mode" value="apply">Apply transaction</button>
+      </div>
+    </form>
+    <form class="transaction-reject-form" data-transaction-id="\${escapeHtml(transactionId)}">
+      <div class="action-row">
+        <input name="reason" placeholder="Rejection reason">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview reject</button>
+        <button type="submit" name="mode" value="apply">Reject transaction</button>
+      </div>
+    </form>
+  </div>\`;
+}
+
+function bindTransactionActions() {
+  for (const button of document.querySelectorAll("[data-transaction-state]")) {
+    button.addEventListener("click", () => {
+      transactionStateFilter = button.dataset.transactionState ?? "pending";
+      renderTransactions();
+    });
+  }
+
+  for (const button of document.querySelectorAll(".transaction-detail-button")) {
+    button.addEventListener("click", async () => {
+      await loadTransactionDetail(button.dataset.transactionId);
+    });
+  }
+
+  for (const form of document.querySelectorAll(".transaction-apply-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runTransactionAction(preview ? "/api/transactions/apply/preview" : "/api/transactions/apply", {
+        id: form.dataset.transactionId
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".transaction-reject-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runTransactionAction(preview ? "/api/transactions/reject/preview" : "/api/transactions/reject", {
+        id: form.dataset.transactionId,
+        reason: form.elements.reason.value
+      });
+    });
+  }
+}
+
+async function loadTransactionDetail(transactionId) {
+  transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(transactionId)}\`);
+  renderTransactions();
+}
+
+async function runTransactionAction(path, body) {
+  const output = document.querySelector("#transaction-action-output");
+  output.innerHTML = "<pre>Running</pre>";
+
+  try {
+    const result = await postJson(path, body);
+    snapshot = await fetchJson("/api/snapshot");
+    health = null;
+    transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(result.transaction_id)}\`).catch(() => null);
+    renderTransactions();
+    document.querySelector("#transaction-action-output").innerHTML = renderActionResult(result);
+  } catch (error) {
+    output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+  }
 }
 
 function renderReview() {
@@ -1342,7 +1756,7 @@ async function runAction(path, body) {
 }
 
 function renderActionResult(result) {
-  const mode = result.created ? "Pending transaction created" : "Preview only";
+  const mode = actionModeLabel(result);
   const summary = [
     ["Action", formatAction(result.action)],
     ["Mode", mode],
@@ -1352,6 +1766,14 @@ function renderActionResult(result) {
     ["Risk", result.risk_level ?? "unspecified"],
     ["Requires review", String(Boolean(result.requires_review))]
   ];
+
+  if (result.validation) {
+    summary.push(["Validation", result.validation.passed ? "passed" : "failed"]);
+  }
+
+  if (result.reason) {
+    summary.push(["Reason", result.reason]);
+  }
 
   if (result.review_id) {
     summary.push(["Review", result.review_path ? \`\${result.review_id} · \${result.review_path}\` : result.review_id]);
@@ -1370,6 +1792,18 @@ function renderActionResult(result) {
     \${plainListHtml("Source Events", result.source_events)}
     \${plainListHtml("Proposed file writes", result.proposed_file_writes)}
   </article>\`;
+}
+
+function actionModeLabel(result) {
+  if (result.action === "apply_transaction") {
+    return result.created ? "Transaction applied" : "Preview only";
+  }
+
+  if (result.action === "reject_transaction") {
+    return result.created ? "Transaction rejected" : "Preview only";
+  }
+
+  return result.created ? "Pending transaction created" : "Preview only";
 }
 
 function formatAction(action) {

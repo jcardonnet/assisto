@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadTsModule } from "./ts-module-loader.mjs";
 import { makeTempVault, readVaultFile, writeVaultFile } from "./helpers/temp-vault.mjs";
 
-async function writeWorkbenchFixture(root) {
+export async function writeWorkbenchFixture(root) {
   await writeVaultFile(
     root,
     "memory/people/jeff.md",
@@ -163,6 +163,158 @@ No durable claims were extracted from the Event.
 ## Rollback / repair notes
 
 Preserve source Events.
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/transactions/pending/tx_2026_05_21_apply.md",
+    `---
+id: tx_2026_05_21_apply
+type: transaction
+transaction_state: pending
+created_at: 2026-05-21T10:30:00-03:00
+source_events:
+  - ev_2026_05_21_001
+operations:
+  - UPSERT_CLAIM
+affected_files:
+  - topics/transaction-console.md
+risk_level: low
+requires_review: false
+validation_errors: []
+---
+
+# Transaction tx_2026_05_21_apply
+
+## Intent
+
+Apply a transaction console smoke claim through explicit proposed file writes.
+
+## Proposed operations
+
+- UPSERT_CLAIM: write transaction console smoke claim
+
+## Proposed changes
+
+### Create
+
+\`\`\`markdown path=memory/topics/transaction-console.md
+---
+id: top_transaction_console
+type: topic
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:30:00-03:00
+updated_at: 2026-05-21T10:30:00-03:00
+aliases: []
+source_events:
+  - ev_2026_05_21_001
+related: []
+summary_generated_from:
+  - clm_transaction_console_ready
+---
+
+# Transaction Console
+
+## Active claims
+
+- claim_id: clm_transaction_console_ready
+  statement: The transaction console apply path is ready for manual validation.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:30:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+\`\`\`
+
+## Rollback / repair notes
+
+Remove the proposed topic page if the manual validation action is wrong.
+
+## Application log
+
+Pending.
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/transactions/pending/tx_2026_05_21_reject.md",
+    `---
+id: tx_2026_05_21_reject
+type: transaction
+transaction_state: pending
+created_at: 2026-05-21T10:45:00-03:00
+source_events:
+  - ev_2026_05_21_001
+operations:
+  - UPSERT_CLAIM
+affected_files:
+  - topics/rejected-transaction-console.md
+risk_level: low
+requires_review: false
+validation_errors: []
+---
+
+# Transaction tx_2026_05_21_reject
+
+## Intent
+
+Rejectable transaction console smoke claim.
+
+## Proposed operations
+
+- UPSERT_CLAIM: write rejectable transaction console smoke claim
+
+## Proposed changes
+
+### Create
+
+\`\`\`markdown path=memory/topics/rejected-transaction-console.md
+---
+id: top_rejected_transaction_console
+type: topic
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:45:00-03:00
+updated_at: 2026-05-21T10:45:00-03:00
+aliases: []
+source_events:
+  - ev_2026_05_21_001
+related: []
+summary_generated_from:
+  - clm_rejected_transaction_console
+---
+
+# Rejected Transaction Console
+
+## Active claims
+
+- claim_id: clm_rejected_transaction_console
+  statement: The rejected transaction console claim should never become canonical.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:45:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+\`\`\`
+
+## Rollback / repair notes
+
+No canonical page should be written when this transaction is rejected.
+
+## Application log
+
+Pending.
 `
   );
   await writeVaultFile(
@@ -388,7 +540,7 @@ export async function runWorkbenchTests() {
     assert.equal(snapshot.generated_at, "2026-05-25T12:34:56.000Z");
     assert.equal(snapshot.review.items.length, 1);
     assert.equal(snapshot.review.items[0].id, "rev_mysql_scope");
-    assert.equal(snapshot.transactions.items.length, 2);
+    assert.equal(snapshot.transactions.items.length, 4);
     assert.equal(snapshot.transactions.items[0].transaction_state, "pending");
     assert.equal(snapshot.followups.items.some((item) => item.id === "fu_ask_jeff"), true);
     assert.equal(snapshot.health.counts.staged_review_items, 1);
@@ -418,6 +570,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /Pending transaction created/);
     assert.match(client.body, /Preview only/);
     assert.match(client.body, /Proposed file writes/);
+    assert.match(client.body, /transactionStateFilter/);
+    assert.match(client.body, /renderTransactions/);
+    assert.match(client.body, /\/api\/transactions\/detail/);
+    assert.match(client.body, /\/api\/transactions\/apply\/preview/);
+    assert.match(client.body, /\/api\/transactions\/reject\/preview/);
     assert.match(client.body, /health-stage-form/);
     assert.match(client.body, /renderHealthCenter/);
     assert.match(client.body, /brief-form/);
@@ -443,6 +600,111 @@ export async function runWorkbenchTests() {
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/snapshot" })).body
     );
     assert.equal(routeSnapshot.health, null);
+
+    const transactionDetail = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/transactions/detail?id=tx_2026_05_21_apply"
+        })
+      ).body
+    );
+
+    assert.equal(transactionDetail.id, "tx_2026_05_21_apply");
+    assert.equal(transactionDetail.transaction_state, "pending");
+    assert.equal(transactionDetail.validation.passed, true);
+    assert.equal(transactionDetail.operations.includes("UPSERT_CLAIM"), true);
+    assert.equal(transactionDetail.source_events.includes("ev_2026_05_21_001"), true);
+    assert.equal(transactionDetail.affected_files.includes("topics/transaction-console.md"), true);
+    assert.equal(transactionDetail.proposed_file_writes[0].path, "memory/topics/transaction-console.md");
+    assert.match(transactionDetail.proposed_file_writes[0].content, /clm_transaction_console_ready/);
+    assert.match(transactionDetail.body, /## Proposed changes/);
+
+    const transactionDetailByPath = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/transactions/detail?id=memory%2Ftransactions%2Fpending%2Ftx_2026_05_21_apply.md"
+        })
+      ).body
+    );
+    assert.equal(transactionDetailByPath.id, "tx_2026_05_21_apply");
+
+    const missingTransactionDetail = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/transactions/detail"
+    });
+    assert.equal(missingTransactionDetail.status, 400);
+
+    const transactionApplyPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/transactions/apply/preview",
+          body: JSON.stringify({ id: "tx_2026_05_21_apply" })
+        })
+      ).body
+    );
+    assert.equal(transactionApplyPreview.action, "apply_transaction");
+    assert.equal(transactionApplyPreview.created, false);
+    assert.equal(transactionApplyPreview.transaction_id, "tx_2026_05_21_apply");
+    assert.equal(transactionApplyPreview.transaction_state, "pending");
+    assert.equal(transactionApplyPreview.validation.passed, true);
+    assert.equal(
+      transactionApplyPreview.proposed_file_writes.includes("memory/topics/transaction-console.md"),
+      true
+    );
+    await assert.rejects(() => readVaultFile(root, "memory/topics/transaction-console.md"), /ENOENT/);
+
+    const transactionApply = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/transactions/apply",
+          body: JSON.stringify({ id: "tx_2026_05_21_apply" })
+        })
+      ).body
+    );
+    assert.equal(transactionApply.action, "apply_transaction");
+    assert.equal(transactionApply.created, true);
+    assert.equal(transactionApply.transaction_state, "applied");
+    assert.equal(transactionApply.validation.passed, true);
+    assert.match(await readVaultFile(root, "memory/topics/transaction-console.md"), /clm_transaction_console_ready/);
+    assert.match(await readVaultFile(root, "memory/transactions/applied/tx_2026_05_21_apply.md"), /transaction_state: applied/);
+
+    const transactionRejectPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/transactions/reject/preview",
+          body: JSON.stringify({ id: "tx_2026_05_21_reject", reason: "Not needed after manual review." })
+        })
+      ).body
+    );
+    assert.equal(transactionRejectPreview.action, "reject_transaction");
+    assert.equal(transactionRejectPreview.created, false);
+    assert.equal(transactionRejectPreview.transaction_state, "pending");
+    assert.equal(transactionRejectPreview.reason, "Not needed after manual review.");
+    await assert.rejects(() => readVaultFile(root, "memory/transactions/rejected/tx_2026_05_21_reject.md"), /ENOENT/);
+    await assert.rejects(() => readVaultFile(root, "memory/topics/rejected-transaction-console.md"), /ENOENT/);
+
+    const transactionReject = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/transactions/reject",
+          body: JSON.stringify({ id: "tx_2026_05_21_reject", reason: "Not needed after manual review." })
+        })
+      ).body
+    );
+    assert.equal(transactionReject.action, "reject_transaction");
+    assert.equal(transactionReject.created, true);
+    assert.equal(transactionReject.transaction_state, "rejected");
+    assert.match(
+      await readVaultFile(root, "memory/transactions/rejected/tx_2026_05_21_reject.md"),
+      /transaction_state: rejected/
+    );
+    await assert.rejects(() => readVaultFile(root, "memory/topics/rejected-transaction-console.md"), /ENOENT/);
 
     const ask = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask?q=Who%20is%20my%20manager%3F" }))
