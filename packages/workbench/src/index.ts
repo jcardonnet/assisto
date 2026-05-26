@@ -1,16 +1,26 @@
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import http, { type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import os from "node:os";
+import path from "node:path";
 import {
+  createReviewApplyTransaction,
+  createReviewStateTransaction,
   listMarkdownFiles,
   listReviewItems,
   parseClaimBlockRecords,
   parseMarkdownFile,
   parseTransactionMarkdown,
   readMarkdownPage,
+  reprocessEvent,
   showReviewItem,
   retrieveContextForAnswer,
   type ContextPackResult,
   type Frontmatter,
   type FrontmatterValue,
+  type IngestNoteResult,
+  type ParsedTransaction,
+  type ReviewActionState,
+  type ReviewStateTransactionResult,
   type ReviewItemSummary
 } from "@assisto/core";
 
@@ -105,6 +115,7 @@ export interface WorkbenchServerOptions {
 export interface WorkbenchRouteRequest {
   method?: string;
   url: string;
+  body?: string;
 }
 
 export interface WorkbenchRouteResponse {
@@ -119,6 +130,26 @@ export interface RunningWorkbenchServer {
   port: number;
   url: string;
   close: () => Promise<void>;
+}
+
+export type WorkbenchReviewResolutionAction = "apply_staged_claim" | "mark_review_item" | "reprocess_event";
+
+export interface ReviewResolutionPreview {
+  action: WorkbenchReviewResolutionAction;
+  created: boolean;
+  transaction_id: string;
+  transaction_path: string;
+  transaction_state: string;
+  operations: string[];
+  affected_files: string[];
+  source_events: string[];
+  proposed_file_writes: string[];
+  risk_level?: string;
+  requires_review?: boolean;
+  review_id?: string;
+  review_path?: string;
+  event_id?: string;
+  event_path?: string;
 }
 
 interface PageSummary {
@@ -195,9 +226,11 @@ export async function startWorkbenchServer(options: WorkbenchServerOptions): Pro
 
 async function handleRequest(root: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
   try {
+    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readRequestBody(request);
     const route = await handleWorkbenchRoute(root, {
       method: request.method,
-      url: request.url ?? "/"
+      url: request.url ?? "/",
+      body
     });
     response.writeHead(route.status, {
       "content-type": route.content_type,
@@ -219,12 +252,15 @@ export async function handleWorkbenchRoute(
   request: WorkbenchRouteRequest
 ): Promise<WorkbenchRouteResponse> {
   const method = request.method ?? "GET";
+  const requestUrl = new URL(request.url, "http://127.0.0.1");
 
-  if (method !== "GET" && method !== "HEAD") {
-    return jsonRoute(405, { error: "Workbench PR1 is read-only." });
+  if (method === "POST") {
+    return handleWorkbenchPostRoute(root, requestUrl.pathname, request);
   }
 
-  const requestUrl = new URL(request.url, "http://127.0.0.1");
+  if (method !== "GET" && method !== "HEAD") {
+    return jsonRoute(405, { error: "Unsupported method." });
+  }
 
   if (requestUrl.pathname === "/") {
     return textRoute(200, workbenchHtml(), "text/html; charset=utf-8");
@@ -272,6 +308,175 @@ export async function handleWorkbenchRoute(
   }
 
   return jsonRoute(404, { error: "Not found." });
+}
+
+async function handleWorkbenchPostRoute(
+  root: string,
+  pathname: string,
+  request: WorkbenchRouteRequest
+): Promise<WorkbenchRouteResponse> {
+  let input: Record<string, unknown>;
+
+  try {
+    input = parseJsonBody(request.body);
+  } catch (error) {
+    return jsonRoute(400, { error: error instanceof Error ? error.message : String(error) });
+  }
+
+  try {
+    if (pathname === "/api/review/apply-staged/preview") {
+      return jsonRoute(200, await createReviewApplyPreview(root, input, false));
+    }
+
+    if (pathname === "/api/review/apply-staged") {
+      return jsonRoute(200, await createReviewApplyPreview(root, input, true));
+    }
+
+    if (pathname === "/api/review/mark/preview") {
+      return jsonRoute(200, await createReviewMarkPreview(root, input, false));
+    }
+
+    if (pathname === "/api/review/mark") {
+      return jsonRoute(200, await createReviewMarkPreview(root, input, true));
+    }
+
+    if (pathname === "/api/events/reprocess/preview") {
+      return jsonRoute(200, await createEventReprocessPreview(root, input, false));
+    }
+
+    if (pathname === "/api/events/reprocess") {
+      return jsonRoute(200, await createEventReprocessPreview(root, input, true));
+    }
+
+    return jsonRoute(405, { error: "Unsupported workbench write route." });
+  } catch (error) {
+    return jsonRoute(400, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function createReviewApplyPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ReviewResolutionPreview> {
+  const reviewId = requiredStringInput(input, "reviewId", "review_id", "id");
+  const target = requiredStringInput(input, "target");
+  const options = {
+    target,
+    context: optionalStringInput(input, "context"),
+    createContext: optionalStringInput(input, "createContext", "create_context"),
+    supersede: optionalStringInput(input, "supersede"),
+    note: optionalStringInput(input, "note")
+  };
+  const result = created
+    ? await createReviewApplyTransaction(root, reviewId, options)
+    : await withPreviewRoot(root, (previewRoot) => createReviewApplyTransaction(previewRoot, reviewId, options));
+
+  return reviewTransactionPreview("apply_staged_claim", result, created);
+}
+
+async function createReviewMarkPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ReviewResolutionPreview> {
+  const reviewId = requiredStringInput(input, "reviewId", "review_id", "id");
+  const state = reviewActionStateInput(input);
+  const note = optionalStringInput(input, "note");
+  const result = created
+    ? await createReviewStateTransaction(root, reviewId, state, { note })
+    : await withPreviewRoot(root, (previewRoot) => createReviewStateTransaction(previewRoot, reviewId, state, { note }));
+
+  return reviewTransactionPreview("mark_review_item", result, created);
+}
+
+async function createEventReprocessPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ReviewResolutionPreview> {
+  if (input.stageOnly !== true && input.stage_only !== true) {
+    throw new Error("Event reprocess requires stageOnly true.");
+  }
+
+  const eventId = requiredStringInput(input, "eventId", "event_id", "id");
+  const result = created
+    ? await reprocessEvent(root, eventId)
+    : await withPreviewRoot(root, (previewRoot) => reprocessEvent(previewRoot, eventId));
+
+  return ingestTransactionPreview("reprocess_event", result, created);
+}
+
+function reviewTransactionPreview(
+  action: WorkbenchReviewResolutionAction,
+  result: ReviewStateTransactionResult,
+  created: boolean
+): ReviewResolutionPreview {
+  return {
+    ...transactionPreviewFields(action, result.transaction, result.transaction_path, created),
+    review_id: result.review_id,
+    review_path: result.review_path
+  };
+}
+
+function ingestTransactionPreview(
+  action: WorkbenchReviewResolutionAction,
+  result: IngestNoteResult,
+  created: boolean
+): ReviewResolutionPreview {
+  return {
+    ...transactionPreviewFields(action, result.transaction, result.transaction_path, created),
+    event_id: result.event_id,
+    event_path: result.event_path
+  };
+}
+
+function transactionPreviewFields(
+  action: WorkbenchReviewResolutionAction,
+  transaction: ParsedTransaction,
+  transactionPath: string,
+  created: boolean
+): ReviewResolutionPreview {
+  return {
+    action,
+    created,
+    transaction_id: transaction.id,
+    transaction_path: transactionPath,
+    transaction_state: transaction.transaction_state,
+    operations: transaction.operations.map((operation) => operation.operation),
+    affected_files: transaction.affected_files,
+    source_events: transaction.source_events,
+    proposed_file_writes: transaction.proposed_file_writes.map((write) => write.path),
+    risk_level: transaction.risk_level,
+    requires_review: transaction.requires_review
+  };
+}
+
+async function withPreviewRoot<T>(root: string, action: (previewRoot: string) => Promise<T>): Promise<T> {
+  const previewRoot = await mkdtemp(path.join(previewTempParent(), "assisto-workbench-preview-"));
+
+  try {
+    await copyMemoryTree(root, previewRoot);
+    return await action(previewRoot);
+  } finally {
+    await rm(previewRoot, { recursive: true, force: true });
+  }
+}
+
+async function copyMemoryTree(root: string, previewRoot: string): Promise<void> {
+  const source = path.join(root, "memory");
+  const destination = path.join(previewRoot, "memory");
+
+  try {
+    await cp(source, destination, { recursive: true, verbatimSymlinks: true });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      await mkdir(destination, { recursive: true });
+      return;
+    }
+
+    throw error;
+  }
 }
 
 async function collectReviewInbox(root: string): Promise<WorkbenchReviewInbox> {
@@ -504,6 +709,78 @@ function optionalQuery(requestUrl: URL): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+
+    if (totalBytes > 1_000_000) {
+      throw new Error("Workbench request body is too large.");
+    }
+
+    chunks.push(buffer);
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function parseJsonBody(body: string | undefined): Record<string, unknown> {
+  if (!body?.trim()) {
+    return {};
+  }
+
+  const parsed: unknown = JSON.parse(body);
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Request body must be a JSON object.");
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function requiredStringInput(input: Record<string, unknown>, ...keys: string[]): string {
+  const value = optionalStringInput(input, ...keys);
+
+  if (!value) {
+    throw new Error(`Missing required field: ${keys[0]}.`);
+  }
+
+  return value;
+}
+
+function optionalStringInput(input: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = input[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function reviewActionStateInput(input: Record<string, unknown>): ReviewActionState {
+  const value = requiredStringInput(input, "state");
+
+  if (value === "reviewed" || value === "contested" || value === "archived") {
+    return value;
+  }
+
+  throw new Error("Review state must be reviewed, contested, or archived.");
+}
+
+function previewTempParent(): string {
+  if (process.env.TMPDIR?.trim()) {
+    return process.env.TMPDIR.trim();
+  }
+
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
+
 function jsonRoute(status: number, body: unknown): WorkbenchRouteResponse {
   return textRoute(status, `${JSON.stringify(body, null, 2)}\n`, "application/json; charset=utf-8");
 }
@@ -587,7 +864,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -654,13 +932,16 @@ h1 {
   gap: 12px;
 }
 
-.toolbar {
+.toolbar,
+.action-row {
   align-items: center;
   display: flex;
   gap: 8px;
 }
 
-.toolbar input {
+.toolbar input,
+.action-row input,
+.action-row select {
   border: 1px solid var(--line);
   border-radius: 6px;
   flex: 1;
@@ -668,7 +949,8 @@ h1 {
   padding: 8px 10px;
 }
 
-.toolbar button {
+.toolbar button,
+.action-row button {
   background: var(--accent);
   border: 1px solid var(--accent);
   border-radius: 6px;
@@ -676,6 +958,23 @@ h1 {
   cursor: pointer;
   min-height: 38px;
   padding: 8px 14px;
+}
+
+.action-row button.secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+.action-stack {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.action-output {
+  margin-top: 12px;
 }
 
 .grid {
@@ -727,7 +1026,8 @@ pre {
   }
 
   .topbar,
-  .toolbar {
+  .toolbar,
+  .action-row {
     align-items: stretch;
     flex-direction: column;
   }
@@ -768,6 +1068,21 @@ async function fetchJson(path) {
   return response.json();
 }
 
+async function postJson(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Request failed");
+  }
+
+  return payload;
+}
+
 function render() {
   if (!snapshot) {
     view.innerHTML = "";
@@ -775,12 +1090,7 @@ function render() {
   }
 
   if (activeTab === "review") {
-    renderCards(
-      snapshot.review.items,
-      (item) => item.id,
-      (item) => \`\${item.review_reason} · \${item.review_state}\`,
-      (item) => [item.path, item.source_events.join(", "), item.affected_files.join(", ")]
-    );
+    renderReview();
     return;
   }
 
@@ -819,6 +1129,125 @@ function render() {
   }
 
   view.innerHTML = \`<article class="item"><h2>Briefs</h2><p class="meta">Scheduled for PR5.</p></article>\`;
+}
+
+function renderReview() {
+  const items = snapshot.review.items;
+  const cards = items.length
+    ? items.map((item) => reviewCardHtml(item)).join("")
+    : '<article class="item"><h2>Empty</h2><p class="meta">No matching memory objects.</p></article>';
+
+  view.innerHTML = \`<article class="item">
+    <h2>Event reprocess</h2>
+    <form id="event-reprocess-form" class="action-row">
+      <input name="eventId" placeholder="Event id or path">
+      <button type="submit" name="mode" value="preview" class="secondary">Preview</button>
+      <button type="submit" name="mode" value="apply">Stage</button>
+    </form>
+  </article>
+  <div class="grid">\${cards}</div>
+  <div id="action-output" class="action-output"></div>\`;
+  bindReviewActions();
+}
+
+function reviewCardHtml(item) {
+  const defaultTarget = item.affected_files[0] ? memoryPath(item.affected_files[0]) : "";
+
+  return \`<article class="item">
+    <h2>\${escapeHtml(item.id)}</h2>
+    <p class="pill">\${escapeHtml(item.review_reason)} · \${escapeHtml(item.review_state)}</p>
+    <p class="meta">\${escapeHtml(item.path)}</p>
+    <p class="meta">\${escapeHtml(item.source_events.join(", "))}</p>
+    <p class="meta">\${escapeHtml(item.staged_claim_ids.join(", "))}</p>
+    <div class="action-stack">
+      <form class="review-apply-form" data-review-id="\${escapeHtml(item.id)}">
+        <div class="action-row">
+          <input name="target" value="\${escapeHtml(defaultTarget)}" placeholder="Target page">
+          <input name="context" placeholder="Context id or path">
+        </div>
+        <div class="action-row">
+          <input name="createContext" placeholder="Create context">
+          <input name="supersede" placeholder="Supersede claim">
+        </div>
+        <div class="action-row">
+          <input name="note" placeholder="Note">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview</button>
+          <button type="submit" name="mode" value="apply">Apply</button>
+        </div>
+      </form>
+      <form class="review-mark-form" data-review-id="\${escapeHtml(item.id)}">
+        <div class="action-row">
+          <select name="state">
+            <option value="reviewed">reviewed</option>
+            <option value="contested">contested</option>
+            <option value="archived">archived</option>
+          </select>
+          <input name="note" placeholder="Note">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview</button>
+          <button type="submit" name="mode" value="apply">Mark</button>
+        </div>
+      </form>
+    </div>
+  </article>\`;
+}
+
+function bindReviewActions() {
+  document.querySelector("#event-reprocess-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    const preview = submitter?.value === "preview";
+    await runAction(preview ? "/api/events/reprocess/preview" : "/api/events/reprocess", {
+      eventId: form.elements.eventId.value,
+      stageOnly: true
+    });
+  });
+
+  for (const form of document.querySelectorAll(".review-apply-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runAction(preview ? "/api/review/apply-staged/preview" : "/api/review/apply-staged", {
+        reviewId: form.dataset.reviewId,
+        target: form.elements.target.value,
+        context: form.elements.context.value,
+        createContext: form.elements.createContext.value,
+        supersede: form.elements.supersede.value,
+        note: form.elements.note.value
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".review-mark-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runAction(preview ? "/api/review/mark/preview" : "/api/review/mark", {
+        reviewId: form.dataset.reviewId,
+        state: form.elements.state.value,
+        note: form.elements.note.value
+      });
+    });
+  }
+}
+
+async function runAction(path, body) {
+  const output = document.querySelector("#action-output");
+  output.innerHTML = "<pre>Running</pre>";
+
+  try {
+    const result = await postJson(path, body);
+    output.innerHTML = \`<pre>\${escapeHtml(JSON.stringify(result, null, 2))}</pre>\`;
+    snapshot = await fetchJson("/api/snapshot");
+  } catch (error) {
+    output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+  }
+}
+
+function memoryPath(file) {
+  return file.startsWith("memory/") ? file : \`memory/\${file}\`;
 }
 
 async function renderHealth() {
