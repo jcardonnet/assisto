@@ -44,6 +44,17 @@ export async function runCoreHealthTests() {
     assert.equal(result.findings.some((finding) => finding.code === "stale_noop_event"), true);
     assert.equal(result.findings.some((finding) => finding.code === "missing_source_event"), true);
     assert.equal(result.findings.some((finding) => finding.suggested_action.includes("manual")), true);
+    assert.equal(result.findings.every((finding) => /^hlth_[a-z_]+_[a-f0-9]{12}$/.test(finding.finding_id)), true);
+    assert.equal(new Set(result.findings.map((finding) => finding.finding_id)).size, result.findings.length);
+
+    const repeatedResult = await health.checkMemoryHealth(root, {
+      now: "2026-05-26T12:00:00.000Z",
+      retrievalNoMatchQueries: ["What is the Neptune deploy key?"]
+    });
+    assert.deepEqual(
+      repeatedResult.findings.map((finding) => finding.finding_id),
+      result.findings.map((finding) => finding.finding_id)
+    );
     assert.equal(await readVaultFile(root, "memory/topics/mysql.md"), beforeTopic);
 
     const staged = await health.createHealthReviewTransaction(root, result, {

@@ -587,11 +587,14 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/transactions\/apply\/preview/);
     assert.match(client.body, /\/api\/transactions\/reject\/preview/);
     assert.match(client.body, /health-stage-form/);
+    assert.match(client.body, /health-finding-form/);
+    assert.match(client.body, /\/api\/health\/stage-finding\/preview/);
+    assert.match(client.body, /data-finding-id/);
     assert.match(client.body, /renderHealthCenter/);
     assert.match(client.body, /brief-form/);
     assert.match(client.body, /renderBrief/);
     assert.match(client.body, /\/api\/brief/);
-    assert.match(client.body, /snapshot = await fetchJson\("\/api\/snapshot"\);\n\s*health = null;\n\s*render\(\);/);
+    assert.match(client.body, /refreshAfterAction/);
 
     const review = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/review" })).body);
     assert.equal(review.items[0].id, "rev_mysql_scope");
@@ -795,9 +798,53 @@ export async function runWorkbenchTests() {
     assert.equal(health.counts.contested_claims >= 1, true);
     assert.equal(health.counts.orphan_pages, 1);
     assert.equal(health.findings.some((finding) => finding.code === "missing_source_event"), true);
+    assert.equal(health.findings.every((finding) => /^hlth_[a-z_]+_[a-f0-9]{12}$/.test(finding.finding_id)), true);
     assert.equal(health.warnings.some((warning) => /memory\/topics\/broken\.md/.test(warning)), true);
     await rm(path.join(root, "memory/followups/broken.md"), { force: true });
     await rm(path.join(root, "memory/topics/broken.md"), { force: true });
+
+    const staleNoopFinding = health.findings.find((finding) => finding.code === "stale_noop_event");
+    assert.ok(staleNoopFinding);
+    const singleHealthPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/health/stage-finding/preview",
+          body: JSON.stringify({ findingId: staleNoopFinding.finding_id, note: "Only this finding." })
+        })
+      ).body
+    );
+
+    assert.equal(singleHealthPreview.action, "stage_health_review");
+    assert.equal(singleHealthPreview.created, false);
+    assert.deepEqual(singleHealthPreview.proposed_file_writes, ["memory/review/health-stale_noop_event.md"]);
+    await assert.rejects(() => readVaultFile(root, singleHealthPreview.transaction_path), /ENOENT/);
+    await assert.rejects(() => readVaultFile(root, "memory/review/health-stale_noop_event.md"), /ENOENT/);
+
+    const missingHealthFinding = await workbench.handleWorkbenchRoute(root, {
+      method: "POST",
+      url: "/api/health/stage-finding/preview",
+      body: JSON.stringify({ findingId: "hlth_missing_000000000000" })
+    });
+    assert.equal(missingHealthFinding.status, 400);
+    assert.match(JSON.parse(missingHealthFinding.body).error, /Health finding not found/);
+
+    const singleHealthStage = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/health/stage-finding",
+          body: JSON.stringify({ findingId: staleNoopFinding.finding_id, note: "Only this finding." })
+        })
+      ).body
+    );
+
+    assert.equal(singleHealthStage.action, "stage_health_review");
+    assert.equal(singleHealthStage.created, true);
+    assert.deepEqual(singleHealthStage.proposed_file_writes, ["memory/review/health-stale_noop_event.md"]);
+    assert.match(await readVaultFile(root, singleHealthStage.transaction_path), /Only this finding/);
+    assert.doesNotMatch(await readVaultFile(root, singleHealthStage.transaction_path), /health-missing_source_event/);
+    await assert.rejects(() => readVaultFile(root, "memory/review/health-stale_noop_event.md"), /ENOENT/);
 
     const healthPreview = JSON.parse(
       (
