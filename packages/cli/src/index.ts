@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  buildSessionBrief,
   checkMemoryHealth,
   createHealthReviewTransaction,
   createReviewApplyTransaction,
@@ -21,6 +22,7 @@ import {
   type FrontmatterValue,
   type ParsedTransaction,
   type ReviewActionState,
+  type SessionBriefKind,
   type ValidationDocument,
   type ValidationResult
 } from "@assisto/core";
@@ -86,6 +88,10 @@ export async function main(
 
     if (command === "health") {
       return await commandHealth(parsed.root, rest, io);
+    }
+
+    if (command === "brief") {
+      return await commandBrief(parsed.root, rest, io);
     }
 
     if (command === "workbench") {
@@ -419,6 +425,21 @@ async function commandHealth(root: string, args: string[], io: CliIo): Promise<n
   return 0;
 }
 
+async function commandBrief(root: string, args: string[], io: CliIo): Promise<number> {
+  const [rawKind, target] = args;
+
+  if (!rawKind || rawKind === "--help" || rawKind === "-h") {
+    io.stdout("Usage: wm brief <today|person|context|review|followups> [id|path]\n");
+    return 0;
+  }
+
+  const kind = parseBriefKind(rawKind);
+  const result = await buildSessionBrief(root, { kind, target });
+  io.stdout(result.contextPack);
+
+  return 0;
+}
+
 async function commandWorkbench(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand] = args;
 
@@ -530,6 +551,14 @@ function parsePort(value: string): number {
   return parsed;
 }
 
+function parseBriefKind(value: string): SessionBriefKind {
+  if (value === "today" || value === "person" || value === "context" || value === "review" || value === "followups") {
+    return value;
+  }
+
+  throw new Error("Usage: wm brief <today|person|context|review|followups> [id|path]");
+}
+
 function printValidationResult(result: ValidationResult, io: CliIo): void {
   if (result.passed) {
     io.stdout("Validation passed.\n");
@@ -594,6 +623,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] ask --pack-context "<question>"',
       '  wm [--root <path>] ask --answer-basis "<question>"',
       "  wm [--root <path>] health check [--stage-review] [--note <text>]",
+      "  wm [--root <path>] brief <today|person|context|review|followups> [id|path]",
       "  wm [--root <path>] workbench serve [--host 127.0.0.1] [--port 3721]",
       ""
     ].join("\n")

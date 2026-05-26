@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   checkMemoryHealth,
+  buildSessionBrief,
   createHealthReviewTransaction,
   createReviewApplyTransaction,
   createReviewStateTransaction,
@@ -24,7 +25,8 @@ import {
   type ParsedTransaction,
   type ReviewActionState,
   type ReviewStateTransactionResult,
-  type ReviewItemSummary
+  type ReviewItemSummary,
+  type SessionBriefKind
 } from "@assisto/core";
 
 export interface WorkbenchSnapshotOptions {
@@ -282,6 +284,16 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/health") {
     return jsonRoute(200, await checkMemoryHealth(root));
+  }
+
+  if (requestUrl.pathname === "/api/brief") {
+    const kind = optionalBriefKind(requestUrl);
+
+    if (!kind) {
+      return jsonRoute(400, { error: "Missing required query parameter: kind." });
+    }
+
+    return jsonRoute(200, await buildSessionBrief(root, { kind, target: optionalTarget(requestUrl) }));
   }
 
   return jsonRoute(404, { error: "Not found." });
@@ -627,6 +639,23 @@ function optionalQuery(requestUrl: URL): string | undefined {
   const trimmed = query?.trim();
 
   return trimmed ? trimmed : undefined;
+}
+
+function optionalTarget(requestUrl: URL): string | undefined {
+  const target = requestUrl.searchParams.get("target") ?? requestUrl.searchParams.get("id") ?? requestUrl.searchParams.get("path");
+  const trimmed = target?.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
+  const kind = requestUrl.searchParams.get("kind")?.trim();
+
+  if (kind === "today" || kind === "person" || kind === "context" || kind === "review" || kind === "followups") {
+    return kind;
+  }
+
+  return undefined;
 }
 
 async function readRequestBody(request: IncomingMessage): Promise<string> {
@@ -1043,7 +1072,7 @@ function render() {
     return;
   }
 
-  view.innerHTML = \`<article class="item"><h2>Briefs</h2><p class="meta">Scheduled for PR5.</p></article>\`;
+  renderBriefs();
 }
 
 function renderReview() {
@@ -1189,6 +1218,72 @@ function renderAnswerBasis(result) {
   ];
 
   document.querySelector("#ask-result").innerHTML = sections.join("");
+}
+
+function renderBriefs() {
+  view.innerHTML = \`<form class="toolbar" id="brief-form">
+    <select id="brief-kind" name="kind">
+      <option value="today">today</option>
+      <option value="person">person</option>
+      <option value="context">context</option>
+      <option value="review">review</option>
+      <option value="followups">followups</option>
+    </select>
+    <input id="brief-target" name="target" placeholder="Person or Context id/path">
+    <button type="submit">Build</button>
+  </form><div id="brief-result" class="grid"></div>\`;
+  document.querySelector("#brief-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const kind = document.querySelector("#brief-kind").value;
+    const target = document.querySelector("#brief-target").value.trim();
+    const query = new URLSearchParams({ kind });
+
+    if (target) {
+      query.set("target", target);
+    }
+
+    const result = await fetchJson(\`/api/brief?\${query.toString()}\`);
+    renderBrief(result);
+  });
+}
+
+function renderBrief(result) {
+  const sections = [
+    sectionHtml(
+      "Active claims",
+      result.activeClaims,
+      (claim) => claim.claim_id,
+      (claim) => claim.statement,
+      (claim) => [claim.page_path, claim.evidence.join(", "), claim.scope_state]
+    ),
+    sectionHtml(
+      "Uncertainty and review",
+      [...result.uncertainClaims, ...result.reviewItems],
+      (item) => item.claim_id ?? item.id,
+      (item) => item.statement ?? item.review_reason ?? item.review_state,
+      (item) => item.page_path ? [item.page_path, item.uncertainty_markers.join(", ")] : [item.path, item.source_events.join(", ")]
+    ),
+    sectionHtml(
+      "Open follow-ups",
+      result.openFollowUps,
+      (followup) => followup.id,
+      (followup) => followup.followup_state,
+      (followup) => [followup.path, followup.owner, followup.source_events.join(", ")]
+    ),
+    sectionHtml(
+      "Source Events",
+      result.evidenceEvents,
+      (event) => event.id,
+      (event) => event.path,
+      (event) => [event.recorded_at, event.observed_at]
+    )
+  ];
+
+  document.querySelector("#brief-result").innerHTML = \`<article class="item">
+    <h2>\${escapeHtml(result.title)}</h2>
+    <p class="pill">\${escapeHtml(result.kind)}</p>
+    \${result.warnings.map((warning) => \`<p class="meta">\${escapeHtml(warning)}</p>\`).join("")}
+  </article>\${sections.join("")}\`;
 }
 
 function sectionHtml(label, items, title, badge, details) {
