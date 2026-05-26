@@ -8,6 +8,8 @@ build/
 coverage/
 .nyc_output/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Package manager and tool caches
 .pnpm-store/

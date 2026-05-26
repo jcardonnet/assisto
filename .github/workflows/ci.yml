@@ -47,6 +47,12 @@ jobs:
       - name: Near-E2E tests
         run: pnpm test:e2e
 
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser E2E tests
+        run: pnpm test:browser
+
       - name: MVP eval
         run: pnpm eval:mvp
 
