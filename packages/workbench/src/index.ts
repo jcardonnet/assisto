@@ -407,6 +407,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createHealthStagePreview(root, input, true));
     }
 
+    if (pathname === "/api/health/stage-finding/preview") {
+      return jsonRoute(200, await createHealthFindingStagePreview(root, input, false));
+    }
+
+    if (pathname === "/api/health/stage-finding") {
+      return jsonRoute(200, await createHealthFindingStagePreview(root, input, true));
+    }
+
     if (pathname === "/api/transactions/apply/preview") {
       return jsonRoute(200, await createTransactionApplyPreview(root, input, false));
     }
@@ -495,6 +503,40 @@ async function createHealthStagePreview(
       );
 
   return healthTransactionPreview("stage_health_review", result, created);
+}
+
+async function createHealthFindingStagePreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ReviewResolutionPreview> {
+  const findingId = requiredStringInput(input, "findingId", "finding_id", "id");
+  const note = optionalStringInput(input, "note");
+  const createOneFindingTransaction = async (targetRoot: string) => {
+    const health = await checkMemoryHealth(targetRoot);
+    return createHealthReviewTransaction(targetRoot, healthForOneFinding(health, findingId), { note });
+  };
+  const result = created
+    ? await createOneFindingTransaction(root)
+    : await withPreviewRoot(root, (previewRoot) => createOneFindingTransaction(previewRoot));
+
+  return healthTransactionPreview("stage_health_review", result, created);
+}
+
+function healthForOneFinding(health: MemoryHealthResult, findingId: string): MemoryHealthResult {
+  const finding = health.findings.find((item) => item.finding_id === findingId);
+
+  if (!finding) {
+    throw new Error(`Health finding not found: ${findingId}`);
+  }
+
+  return {
+    ...health,
+    findings: [finding],
+    affected_files: [...new Set(finding.affected_files)].sort(),
+    source_events: [...new Set(finding.source_events)].sort(),
+    suggested_actions: [finding.suggested_action]
+  };
 }
 
 async function createTransactionApplyPreview(
@@ -1843,13 +1885,25 @@ async function runAction(path, body) {
 
   try {
     const result = await postJson(path, body);
-    snapshot = await fetchJson("/api/snapshot");
-    health = null;
-    render();
-    document.querySelector("#action-output").innerHTML = renderActionResult(result);
+    const actionResult = renderActionResult(result);
+    await refreshAfterAction();
+    document.querySelector("#action-output").innerHTML = actionResult;
   } catch (error) {
     output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
   }
+}
+
+async function refreshAfterAction() {
+  snapshot = await fetchJson("/api/snapshot");
+  health = null;
+
+  if (activeTab === "health") {
+    health = await fetchJson("/api/health");
+    renderHealthCenter(health);
+    return;
+  }
+
+  render();
 }
 
 function renderActionResult(result) {
@@ -2227,12 +2281,7 @@ function renderHealthCenter(result) {
     (item) => String(item.count),
     () => result.warnings
   );
-  const findingCards = cardsHtml(
-    result.findings,
-    (finding) => finding.code.replaceAll("_", " "),
-    (finding) => finding.severity,
-    (finding) => [finding.message, finding.affected_files.join(", "), finding.source_events.join(", "), finding.suggested_action]
-  );
+  const findingCards = healthFindingCardsHtml(result.findings);
 
   view.innerHTML = \`<article class="item">
     <h2>Stage health review</h2>
@@ -2245,6 +2294,35 @@ function renderHealthCenter(result) {
   \${countCards}
   <section><h2>Findings</h2>\${findingCards}</section>
   <div id="action-output" class="action-output"></div>\`;
+  bindHealthActions();
+}
+
+function healthFindingCardsHtml(findings) {
+  if (!findings.length) {
+    return '<article class="item"><h2>Empty</h2><p class="meta">No health findings.</p></article>';
+  }
+
+  return \`<div class="grid">\${findings.map((finding) => \`<article class="item" data-finding-id="\${escapeHtml(finding.finding_id)}">
+    <h2>\${escapeHtml(finding.code.replaceAll("_", " "))}</h2>
+    <p class="pill">\${escapeHtml(finding.severity)} · \${escapeHtml(finding.finding_id)}</p>
+    \${detailListHtml([
+      ["Message", finding.message],
+      ["Affected files", finding.affected_files.join(", ") || "none"],
+      ["Source Events", finding.source_events.join(", ") || "none"],
+      ["Suggested action", finding.suggested_action]
+    ])}
+    \${plainListHtml("Evidence", finding.evidence)}
+    <form class="health-finding-form action-stack" data-finding-id="\${escapeHtml(finding.finding_id)}">
+      <div class="action-row">
+        <input name="note" placeholder="Finding note">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview finding</button>
+        <button type="submit" name="mode" value="apply">Stage finding</button>
+      </div>
+    </form>
+  </article>\`).join("")}</div>\`;
+}
+
+function bindHealthActions() {
   document.querySelector("#health-stage-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -2254,6 +2332,18 @@ function renderHealthCenter(result) {
       note: form.elements.note.value
     });
   });
+
+  for (const form of document.querySelectorAll(".health-finding-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runAction(preview ? "/api/health/stage-finding/preview" : "/api/health/stage-finding", {
+        findingId: form.dataset.findingId,
+        note: form.elements.note.value
+      });
+    });
+  }
 }
 
 function renderCards(items, title, badge, details) {

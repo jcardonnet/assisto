@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { listMarkdownFiles, readMarkdownPage, writeMarkdownPageAtomic } from "../fs";
 import {
   parseClaimBlockRecords,
@@ -30,6 +31,7 @@ export type MemoryHealthFindingCode =
 export type MemoryHealthSeverity = "low" | "medium" | "high";
 
 export interface MemoryHealthFinding {
+  finding_id: string;
   code: MemoryHealthFindingCode;
   severity: MemoryHealthSeverity;
   message: string;
@@ -38,6 +40,8 @@ export interface MemoryHealthFinding {
   evidence: string[];
   suggested_action: string;
 }
+
+type RawMemoryHealthFinding = Omit<MemoryHealthFinding, "finding_id">;
 
 export interface MemoryHealthResult {
   generated_at: string;
@@ -98,7 +102,7 @@ export async function checkMemoryHealth(
   const now = options.now ?? defaultNow;
   const { pages, warnings } = await loadHealthPages(root);
   const eventIds = new Set(pages.filter((page) => page.frontmatter.type === "event").map((page) => pageId(page)));
-  const findings: MemoryHealthFinding[] = [];
+  const findings: RawMemoryHealthFinding[] = [];
 
   findings.push(...reviewItemFindings(pages));
   findings.push(...transactionFindings(pages));
@@ -106,15 +110,16 @@ export async function checkMemoryHealth(
   findings.push(...orphanPageFindings(pages));
   findings.push(...missingSourceEventFindings(pages, eventIds));
   findings.push(...(await retrievalNoMatchFindings(root, options.retrievalNoMatchQueries ?? [], warnings)));
+  const findingsWithIds = findings.map(addFindingId);
 
   return {
     generated_at: now,
-    counts: summarizeCounts(findings),
+    counts: summarizeCounts(findingsWithIds),
     review_reasons: reviewReasonGroups(pages),
-    findings,
-    affected_files: uniqueSorted(findings.flatMap((finding) => finding.affected_files)),
-    source_events: uniqueSorted(findings.flatMap((finding) => finding.source_events)),
-    suggested_actions: uniqueSorted(findings.map((finding) => finding.suggested_action)),
+    findings: findingsWithIds,
+    affected_files: uniqueSorted(findingsWithIds.flatMap((finding) => finding.affected_files)),
+    source_events: uniqueSorted(findingsWithIds.flatMap((finding) => finding.source_events)),
+    suggested_actions: uniqueSorted(findingsWithIds.map((finding) => finding.suggested_action)),
     warnings
   };
 }
@@ -208,7 +213,7 @@ async function loadHealthPages(root: string): Promise<HealthPageLoadResult> {
   return { pages, warnings };
 }
 
-function reviewItemFindings(pages: HealthPage[]): MemoryHealthFinding[] {
+function reviewItemFindings(pages: HealthPage[]): RawMemoryHealthFinding[] {
   return pages
     .filter((page) => page.frontmatter.type === "review_item" && page.frontmatter.review_state === "staged")
     .map((page) => ({
@@ -222,8 +227,8 @@ function reviewItemFindings(pages: HealthPage[]): MemoryHealthFinding[] {
     }));
 }
 
-function transactionFindings(pages: HealthPage[]): MemoryHealthFinding[] {
-  const findings: MemoryHealthFinding[] = [];
+function transactionFindings(pages: HealthPage[]): RawMemoryHealthFinding[] {
+  const findings: RawMemoryHealthFinding[] = [];
 
   for (const page of pages) {
     if (page.frontmatter.type !== "transaction" || page.frontmatter.transaction_state !== "pending") {
@@ -260,8 +265,8 @@ function transactionFindings(pages: HealthPage[]): MemoryHealthFinding[] {
   return findings;
 }
 
-function claimStateFindings(pages: HealthPage[]): MemoryHealthFinding[] {
-  const findings: MemoryHealthFinding[] = [];
+function claimStateFindings(pages: HealthPage[]): RawMemoryHealthFinding[] {
+  const findings: RawMemoryHealthFinding[] = [];
 
   for (const page of pages) {
     if (!canonicalPageTypes.has(stringValue(page.frontmatter.type) ?? "")) {
@@ -301,7 +306,7 @@ function claimStateFindings(pages: HealthPage[]): MemoryHealthFinding[] {
   return findings;
 }
 
-function orphanPageFindings(pages: HealthPage[]): MemoryHealthFinding[] {
+function orphanPageFindings(pages: HealthPage[]): RawMemoryHealthFinding[] {
   return pages
     .filter((page) => canonicalPageTypes.has(stringValue(page.frontmatter.type) ?? ""))
     .filter((page) => stringArrayValue(page.frontmatter.source_events).length === 0)
@@ -316,8 +321,8 @@ function orphanPageFindings(pages: HealthPage[]): MemoryHealthFinding[] {
     }));
 }
 
-function missingSourceEventFindings(pages: HealthPage[], eventIds: Set<string>): MemoryHealthFinding[] {
-  const findings: MemoryHealthFinding[] = [];
+function missingSourceEventFindings(pages: HealthPage[], eventIds: Set<string>): RawMemoryHealthFinding[] {
+  const findings: RawMemoryHealthFinding[] = [];
 
   for (const page of pages) {
     if (!canonicalPageTypes.has(stringValue(page.frontmatter.type) ?? "")) {
@@ -348,8 +353,8 @@ async function retrievalNoMatchFindings(
   root: string,
   queries: string[],
   warnings: string[]
-): Promise<MemoryHealthFinding[]> {
-  const findings: MemoryHealthFinding[] = [];
+): Promise<RawMemoryHealthFinding[]> {
+  const findings: RawMemoryHealthFinding[] = [];
 
   for (const query of queries) {
     try {
@@ -491,6 +496,26 @@ function nextSequence(dateIdPart: string, transactionIds: Set<string>): string {
 
 function countFindings(findings: MemoryHealthFinding[], code: MemoryHealthFindingCode): number {
   return findings.filter((finding) => finding.code === code).length;
+}
+
+function addFindingId(finding: RawMemoryHealthFinding | MemoryHealthFinding): MemoryHealthFinding {
+  return {
+    ...finding,
+    finding_id: findingId(finding)
+  };
+}
+
+function findingId(finding: RawMemoryHealthFinding | MemoryHealthFinding): string {
+  const stable = {
+    code: finding.code,
+    message: finding.message,
+    affected_files: uniqueSorted(finding.affected_files),
+    source_events: uniqueSorted(finding.source_events),
+    evidence: uniqueSorted(finding.evidence)
+  };
+  const digest = createHash("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 12);
+
+  return `hlth_${finding.code}_${digest}`;
 }
 
 function sourceReferences(page: HealthPage): string[] {
