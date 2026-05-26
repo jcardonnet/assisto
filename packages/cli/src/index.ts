@@ -343,14 +343,21 @@ async function commandEvents(root: string, args: string[], io: CliIo): Promise<n
 }
 
 async function commandAsk(root: string, args: string[], io: CliIo): Promise<number> {
-  const question = optionValue(args, "--pack-context");
+  const packContextQuestion = optionValue(args, "--pack-context");
+  const answerBasisQuestion = optionValue(args, "--answer-basis");
+
+  if (packContextQuestion && answerBasisQuestion) {
+    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>"');
+  }
+
+  const question = packContextQuestion ?? answerBasisQuestion;
 
   if (!question) {
-    throw new Error('Usage: wm ask --pack-context "<question>"');
+    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>"');
   }
 
   const result = await retrieveContextForAnswer(root, question);
-  io.stdout(result.contextPack);
+  io.stdout(answerBasisQuestion ? `${JSON.stringify(result, null, 2)}\n` : result.contextPack);
 
   return 0;
 }
@@ -528,6 +535,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] review apply-staged <id|path> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]',
       "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
+      '  wm [--root <path>] ask --answer-basis "<question>"',
       "  wm [--root <path>] workbench serve [--host 127.0.0.1] [--port 3721]",
       ""
     ].join("\n")

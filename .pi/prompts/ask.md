@@ -13,14 +13,17 @@ If running through the CLI, use:
 
 ```bash
 pnpm --filter @assisto/cli wm ask --pack-context "<question>"
+pnpm --filter @assisto/cli wm ask --answer-basis "<question>"
 ```
 
-Report the structured result and preserve the raw `contextPack` if the user asks for detail. Call out:
+Report the structured result and preserve the raw `contextPack` if the user asks for detail. Start with `answerCandidates` and `supportingClaims`, then call out:
 
 - Exact people, topics, and contexts loaded.
+- What memory can say from active `answerCandidates`.
+- What memory cannot confirm from `missingInformation`, warnings, or uncertain claims.
 - Active claims, including `claim_id`, `claim_kind`, `claim_state`, scope, `scope_state`, and Event evidence.
 - Uncertain, staged, superseded, rejected, contested, partial, or unknown-scope claims.
-- Linked ReviewItems or FollowUps.
+- Linked ReviewItems or FollowUps from `linkedReviewItems` and `linkedFollowUps`.
 - Relevant Events included.
 - No-match guidance when no page or relation claim matched.
 

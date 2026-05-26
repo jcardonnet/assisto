@@ -542,6 +542,7 @@ wm ingest --dry-run "<note>"
 wm ingest "<note>"
 wm review inbox
 wm ask --pack-context "<question>"
+wm ask --answer-basis "<question>"
 ```
 
 ### Codex prompt
@@ -559,6 +560,7 @@ Commands:
 - wm ingest "<note>"
 - wm review inbox
 - wm ask --pack-context "<question>"
+- wm ask --answer-basis "<question>"
 
 Rules:
 - ingest creates Event + pending Transaction

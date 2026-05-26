@@ -43,12 +43,19 @@ export interface ContextPackResult {
   events: LoadedRetrievalPage[];
   contextPack: string;
   matchedPages: PackedPageSummary[];
+  answerCandidates: PackedAnswerCandidate[];
+  supportingClaims: PackedClaim[];
   activeClaims: PackedClaim[];
   uncertainClaims: PackedClaim[];
   linkedItems: PackedLinkedItem[];
+  linkedReviewItems: PackedLinkedItem[];
+  linkedFollowUps: PackedLinkedItem[];
   evidenceEvents: PackedEvidenceEvent[];
+  missingInformation: PackedMissingInformation[];
   warnings: string[];
 }
+
+export type AnswerBasisResult = ContextPackResult;
 
 export interface PackedPageSummary {
   path: string;
@@ -75,6 +82,18 @@ export interface PackedClaim {
   uncertainty_markers: string[];
 }
 
+export interface PackedAnswerCandidate {
+  claim_id: string;
+  page_path: string;
+  statement: string;
+  claim_kind: string;
+  scope: string | null;
+  scope_state: string;
+  evidence: string[];
+  basis: "active_claim";
+  why_included: string;
+}
+
 export interface PackedLinkedItem {
   path: string;
   id?: string;
@@ -95,6 +114,11 @@ export interface PackedEvidenceEvent {
   recorded_at?: string;
   observed_at?: string;
   why_included: string;
+}
+
+export interface PackedMissingInformation {
+  code: "no_match" | "no_active_claims" | "missing_evidence_events";
+  message: string;
 }
 
 const stopWords = new Set([
@@ -163,15 +187,25 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
   const activeClaims = collectPackedClaims(pages, "active");
   const uncertainClaims = collectPackedClaims(pages, "uncertain");
   const linkedItems = summarizeLinkedItems(reviewItems, query);
+  const linkedReviewItems = linkedItems.filter((item) => item.type === "review_item");
+  const linkedFollowUps = linkedItems.filter((item) => item.type === "followup");
   const evidenceEvents = summarizeEvidenceEvents(events);
   const warnings = retrievalWarnings(query, pages, uncertainClaims, events);
+  const supportingClaims = activeClaims;
+  const answerCandidates = buildAnswerCandidates(supportingClaims);
+  const missingInformation = summarizeMissingInformation(query, pages, supportingClaims, events);
   const contextPack = packContextForAnswer(query, pages, reviewItems, events, {
     targets,
     matchedPages,
+    answerCandidates,
+    supportingClaims,
     activeClaims,
     uncertainClaims,
     linkedItems,
+    linkedReviewItems,
+    linkedFollowUps,
     evidenceEvents,
+    missingInformation,
     warnings
   });
 
@@ -183,12 +217,21 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     events,
     contextPack,
     matchedPages,
+    answerCandidates,
+    supportingClaims,
     activeClaims,
     uncertainClaims,
     linkedItems,
+    linkedReviewItems,
+    linkedFollowUps,
     evidenceEvents,
+    missingInformation,
     warnings
   };
+}
+
+export async function retrieveAnswerBasis(root: string, query: string): Promise<AnswerBasisResult> {
+  return retrieveContextForAnswer(root, query);
 }
 
 export function identifyNamedTargets(query: string, vaultIndex: VaultIndex): RetrievalTarget[] {
@@ -377,14 +420,26 @@ export function packContextForAnswer(
   options: {
     targets?: RetrievalTarget[];
     matchedPages?: PackedPageSummary[];
+    answerCandidates?: PackedAnswerCandidate[];
+    supportingClaims?: PackedClaim[];
     activeClaims?: PackedClaim[];
     uncertainClaims?: PackedClaim[];
     linkedItems?: PackedLinkedItem[];
+    linkedReviewItems?: PackedLinkedItem[];
+    linkedFollowUps?: PackedLinkedItem[];
     evidenceEvents?: PackedEvidenceEvent[];
+    missingInformation?: PackedMissingInformation[];
     warnings?: string[];
   } = {}
 ): string {
   const targetByPath = new Map((options.targets ?? []).map((target) => [target.path, target]));
+  const activeClaims = options.activeClaims ?? collectPackedClaims(pages, "active");
+  const uncertainClaims = options.uncertainClaims ?? collectPackedClaims(pages, "uncertain");
+  const supportingClaims = options.supportingClaims ?? activeClaims;
+  const answerCandidates = options.answerCandidates ?? buildAnswerCandidates(supportingClaims);
+  const missingInformation =
+    options.missingInformation ?? summarizeMissingInformation(query, pages, supportingClaims, events);
+  const evidenceEvents = options.evidenceEvents ?? summarizeEvidenceEvents(events);
   const lines = [
     "# Context pack",
     "",
@@ -413,12 +468,43 @@ export function packContextForAnswer(
 
   lines.push("## Structured result summary", "");
   lines.push(`- matched_pages: ${options.matchedPages?.length ?? pages.length}`);
-  lines.push(`- active_claims: ${options.activeClaims?.length ?? collectPackedClaims(pages, "active").length}`);
-  lines.push(
-    `- uncertain_or_staged_claims: ${options.uncertainClaims?.length ?? collectPackedClaims(pages, "uncertain").length}`
-  );
-  lines.push(`- evidence_events: ${options.evidenceEvents?.length ?? events.length}`);
+  lines.push(`- active_claims: ${activeClaims.length}`);
+  lines.push(`- uncertain_or_staged_claims: ${uncertainClaims.length}`);
+  lines.push(`- evidence_events: ${evidenceEvents.length}`);
   lines.push("");
+
+  lines.push("## Answer basis", "");
+  lines.push("### What memory can say", "");
+
+  if (answerCandidates.length === 0) {
+    lines.push("- No active answer candidates found.", "");
+  } else {
+    for (const candidate of answerCandidates) {
+      lines.push(
+        `- ${candidate.statement} (claim_id: ${candidate.claim_id}; claim_kind: ${candidate.claim_kind}; scope: ${candidate.scope ?? "null"}; scope_state: ${candidate.scope_state}; evidence: ${candidate.evidence.join(", ") || "none"})`
+      );
+    }
+
+    lines.push("");
+  }
+
+  lines.push("### What memory cannot confirm", "");
+
+  if (missingInformation.length === 0 && uncertainClaims.length === 0) {
+    lines.push("- No missing information detected for loaded active claims.", "");
+  } else {
+    for (const item of missingInformation) {
+      lines.push(`- ${item.message}`);
+    }
+
+    for (const claim of uncertainClaims) {
+      lines.push(
+        `- Uncertain claim ${claim.claim_id}: ${claim.uncertainty_markers.join(", ") || claim.claim_state}`
+      );
+    }
+
+    lines.push("");
+  }
 
   lines.push("## Linked review and follow-up items", "");
 
@@ -772,6 +858,53 @@ function toPackedClaim(
     why_included: `claim on retrieved page ${page.path}`,
     uncertainty_markers: markers
   };
+}
+
+function buildAnswerCandidates(supportingClaims: PackedClaim[]): PackedAnswerCandidate[] {
+  return supportingClaims.map((claim) => ({
+    claim_id: claim.claim_id,
+    page_path: claim.page_path,
+    statement: claim.statement,
+    claim_kind: claim.claim_kind,
+    scope: claim.scope,
+    scope_state: claim.scope_state,
+    evidence: claim.evidence,
+    basis: "active_claim",
+    why_included: claim.why_included
+  }));
+}
+
+function summarizeMissingInformation(
+  query: string,
+  pages: LoadedRetrievalPage[],
+  supportingClaims: PackedClaim[],
+  events: LoadedRetrievalPage[]
+): PackedMissingInformation[] {
+  const missing: PackedMissingInformation[] = [];
+
+  if (pages.length === 0) {
+    missing.push({
+      code: "no_match",
+      message: "No deterministic memory page, claim ID, or relation claim matched the question."
+    });
+    return missing;
+  }
+
+  if (supportingClaims.length === 0) {
+    missing.push({
+      code: "no_active_claims",
+      message: "Matched pages did not contain active claims that can support an answer."
+    });
+  }
+
+  if (queryTerms(query).some((term) => evidenceTerms.has(term)) && events.length === 0) {
+    missing.push({
+      code: "missing_evidence_events",
+      message: "The question asks for evidence, but no cited Event page was loaded."
+    });
+  }
+
+  return missing;
 }
 
 function summarizeLinkedItems(items: LoadedRetrievalPage[], query: string): PackedLinkedItem[] {

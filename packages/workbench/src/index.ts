@@ -1113,12 +1113,7 @@ function render() {
       event.preventDefault();
       const question = document.querySelector("#ask-input").value.trim();
       const result = await fetchJson(\`/api/ask?q=\${encodeURIComponent(question)}\`);
-      document.querySelector("#ask-result").innerHTML = cardsHtml(
-        [...result.activeClaims, ...result.uncertainClaims],
-        (claim) => claim.claim_id,
-        (claim) => claim.statement,
-        (claim) => [claim.page_path, claim.evidence.join(", "), claim.claim_state]
-      );
+      renderAnswerBasis(result);
     });
     return;
   }
@@ -1239,11 +1234,45 @@ async function runAction(path, body) {
 
   try {
     const result = await postJson(path, body);
-    output.innerHTML = \`<pre>\${escapeHtml(JSON.stringify(result, null, 2))}</pre>\`;
     snapshot = await fetchJson("/api/snapshot");
+    health = null;
+    render();
+    document.querySelector("#action-output").innerHTML = \`<pre>\${escapeHtml(JSON.stringify(result, null, 2))}</pre>\`;
   } catch (error) {
     output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
   }
+}
+
+function renderAnswerBasis(result) {
+  const sections = [
+    sectionHtml(
+      "What memory can say",
+      result.answerCandidates,
+      (candidate) => candidate.claim_id,
+      (candidate) => candidate.statement,
+      (candidate) => [candidate.page_path, candidate.evidence.join(", "), candidate.scope_state]
+    ),
+    sectionHtml(
+      "What memory cannot confirm",
+      [...result.missingInformation, ...result.uncertainClaims],
+      (item) => item.code ?? item.claim_id,
+      (item) => item.message ?? item.statement,
+      (item) => item.page_path ? [item.page_path, item.uncertainty_markers.join(", ")] : []
+    ),
+    sectionHtml(
+      "Evidence Events",
+      result.evidenceEvents,
+      (event) => event.id,
+      (event) => event.path,
+      (event) => [event.recorded_at, event.observed_at]
+    )
+  ];
+
+  document.querySelector("#ask-result").innerHTML = sections.join("");
+}
+
+function sectionHtml(label, items, title, badge, details) {
+  return \`<section><h2>\${escapeHtml(label)}</h2>\${cardsHtml(items, title, badge, details)}</section>\`;
 }
 
 function memoryPath(file) {

@@ -253,6 +253,8 @@ export async function runWorkbenchTests() {
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
+    assert.match(client.body, /renderAnswerBasis/);
+    assert.match(client.body, /snapshot = await fetchJson\("\/api\/snapshot"\);\n\s*health = null;\n\s*render\(\);/);
 
     const review = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/review" })).body);
     assert.equal(review.items[0].id, "rev_mysql_scope");
@@ -269,6 +271,7 @@ export async function runWorkbenchTests() {
     );
     assert.equal(ask.query, "Who is my manager?");
     assert.equal(ask.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(ask.answerCandidates.some((candidate) => candidate.claim_id === "clm_jeff_manager"), true);
 
     const askWithoutQuery = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask" });
     assert.equal(askWithoutQuery.status, 400);

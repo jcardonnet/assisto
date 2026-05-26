@@ -340,7 +340,7 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
     },
     {
       name: "wm_pack_context",
-      description: "Pack deterministic lexical context for a question.",
+      description: "Pack deterministic lexical context and answer-basis fields for a question.",
       run: async (input) => retrieveContextForAnswer(rootFromInput(input, vaultRoot), stringInput(input, "question"))
     },
     {
@@ -425,7 +425,7 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
     },
     {
       name: "/wm-ask",
-      description: "Pack deterministic context for a question.",
+      description: "Pack deterministic context and answer-basis fields for a question.",
       run: async (input) => byName.get("wm_pack_context")!.run({ question: commandText(input) })
     },
     {
