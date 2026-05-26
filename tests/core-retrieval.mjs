@@ -345,10 +345,18 @@ export async function runCoreRetrievalTests() {
     assert.equal(fullResult.uncertainClaims.some((claim) => claim.scope_state === "partial"), true);
     assert.equal(fullResult.linkedItems.some((item) => item.id === "rev_qdrant_scope"), true);
     assert.equal(fullResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_004"), true);
+    assert.equal(fullResult.answerCandidates.some((candidate) => candidate.claim_id === "clm_joe_search"), true);
+    assert.equal(fullResult.supportingClaims.some((claim) => claim.claim_id === "clm_joe_search"), true);
+    assert.equal(fullResult.linkedReviewItems.some((item) => item.id === "rev_qdrant_scope"), true);
+    assert.equal(fullResult.linkedFollowUps.some((item) => item.id === "fu_ask_joe"), true);
+    assert.deepEqual(fullResult.missingInformation, []);
+    assert.match(fullResult.contextPack, /What memory can say/);
+    assert.match(fullResult.contextPack, /What memory cannot confirm/);
 
     const managerResult = await retrieval.retrieveContextForAnswer(root, "Who is my manager?");
     assert.equal(managerResult.activeClaims.some((claim) => claim.claim_id === "clm_mike_manager"), true);
     assert.equal(managerResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_002"), true);
+    assert.equal(managerResult.answerCandidates.some((candidate) => candidate.claim_id === "clm_mike_manager"), true);
 
     const reportingResult = await retrieval.retrieveContextForAnswer(root, "Who reports to Jeff?");
     assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/maria.md"), true);
@@ -364,6 +372,8 @@ export async function runCoreRetrievalTests() {
 
     const noMatch = await retrieval.retrieveContextForAnswer(root, "What is the Neptune deploy key?");
     assert.deepEqual(noMatch.matchedPages, []);
+    assert.deepEqual(noMatch.answerCandidates, []);
+    assert.equal(noMatch.missingInformation.some((item) => item.code === "no_match"), true);
     assert.equal(noMatch.warnings.some((warning) => /No named/.test(warning)), true);
     assert.match(noMatch.contextPack, /No-match guidance/);
   } finally {

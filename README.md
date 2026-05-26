@@ -228,11 +228,11 @@ pnpm test:unit
 pnpm test:integration
 ```
 
-The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, CLI and Pi adapters, a read-only local Workbench spine, and MVP/v2/v3/retrieval deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
+The current implementation includes deterministic ingestion, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, CLI and Pi adapters, a local Workbench, and MVP/v2/v3/retrieval deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 
 ## Workbench
 
-Start the local read-only Workbench:
+Start the local Workbench:
 
 ```bash
 wm workbench serve
@@ -244,7 +244,7 @@ The server binds to `127.0.0.1:3721` by default. Override only when needed:
 wm workbench serve --host 127.0.0.1 --port 3721
 ```
 
-PR1 Workbench endpoints are read-only under `/api/*` and expose review inbox, transactions, retrieval query results, follow-ups, and a health summary. The UI shell has Review, Transactions, Ask, Health, and Briefs tabs. Review resolution, health staging, and brief generation are staged for later v4 PRs and must remain transaction-backed when added.
+Workbench endpoints under `/api/*` expose review inbox, transactions, retrieval query results, follow-ups, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while apply/mark/reprocess actions create pending Transactions through core helpers. Health staging and brief generation are staged for later v4 PRs and must remain transaction-backed when added.
 
 ## Required commands
 

@@ -30,6 +30,7 @@ Useful CLI commands:
 
 ```bash
 pnpm --filter @assisto/cli wm ask --pack-context "<question>"
+pnpm --filter @assisto/cli wm ask --answer-basis "<question>"
 pnpm --filter @assisto/cli wm review inbox
 pnpm --filter @assisto/cli wm validate
 ```
@@ -44,15 +45,19 @@ pnpm --filter @assisto/cli wm validate
    ```
 
 3. Read the structured result first, then the text pack:
+   - `answerCandidates`;
+   - `supportingClaims`;
    - `matchedPages`;
    - `activeClaims`;
    - `uncertainClaims`;
-   - `linkedItems`;
+   - `linkedReviewItems`;
+   - `linkedFollowUps`;
    - `evidenceEvents`;
+   - `missingInformation`;
    - `warnings`;
    - `contextPack`.
 4. Prefer active claims.
-5. Surface uncertainty explicitly when the pack marks claims as staged, partial, unknown-scope, superseded, rejected, or contested.
+5. Surface what memory cannot confirm from `missingInformation`, warnings, and claims marked staged, partial, unknown-scope, superseded, rejected, or contested.
 6. If the user asks for an answer, answer from the context pack and structured fields only; distinguish facts from uncertainty and cite claim IDs/Event IDs when useful.
 7. If the user wants the answer saved, use the ingest workflow to create an Event and pending Transaction. Do not save the generated explanation directly.
 
@@ -71,6 +76,7 @@ pnpm --filter @assisto/cli wm validate
 
 - Canonical state remains markdown under `memory/`.
 - Retrieval output is derived and disposable.
+- `answerCandidates` and `supportingClaims` are derived from loaded active claims, not generated explanations.
 - Active claims are preferred over staged, superseded, rejected, or contested claims.
 - Unscoped, partial, staged, and contested claims must carry uncertainty in the answer.
 - Every factual context claim should retain source Event citation coverage.
@@ -79,6 +85,7 @@ pnpm --filter @assisto/cli wm validate
 ## References
 
 - `wm ask --pack-context "<question>"`
+- `wm ask --answer-basis "<question>"`
 - `wm review inbox`
 - `wm validate`
 - `docs/revised-design.md`

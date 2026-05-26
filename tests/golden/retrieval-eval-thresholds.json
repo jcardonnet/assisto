@@ -4,5 +4,6 @@
   "citationCoverageMin": 4,
   "uncertaintySurfacedMin": 2,
   "generatedPersistenceViolationsMax": 0,
-  "noMatchGuidanceMin": 1
+  "noMatchGuidanceMin": 1,
+  "answerBasisCoverageMin": 4
 }

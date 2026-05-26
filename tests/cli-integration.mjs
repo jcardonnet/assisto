@@ -127,6 +127,16 @@ export async function runCliIntegrationTests() {
     assert.match(askResult.stdout, /memory\/people\/mike\.md/);
     assert.match(askResult.stdout, /memory\/topics\/solr\.md/);
     assert.match(askResult.stdout, /memory\/topics\/qdrant\.md/);
+
+    const answerBasisResult = await runWm(askRoot, [
+      "ask",
+      "--answer-basis",
+      "How should I explain Joe and Mike the difference between Solr and Qdrant?"
+    ]);
+    const answerBasis = JSON.parse(answerBasisResult.stdout);
+    assert.equal(Array.isArray(answerBasis.answerCandidates), true);
+    assert.equal(Array.isArray(answerBasis.missingInformation), true);
+    assert.match(answerBasis.contextPack, /# Context pack/);
   } finally {
     await rm(askRoot, { recursive: true, force: true });
   }

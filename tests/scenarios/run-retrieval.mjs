@@ -13,7 +13,8 @@ const metrics = {
   citationCoverage: 0,
   uncertaintySurfaced: 0,
   generatedPersistenceViolations: 0,
-  noMatchGuidance: 0
+  noMatchGuidance: 0,
+  answerBasisCoverage: 0
 };
 
 const root = await makeTempVault("eval-retrieval-");
@@ -30,12 +31,20 @@ try {
       metrics.targetRecall += 1;
     }
 
+    if (manager.answerCandidates.some((candidate) => candidate.claim_id === "clm_mike_manager")) {
+      metrics.answerBasisCoverage += 1;
+    }
+
     if (manager.evidenceEvents.some((event) => event.id === "ev_manager")) {
       metrics.citationCoverage += 1;
     }
 
     if (reporting.activeClaims.some((claim) => claim.claim_id === "clm_maria_reports_to_jeff")) {
       metrics.targetRecall += 1;
+    }
+
+    if (reporting.answerCandidates.some((candidate) => candidate.claim_id === "clm_maria_reports_to_jeff")) {
+      metrics.answerBasisCoverage += 1;
     }
 
     if (reporting.evidenceEvents.some((event) => event.id === "ev_reporting")) {
@@ -54,6 +63,10 @@ try {
     if (source.evidenceEvents.some((event) => event.id === "ev_joe_role_active")) {
       metrics.targetRecall += 1;
       metrics.citationCoverage += 1;
+    }
+
+    if (source.supportingClaims.some((claim) => claim.claim_id === "clm_joe_role_engineer")) {
+      metrics.answerBasisCoverage += 1;
     }
 
     if (
@@ -96,6 +109,10 @@ try {
     if (noMatch.warnings.some((warning) => /No named/.test(warning))) {
       metrics.noMatchGuidance += 1;
     }
+
+    if (noMatch.missingInformation.some((item) => item.code === "no_match")) {
+      metrics.answerBasisCoverage += 1;
+    }
   });
 
   const afterSnapshot = await snapshotFiles(root);
@@ -114,6 +131,7 @@ assertAtMost(
   thresholds.generatedPersistenceViolationsMax
 );
 assertAtLeast("no-match guidance", metrics.noMatchGuidance, thresholds.noMatchGuidanceMin);
+assertAtLeast("answer basis coverage", metrics.answerBasisCoverage, thresholds.answerBasisCoverageMin);
 
 console.log(JSON.stringify({ metrics }, null, 2));
 
