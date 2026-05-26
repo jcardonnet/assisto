@@ -61,6 +61,23 @@ export async function runCoreHealthTests() {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+
+  const emptyRoot = await mkdtemp(path.join(os.tmpdir(), "assisto-health-empty-"));
+
+  try {
+    const emptyHealth = await health.checkMemoryHealth(emptyRoot, {
+      now: "2026-05-26T12:00:00.000Z"
+    });
+    assert.equal(emptyHealth.findings.length, 0);
+    await assert.rejects(
+      () => health.createHealthReviewTransaction(emptyRoot, emptyHealth, {
+        now: "2026-05-26T12:00:00.000Z"
+      }),
+      /No health findings are available to stage/
+    );
+  } finally {
+    await rm(emptyRoot, { recursive: true, force: true });
+  }
 }
 
 export async function writeHealthFixture(root) {

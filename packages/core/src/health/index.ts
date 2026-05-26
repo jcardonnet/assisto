@@ -124,6 +124,10 @@ export async function createHealthReviewTransaction(
   health: MemoryHealthResult,
   options: CreateHealthReviewTransactionOptions = {}
 ): Promise<HealthReviewTransactionResult> {
+  if (health.findings.length === 0) {
+    throw new Error("No health findings are available to stage.");
+  }
+
   const now = options.now ?? defaultNow;
   const index = await loadVaultIndex(root);
   const dateIdPart = now.slice(0, 10).replace(/-/g, "_");
@@ -138,10 +142,6 @@ export async function createHealthReviewTransaction(
       content: renderHealthReviewItem(id, finding, now, options.note, index.eventIds)
     };
   });
-
-  if (writes.length === 0) {
-    throw new Error("No health findings are available to stage.");
-  }
 
   const existingSourceEvents = uniqueSorted(
     health.findings
