@@ -132,6 +132,40 @@ No canonical claim writes are included.
   );
   await writeVaultFile(
     root,
+    "memory/transactions/pending/tx_2026_05_21_002.md",
+    `---
+id: tx_2026_05_21_002
+type: transaction
+transaction_state: pending
+created_at: 2026-05-21T10:15:00-03:00
+source_events:
+  - ev_2026_05_21_003
+operations:
+  - NOOP
+affected_files:
+  - events/2026/2026-05/2026-05-21-003.md
+risk_level: low
+requires_review: false
+validation_errors: []
+---
+
+# Transaction tx_2026_05_21_002
+
+## Intent
+
+No durable claims were extracted from the Event.
+
+## Proposed operations
+
+- NOOP: no durable claims extracted
+
+## Rollback / repair notes
+
+Preserve source Events.
+`
+  );
+  await writeVaultFile(
+    root,
     "memory/events/2026/2026-05/2026-05-21-001.md",
     `---
 id: ev_2026_05_21_001
@@ -208,6 +242,126 @@ transactions: []
 I started new job this monday as a AI Engineer at SmartEquip
 `
   );
+  await writeVaultFile(
+    root,
+    "memory/topics/health-contested.md",
+    `---
+id: top_health_contested
+type: topic
+object_state: active
+review_state: contested
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases: []
+source_events:
+  - ev_2026_05_21_001
+related: []
+summary_generated_from:
+  - clm_health_contested
+---
+
+# Health Contested
+
+## Active claims
+
+- claim_id: clm_health_contested
+  statement: Health contested memory needs review.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+
+- claim_id: clm_health_superseded
+  statement: Old health claim.
+  claim_kind: fact
+  claim_state: superseded
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/topics/health-orphan.md",
+    `---
+id: top_health_orphan
+type: topic
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases: []
+source_events: []
+related: []
+summary_generated_from:
+  - clm_health_orphan
+---
+
+# Health Orphan
+
+## Active claims
+
+- claim_id: clm_health_orphan
+  statement: Health orphan page exists.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/people/health-missing-source.md",
+    `---
+id: per_health_missing_source
+type: person
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases: []
+source_events:
+  - ev_missing_source
+related: []
+summary_generated_from:
+  - clm_health_missing_source
+---
+
+# Health Missing Source
+
+## Active claims
+
+- claim_id: clm_health_missing_source
+  statement: Health Missing Source owns the service.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_missing_source]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+  );
 }
 
 export async function runWorkbenchTests() {
@@ -233,11 +387,14 @@ export async function runWorkbenchTests() {
     assert.equal(snapshot.generated_at, "2026-05-25T12:34:56.000Z");
     assert.equal(snapshot.review.items.length, 1);
     assert.equal(snapshot.review.items[0].id, "rev_mysql_scope");
-    assert.equal(snapshot.transactions.items.length, 1);
+    assert.equal(snapshot.transactions.items.length, 2);
     assert.equal(snapshot.transactions.items[0].transaction_state, "pending");
     assert.equal(snapshot.followups.items.length, 1);
     assert.equal(snapshot.followups.items[0].id, "fu_ask_jeff");
     assert.equal(snapshot.health.counts.staged_review_items, 1);
+    assert.equal(snapshot.health.counts.stale_noop_events, 1);
+    assert.equal(snapshot.health.counts.superseded_claims, 1);
+    assert.equal(snapshot.health.counts.pages_missing_source_events, 1);
     assert.equal(snapshot.ask.query, "Who is my manager?");
     assert.equal(snapshot.ask.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
@@ -254,6 +411,8 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /renderAnswerBasis/);
+    assert.match(client.body, /health-stage-form/);
+    assert.match(client.body, /renderHealthCenter/);
     assert.match(client.body, /snapshot = await fetchJson\("\/api\/snapshot"\);\n\s*health = null;\n\s*render\(\);/);
 
     const review = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/review" })).body);
@@ -286,10 +445,47 @@ export async function runWorkbenchTests() {
     assert.equal(followups.warnings.some((warning) => warning.path === "memory/followups/broken.md"), true);
 
     const health = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/health" })).body);
-    assert.equal(health.counts.pending_transactions, 1);
+    assert.equal(health.counts.pending_transactions, 2);
+    assert.equal(health.counts.stale_noop_events, 1);
+    assert.equal(health.counts.contested_claims, 1);
+    assert.equal(health.counts.orphan_pages, 1);
+    assert.equal(health.findings.some((finding) => finding.code === "missing_source_event"), true);
     assert.equal(health.warnings.some((warning) => /memory\/topics\/broken\.md/.test(warning)), true);
     await rm(path.join(root, "memory/followups/broken.md"), { force: true });
     await rm(path.join(root, "memory/topics/broken.md"), { force: true });
+
+    const healthPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/health/stage-review/preview",
+          body: JSON.stringify({ note: "Manual health triage." })
+        })
+      ).body
+    );
+
+    assert.equal(healthPreview.action, "stage_health_review");
+    assert.equal(healthPreview.created, false);
+    assert.equal(healthPreview.operations.includes("STAGE_REVIEW"), true);
+    assert.equal(healthPreview.proposed_file_writes.some((file) => file === "memory/review/health-stale_noop_event.md"), true);
+    await assert.rejects(() => readVaultFile(root, healthPreview.transaction_path), /ENOENT/);
+    await assert.rejects(() => readVaultFile(root, "memory/review/health-stale_noop_event.md"), /ENOENT/);
+
+    const healthStage = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/health/stage-review",
+          body: JSON.stringify({ note: "Manual health triage." })
+        })
+      ).body
+    );
+
+    assert.equal(healthStage.action, "stage_health_review");
+    assert.equal(healthStage.created, true);
+    assert.match(await readVaultFile(root, healthStage.transaction_path), /health-stale_noop_event/);
+    await assert.rejects(() => readVaultFile(root, "memory/review/health-stale_noop_event.md"), /ENOENT/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
 
     const readOnly = await workbench.handleWorkbenchRoute(root, { method: "POST", url: "/api/review" });
     assert.equal(readOnly.status, 405);

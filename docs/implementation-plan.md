@@ -543,6 +543,8 @@ wm ingest "<note>"
 wm review inbox
 wm ask --pack-context "<question>"
 wm ask --answer-basis "<question>"
+wm health check
+wm health check --stage-review --note "<text>"
 ```
 
 ### Codex prompt

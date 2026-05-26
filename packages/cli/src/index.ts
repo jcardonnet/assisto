@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  checkMemoryHealth,
+  createHealthReviewTransaction,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -80,6 +82,10 @@ export async function main(
 
     if (command === "ask") {
       return await commandAsk(parsed.root, rest, io);
+    }
+
+    if (command === "health") {
+      return await commandHealth(parsed.root, rest, io);
     }
 
     if (command === "workbench") {
@@ -362,6 +368,57 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
   return 0;
 }
 
+async function commandHealth(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm health check [--stage-review] [--note <text>]\n");
+    return 0;
+  }
+
+  if (subcommand !== "check") {
+    throw new Error("Usage: wm health check [--stage-review] [--note <text>]");
+  }
+
+  const health = await checkMemoryHealth(root);
+
+  io.stdout("Memory health\n");
+  for (const [key, value] of Object.entries(health.counts)) {
+    io.stdout(`${key}\t${value}\n`);
+  }
+
+  if (health.review_reasons.length > 0) {
+    io.stdout("\nReview reasons\n");
+    for (const reason of health.review_reasons) {
+      io.stdout(`${reason.review_reason}\t${reason.count}\n`);
+    }
+  }
+
+  if (health.suggested_actions.length > 0) {
+    io.stdout("\nSuggested manual actions\n");
+    for (const action of health.suggested_actions) {
+      io.stdout(`- ${action}\n`);
+    }
+  }
+
+  if (health.warnings.length > 0) {
+    io.stdout("\nWarnings\n");
+    for (const warning of health.warnings) {
+      io.stdout(`- ${warning}\n`);
+    }
+  }
+
+  if (args.includes("--stage-review")) {
+    const staged = await createHealthReviewTransaction(root, health, {
+      note: optionValue(args, "--note") ?? undefined
+    });
+    io.stdout(`\nPending health review transaction: ${staged.transaction_id} (${staged.transaction_path})\n`);
+    io.stdout(`Review proposals: ${staged.review_paths.join(", ")}\n`);
+  }
+
+  return 0;
+}
+
 async function commandWorkbench(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand] = args;
 
@@ -536,6 +593,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
       '  wm [--root <path>] ask --answer-basis "<question>"',
+      "  wm [--root <path>] health check [--stage-review] [--note <text>]",
       "  wm [--root <path>] workbench serve [--host 127.0.0.1] [--port 3721]",
       ""
     ].join("\n")
