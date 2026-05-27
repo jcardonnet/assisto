@@ -60,6 +60,7 @@ export async function runCliIntegrationTests() {
   assert.equal(helpExitCode, 0);
   assert.match(help.stdout, /wm - local markdown work-memory MVP/);
   assert.match(help.stdout, /capture/);
+  assert.match(help.stdout, /import notes/);
   assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups>/);
@@ -152,6 +153,56 @@ export async function runCliIntegrationTests() {
     assert.match(openAiDryRun.stdout, /Staged review proposals:/);
   } finally {
     await rm(captureRoot, { recursive: true, force: true });
+  }
+
+  const importRoot = await makeTempVault();
+  const importSource = path.join(importRoot, "curated");
+
+  try {
+    await mkdir(importSource, { recursive: true });
+    await writeFile(path.join(importSource, "note.md"), "Joe is the DBA. We use MySQL.", "utf8");
+    await writeFile(path.join(importSource, "ignore.csv"), "not imported", "utf8");
+
+    const dryRun = await runWm(importRoot, [
+      "import",
+      "notes",
+      "--path",
+      importSource,
+      "--limit",
+      "1",
+      "--dry-run"
+    ]);
+    assert.match(dryRun.stdout, /Dry run\. No changes written/);
+    assert.match(dryRun.stdout, /Import units: 1/);
+    assert.match(dryRun.stdout, /Event: ev_2026_05_20_001/);
+    await expectMissing(importRoot, "memory/events/2026/2026-05/2026-05-20-001.md");
+
+    const created = await runWm(importRoot, [
+      "import",
+      "notes",
+      "--path",
+      importSource,
+      "--source-label",
+      "curated import"
+    ]);
+    assert.match(created.stdout, /Imported: 1/);
+    assert.match(created.stdout, /Pending transaction: tx_2026_05_20_001/);
+    assert.match(
+      await readVaultFile(importRoot, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_hash: [a-f0-9]{64}/
+    );
+    assert.match(
+      await readVaultFile(importRoot, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_label: curated import/
+    );
+    await expectMissing(importRoot, "memory/people/joe.md");
+
+    const duplicate = await runWm(importRoot, ["import", "notes", "--path", importSource]);
+    assert.match(duplicate.stdout, /Imported: 0/);
+    assert.match(duplicate.stdout, /Skipped: 1/);
+    assert.match(duplicate.stdout, /Skipped duplicate source_hash/);
+  } finally {
+    await rm(importRoot, { recursive: true, force: true });
   }
 
   const askRoot = await makeTempVault();

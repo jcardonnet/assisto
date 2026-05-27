@@ -31,6 +31,8 @@ Validators check:
 - Transaction IDs are unique;
 - claim IDs are unique across the validated write set and existing vault.
 
+Imported Events may include optional `source_hash` metadata. Import code uses this hash to skip duplicate raw Markdown/text units before writing another Event; validators still treat Event IDs as the durable uniqueness boundary.
+
 ## Summaries
 
 If a page has a `## Current summary` section, frontmatter must include `summary_generated_from` with active claim IDs only.

@@ -27,7 +27,7 @@ Raw input -> Event -> Candidate claims -> Transaction -> Validated mutation or s
 
 Ingestion and capture logic may write Events and pending Transactions. It must not directly write canonical People, Contexts, Topics, FollowUps, or ReviewItems outside proposed transaction writes.
 
-Events may include optional capture metadata such as `source_label` and `contexts`. These fields describe the human capture surface and must not by themselves promote unscoped claims into active truth.
+Events may include optional capture/import metadata such as `source_label`, `contexts`, and `source_hash`. `source_hash` is a SHA-256 hash of a curated raw Markdown/text import unit and is used only for duplicate import detection. These fields describe the human capture surface and must not by themselves promote unscoped claims into active truth.
 
 ## Claims
 

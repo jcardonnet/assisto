@@ -10,7 +10,9 @@ import {
   checkMemoryHealth,
   createCaptureNote,
   createHealthReviewTransaction,
+  createImportNotes,
   previewCaptureNote,
+  previewImportNotes,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -24,6 +26,7 @@ import {
   validateDocuments,
   validateTransaction,
   type FrontmatterValue,
+  type ImportNotesResult,
   type ParsedTransaction,
   type ReviewActionState,
   type SessionBriefKind,
@@ -86,6 +89,10 @@ export async function main(
 
     if (command === "capture") {
       return await commandCapture(parsed.root, rest, io, cwd);
+    }
+
+    if (command === "import") {
+      return await commandImport(parsed.root, rest, io, cwd);
     }
 
     if (command === "today") {
@@ -325,6 +332,55 @@ async function commandCapture(root: string, args: string[], io: CliIo, cwd: stri
   }
 
   return result.validation.passed ? 0 : 1;
+}
+
+async function commandImport(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const [subcommand] = args;
+
+  if (subcommand !== "notes") {
+    throw new Error(
+      'Usage: wm import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]'
+    );
+  }
+
+  const dryRun = args.includes("--dry-run");
+  const fromPath = optionValue(args, "--path");
+  const fromStdin = args.includes("--stdin");
+
+  if (fromPath && fromStdin) {
+    throw new Error("wm import notes accepts either --path or --stdin, not both.");
+  }
+
+  if (!fromPath && !fromStdin) {
+    throw new Error("wm import notes requires --path <file-or-dir> or --stdin.");
+  }
+
+  const options = {
+    observed_at: optionValue(args, "--observed-at") ?? undefined,
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    provider: captureProvider(optionValue(args, "--provider") ?? "rule"),
+    limit: parseOptionalPositiveInt(optionValue(args, "--limit"), "--limit")
+  };
+  const input = fromStdin
+    ? {
+        text: io.stdin ? await io.stdin() : await readProcessStdin(),
+        cwd
+      }
+    : {
+        path: fromPath ?? undefined,
+        glob: optionValue(args, "--glob") ?? undefined,
+        cwd
+      };
+  const result = dryRun
+    ? await previewImportNotes(root, input, options)
+    : await createImportNotes(root, input, options);
+
+  if (dryRun) {
+    io.stdout(`Dry run. No changes written to ${root}.\n`);
+  }
+
+  printImportResult(result, io);
+  return importValidationPassed(result) ? 0 : 1;
 }
 
 async function commandToday(root: string, args: string[], io: CliIo): Promise<number> {
@@ -765,12 +821,56 @@ function parsePort(value: string): number {
   return parsed;
 }
 
+function parseOptionalPositiveInt(value: string | null, optionName: string): number | undefined {
+  if (value === null) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${optionName} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
 function parseBriefKind(value: string): SessionBriefKind {
   if (value === "today" || value === "person" || value === "context" || value === "review" || value === "followups") {
     return value;
   }
 
   throw new Error("Usage: wm brief <today|person|context|review|followups> [id|path]");
+}
+
+function printImportResult(result: ImportNotesResult, io: CliIo): void {
+  io.stdout(`Import units: ${result.units_total}\n`);
+  io.stdout(`Imported: ${result.units_imported}\n`);
+  io.stdout(`Skipped: ${result.units_skipped}\n`);
+  io.stdout(`Provider: ${result.provider_name}\n`);
+
+  for (const unit of result.units) {
+    if (unit.skipped) {
+      io.stdout(
+        `Skipped duplicate source_hash: ${unit.source_hash}${
+          unit.existing_event_id ? ` (${unit.existing_event_id} ${unit.existing_event_path})` : ""
+        }\n`
+      );
+      continue;
+    }
+
+    io.stdout(`Event: ${unit.event_id} (${unit.event_path})\n`);
+    io.stdout(`Pending transaction: ${unit.transaction_id} (${unit.transaction_path})\n`);
+    io.stdout(`Validation: ${unit.validation?.passed ? "passed" : "failed"}\n`);
+
+    if (unit.staged_review_paths.length > 0) {
+      io.stdout(`Staged review proposals: ${unit.staged_review_paths.join(", ")}\n`);
+    }
+  }
+}
+
+function importValidationPassed(result: ImportNotesResult): boolean {
+  return result.units.every((unit) => unit.skipped || unit.validation?.passed === true);
 }
 
 function printValidationResult(result: ValidationResult, io: CliIo): void {
@@ -830,6 +930,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx reject <id> --reason <text>",
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
+      '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] today [--json]",
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",
