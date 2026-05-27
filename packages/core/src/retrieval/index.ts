@@ -156,7 +156,14 @@ export interface RetrievalPlannedLookup {
 }
 
 export interface RetrievalManualAction {
-  action: "capture_note" | "inspect_entity" | "review_item" | "open_followups" | "open_today" | "run_health_check";
+  action:
+    | "capture_note"
+    | "inspect_entity"
+    | "review_item"
+    | "open_followups"
+    | "open_today"
+    | "run_health_check"
+    | "log_friction";
   label: string;
   reason: string;
   target?: string;
@@ -1157,6 +1164,11 @@ function buildManualActions(
       action: "capture_note",
       label: "Capture a note if this should become memory",
       reason: "No deterministic memory match was found."
+    });
+    actions.push({
+      action: "log_friction",
+      label: "Log this retrieval miss",
+      reason: "The Ask flow did not find a deterministic answer, so this can be captured as feedback."
     });
   }
 

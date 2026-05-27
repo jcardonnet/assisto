@@ -9,6 +9,7 @@ import {
   buildSessionBrief,
   buildTodayWorkbenchResult,
   createCaptureNote,
+  createFrictionLog,
   createHealthReviewTransaction,
   createImportNotes,
   createEntityAliasTransaction,
@@ -30,6 +31,7 @@ import {
   getEntityDetail,
   transactionFilePaths,
   previewCaptureNote,
+  previewFrictionLog,
   previewImportNotes,
   previewAnswerDraft,
   retrieveContextForAnswer,
@@ -42,6 +44,8 @@ import {
   type ExtractionProvider,
   type EntityKind,
   type EntityStewardshipPreview,
+  type FrictionLogCreateResult,
+  type FrictionLogPreviewResult,
   type FrontmatterValue,
   type IngestNoteResult,
   type ImportCreateResult,
@@ -552,6 +556,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createAskDraftPreview(root, input));
     }
 
+    if (pathname === "/api/friction/log/preview") {
+      return jsonRoute(200, await createFrictionLogPreview(root, input, false));
+    }
+
+    if (pathname === "/api/friction/log") {
+      return jsonRoute(200, await createFrictionLogPreview(root, input, true));
+    }
+
     if (pathname === "/api/entities/alias/preview") {
       return jsonRoute(200, await createEntityAliasPreview(root, input, false));
     }
@@ -713,6 +725,20 @@ async function createEventReprocessPreview(
 async function createAskDraftPreview(root: string, input: Record<string, unknown>): Promise<AnswerDraftResult> {
   const question = requiredStringInput(input, "question", "q");
   return previewAnswerDraft(root, question);
+}
+
+async function createFrictionLogPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<FrictionLogPreviewResult | FrictionLogCreateResult> {
+  const frictionInput = {
+    kind: requiredStringInput(input, "kind"),
+    note: requiredStringInput(input, "note"),
+    question: optionalStringInput(input, "question", "q") ?? undefined
+  };
+
+  return created ? createFrictionLog(root, frictionInput) : previewFrictionLog(root, frictionInput);
 }
 
 async function createEntityAliasPreview(
@@ -2366,6 +2392,7 @@ function renderDogfoodHome(result) {
   \${todayReviewGroupsHtml(result.staged_review_groups)}
   \${todayStaleNoopsHtml(result.stale_noop_events)}
   \${todayFollowupsHtml(result.open_followups)}
+  \${todayFrictionLogsHtml(result.recent_friction_logs ?? [])}
   \${todayEventsHtml(result.recent_events)}
   \${todayRecentTransactionsHtml(result.recent_transactions)}
   \${todayTextListSection("Health warnings", result.health_warnings, "No health warnings.")}
@@ -2488,6 +2515,24 @@ function todayEventsHtml(events) {
       ])}
     </article>\`,
     "No recent Events."
+  );
+}
+
+function todayFrictionLogsHtml(logs) {
+  return todaySectionHtml(
+    "Recent friction logs",
+    logs,
+    (log) => \`<article class="item">
+      <h3>\${escapeHtml(log.kind)}</h3>
+      <p class="pill">\${escapeHtml(log.source_label ?? "friction")}</p>
+      \${detailListHtml([
+        ["Event", \`\${log.id} · \${log.path}\`],
+        ["Recorded", log.recorded_at ?? "unknown"],
+        ["Question", log.question ?? "none"],
+        ["Note", log.note]
+      ])}
+    </article>\`,
+    "No recent friction logs."
   );
 }
 
@@ -3436,6 +3481,7 @@ function renderAskResult(result) {
     askSectionHtml("Linked ReviewItems", result.linkedReviewItems ?? [], linkedItemHtml, "No linked ReviewItems."),
     askSectionHtml("Linked FollowUps", result.linkedFollowUps ?? [], linkedItemHtml, "No linked FollowUps."),
     askSectionHtml("Suggested manual actions", result.manualActions ?? [], manualActionHtml, "No suggested manual actions."),
+    askFrictionLogHtml(result),
     askSectionHtml("Suggested next questions", (result.suggestedNextQuestions ?? []).map((question) => ({ question })), nextQuestionHtml, "No suggested next questions."),
     askSectionHtml("Matched pages", result.matchedPages ?? [], pageSummaryHtml, "No matched people, topics, or contexts."),
     contextPackHtml(result.contextPack)
@@ -3443,6 +3489,7 @@ function renderAskResult(result) {
 
   document.querySelector("#ask-result").innerHTML = sections.join("");
   bindCopyControls();
+  bindAskFrictionLog(result);
   bindBriefLinks();
 }
 
@@ -3601,6 +3648,65 @@ function manualActionHtml(action) {
       ["Target", action.target ?? "none"]
     ])}
   </article>\`;
+}
+
+function askFrictionLogHtml(result) {
+  const shouldShow = (result.manualActions ?? []).some((action) => action.action === "log_friction") ||
+    (result.missingInformation ?? []).some((item) => item.code === "no_match");
+
+  if (!shouldShow) {
+    return "";
+  }
+
+  return \`<section data-ask-section="log-retrieval-miss">
+    <h2>Log retrieval miss</h2>
+    <article class="item ask-card">
+      <h3>Feedback capture</h3>
+      <p class="meta">Creates an Event and pending NOOP Transaction only; no answer text or generated explanation is saved.</p>
+      <form id="ask-friction-log-form" class="action-stack">
+        <label class="field" for="ask-friction-note"><span>Friction note</span><textarea id="ask-friction-note" name="note" rows="4" placeholder="What should Assisto remember about this miss?"></textarea></label>
+        <div class="action-row">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview log</button>
+          <button type="submit" name="mode" value="create">Log miss</button>
+        </div>
+      </form>
+      <div id="ask-friction-output" class="action-output"></div>
+    </article>
+  </section>\`;
+}
+
+function bindAskFrictionLog(result) {
+  const form = document.querySelector("#ask-friction-log-form");
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const preview = event.submitter?.value === "preview";
+    const output = document.querySelector("#ask-friction-output");
+    output.innerHTML = "<pre>Running</pre>";
+
+    try {
+      const action = await postJson(preview ? "/api/friction/log/preview" : "/api/friction/log", {
+        kind: "retrieval_miss",
+        question: result.query,
+        note: form.elements.note.value
+      });
+
+      if (action.created) {
+        snapshot = await fetchJson("/api/snapshot");
+        health = null;
+        dogfoodHome = null;
+        reviewTurbo = null;
+      }
+
+      output.innerHTML = renderActionResult(action);
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
 }
 
 function nextQuestionHtml(item) {

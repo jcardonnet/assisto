@@ -8,6 +8,9 @@ import {
   type TodayWorkbenchOptions,
   type TodayWorkbenchResult
 } from "../today";
+import { listMarkdownFiles, readMarkdownPage } from "../fs";
+import { getSection, parseMarkdownFile, type FrontmatterValue } from "../markdown";
+import { parseFrictionRawText, type FrictionLogKind } from "../friction";
 
 export interface DogfoodHomeResult {
   generated_at: string;
@@ -22,6 +25,7 @@ export interface DogfoodHomeResult {
   open_followups: TodayFollowUpSummary[];
   recent_events: TodayEventSummary[];
   recent_transactions: TodayTransactionSummary[];
+  recent_friction_logs: DogfoodFrictionLogSummary[];
   health_warnings: string[];
   suggested_manual_actions: string[];
   warnings: string[];
@@ -68,6 +72,16 @@ export interface DogfoodQuickBrief {
   route_hint: string;
 }
 
+export interface DogfoodFrictionLogSummary {
+  id: string;
+  path: string;
+  recorded_at?: string;
+  source_label: string;
+  kind: FrictionLogKind | string;
+  question?: string;
+  note: string;
+}
+
 const totalDailySteps = 5;
 
 export async function buildDogfoodHomeResult(
@@ -75,6 +89,7 @@ export async function buildDogfoodHomeResult(
   options: TodayWorkbenchOptions = {}
 ): Promise<DogfoodHomeResult> {
   const today = await buildTodayWorkbenchResult(root, options);
+  const recentFrictionLogs = await collectRecentFrictionLogs(root, options.recentLimit ?? 8);
 
   return {
     generated_at: today.generated_at,
@@ -124,11 +139,56 @@ export async function buildDogfoodHomeResult(
     open_followups: today.open_followups,
     recent_events: today.recent_events,
     recent_transactions: today.recent_transactions,
+    recent_friction_logs: recentFrictionLogs,
     health_warnings: today.health_warnings,
     suggested_manual_actions: today.suggested_manual_actions,
     warnings: today.warnings,
     today
   };
+}
+
+async function collectRecentFrictionLogs(root: string, limit: number): Promise<DogfoodFrictionLogSummary[]> {
+  const logs: DogfoodFrictionLogSummary[] = [];
+
+  for (const file of await listEventFilesOrEmpty(root)) {
+    try {
+      const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+      const sourceLabel = stringValue(parsed.frontmatter.source_label);
+
+      if (!sourceLabel?.startsWith("friction:")) {
+        continue;
+      }
+
+      const rawText = getSection(parsed.body, "Raw text") ?? "";
+      const friction = parseFrictionRawText(rawText);
+
+      if (!friction) {
+        continue;
+      }
+
+      logs.push({
+        id: stringValue(parsed.frontmatter.id) ?? file,
+        path: file,
+        recorded_at: stringValue(parsed.frontmatter.recorded_at),
+        source_label: sourceLabel,
+        kind: friction.kind,
+        question: friction.question,
+        note: friction.note
+      });
+    } catch {
+      // Health/lint surfaces malformed Event pages; Dogfood Home keeps reading.
+    }
+  }
+
+  return logs.sort(newestFrictionLogFirst).slice(0, limit);
+}
+
+async function listEventFilesOrEmpty(root: string): Promise<string[]> {
+  try {
+    return await listMarkdownFiles(root, "memory/events/**/*.md");
+  } catch {
+    return [];
+  }
 }
 
 function dailyProgress(today: TodayWorkbenchResult): DogfoodDailyProgress {
@@ -239,4 +299,12 @@ function preferredPendingTransaction(transactions: TodayTransactionSummary[]): T
 
 function oldestTransactionFirst(left: TodayTransactionSummary, right: TodayTransactionSummary): number {
   return (left.created_at ?? "").localeCompare(right.created_at ?? "") || left.path.localeCompare(right.path);
+}
+
+function newestFrictionLogFirst(left: DogfoodFrictionLogSummary, right: DogfoodFrictionLogSummary): number {
+  return (right.recorded_at ?? "").localeCompare(left.recorded_at ?? "") || right.path.localeCompare(left.path);
+}
+
+function stringValue(value: FrontmatterValue | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

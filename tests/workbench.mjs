@@ -775,7 +775,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /renderAnswerBasis/);
     assert.match(client.body, /renderAnswerDraft/);
     assert.match(client.body, /\/api\/ask\/draft\/preview/);
+    assert.match(client.body, /\/api\/friction\/log\/preview/);
+    assert.match(client.body, /\/api\/friction\/log/);
     assert.match(client.body, /Draft answer/);
+    assert.match(client.body, /ask-friction-log-form/);
+    assert.match(client.body, /Log retrieval miss/);
     assert.match(client.body, /renderAskResult/);
     assert.match(client.body, /retrievalPlanHtml/);
     assert.match(client.body, /copy-derived-text/);
@@ -1158,7 +1162,61 @@ export async function runWorkbenchTests() {
     assert.equal(noMatchAsk.matchedPages.length, 0);
     assert.equal(noMatchAsk.missingInformation.some((item) => item.code === "no_match"), true);
     assert.equal(noMatchAsk.manualActions.some((action) => action.action === "capture_note"), true);
+    assert.equal(noMatchAsk.manualActions.some((action) => action.action === "log_friction"), true);
     assert.match(noMatchAsk.warnings.join("\n"), /memory has no match/);
+
+    const frictionPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/friction/log/preview",
+          body: JSON.stringify({
+            kind: "retrieval_miss",
+            question: "What is the Neptune deploy key?",
+            note: "Memory could not answer the Neptune deploy key question."
+          })
+        })
+      ).body
+    );
+    assert.equal(frictionPreview.action, "log_friction");
+    assert.equal(frictionPreview.created, false);
+    assert.equal(frictionPreview.kind, "retrieval_miss");
+    assert.deepEqual(frictionPreview.operations, ["NOOP"]);
+    assert.equal(frictionPreview.validation.passed, true);
+    await assert.rejects(() => readVaultFile(root, frictionPreview.event_path), /ENOENT/);
+
+    const frictionCreateRoot = await makeTempVault("assisto-workbench-friction-route-");
+
+    try {
+      const frictionCreate = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(frictionCreateRoot, {
+            method: "POST",
+            url: "/api/friction/log",
+            body: JSON.stringify({
+              kind: "retrieval_miss",
+              question: "What is the Neptune deploy key?",
+              note: "Memory could not answer the Neptune deploy key question."
+            })
+          })
+        ).body
+      );
+      assert.equal(frictionCreate.action, "log_friction");
+      assert.equal(frictionCreate.created, true);
+      assert.equal(frictionCreate.kind, "retrieval_miss");
+      assert.match(await readVaultFile(frictionCreateRoot, frictionCreate.event_path), /source_label: friction:retrieval_miss/);
+      assert.match(await readVaultFile(frictionCreateRoot, frictionCreate.transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(frictionCreateRoot, "memory/review/friction.md"), /ENOENT/);
+
+      const frictionHome = JSON.parse(
+        (await workbench.handleWorkbenchRoute(frictionCreateRoot, { method: "GET", url: "/api/dogfood/home" })).body
+      );
+      assert.equal(frictionHome.recent_friction_logs.length, 1);
+      assert.equal(frictionHome.recent_friction_logs[0].kind, "retrieval_miss");
+      assert.equal(frictionHome.recent_friction_logs[0].question, "What is the Neptune deploy key?");
+    } finally {
+      await rm(frictionCreateRoot, { recursive: true, force: true });
+    }
 
     const oldOpenAiKey = process.env.OPENAI_API_KEY;
     const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;

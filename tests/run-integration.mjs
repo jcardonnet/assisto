@@ -5,6 +5,7 @@ import { runCoreTransactionTests } from "./core-transactions.mjs";
 import { runCoreTransactionApplyTests } from "./core-transaction-apply.mjs";
 import { runCoreIngestTests } from "./core-ingest.mjs";
 import { runCoreCaptureTests } from "./core-capture.mjs";
+import { runCoreFrictionTests } from "./core-friction.mjs";
 import { runCoreImportTests } from "./core-import.mjs";
 import { runCoreEntityTests } from "./core-entities.mjs";
 import { runCoreV3MemoryHardeningTests } from "./core-v3-memory-hardening.mjs";
@@ -21,6 +22,7 @@ export async function runIntegrationTests() {
   await runCoreTransactionApplyTests();
   await runCoreIngestTests();
   await runCoreCaptureTests();
+  await runCoreFrictionTests();
   await runCoreImportTests();
   await runCoreEntityTests();
   await runCoreV3MemoryHardeningTests();

@@ -11,8 +11,10 @@ import {
   checkMemoryHealth,
   createCaptureNote,
   createHealthReviewTransaction,
+  createFrictionLog,
   createImportNotes,
   previewCaptureNote,
+  previewFrictionLog,
   previewImportNotes,
   createReviewApplyTransaction,
   createReviewStateTransaction,
@@ -102,6 +104,10 @@ export async function main(
 
     if (command === "dogfood") {
       return await commandDogfood(parsed.root, rest, io);
+    }
+
+    if (command === "friction") {
+      return await commandFriction(parsed.root, rest, io);
     }
 
     if (command === "review") {
@@ -484,6 +490,57 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   }
 
   return 0;
+}
+
+async function commandFriction(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout(
+      'Usage: wm friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]\n'
+    );
+    return 0;
+  }
+
+  if (subcommand !== "log") {
+    throw new Error(
+      'Usage: wm friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]'
+    );
+  }
+
+  const kind = optionValue(args, "--kind");
+  const note = optionValue(args, "--note");
+  const dryRun = args.includes("--dry-run");
+
+  if (!kind || !note) {
+    throw new Error(
+      'Usage: wm friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]'
+    );
+  }
+
+  const result = dryRun
+    ? await previewFrictionLog(root, {
+        kind,
+        note,
+        question: optionValue(args, "--question") ?? undefined
+      })
+    : await createFrictionLog(root, {
+        kind,
+        note,
+        question: optionValue(args, "--question") ?? undefined
+      });
+
+  if (dryRun) {
+    io.stdout(`Dry run. No changes written to ${root}.\n`);
+  }
+
+  io.stdout(`Friction event: ${result.event_id} (${result.event_path})\n`);
+  io.stdout(`Pending friction transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+  io.stdout(`Kind: ${result.kind}\n`);
+  io.stdout(`Validation: ${result.validation.passed ? "passed" : "failed"}\n`);
+  io.stdout(`Operations: ${result.operations.join(", ") || "NOOP"}\n`);
+
+  return result.validation.passed ? 0 : 1;
 }
 
 async function commandReview(root: string, args: string[], io: CliIo): Promise<number> {
@@ -1008,6 +1065,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] dogfood status [--json]",
+      '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",
       "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",
