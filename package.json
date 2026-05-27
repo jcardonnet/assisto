@@ -18,6 +18,7 @@
     "eval:v3": "node tests/scenarios/run-v3.mjs",
     "eval:retrieval": "node tests/scenarios/run-retrieval.mjs",
     "eval:v4": "node tests/scenarios/run-v4.mjs",
+    "eval:v5": "node tests/scenarios/run-v5.mjs",
     "mxbai:upload": "scripts/mxbai-upload.sh",
     "mxbai:smoke": "scripts/mxbai-smoke.sh"
   },

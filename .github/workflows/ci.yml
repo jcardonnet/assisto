@@ -67,3 +67,6 @@ jobs:
 
       - name: v4 eval
         run: pnpm eval:v4
+
+      - name: v5 eval
+        run: pnpm eval:v5

@@ -1,0 +1,14 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "generatedPersistenceViolationsMax": 0,
+  "autonomousMergesMax": 0,
+  "autonomousSupersessionsMax": 0,
+  "eventRawTextRewritesMax": 0,
+  "duplicateImportPreventionMin": 1,
+  "captureToReviewSuccessMin": 1,
+  "providerFallbackReviewMin": 1,
+  "todayTriageFlowMin": 1,
+  "entityStewardshipStagingMin": 1,
+  "retrievalCitationCoverageMin": 2,
+  "briefGenerationMin": 1
+}
