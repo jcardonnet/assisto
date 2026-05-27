@@ -43,6 +43,28 @@ summary_generated_from:
   );
   await writeVaultFile(
     root,
+    "memory/contexts/inventory-project.md",
+    `---
+id: ctx_inventory_project
+type: context
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+  - Warehouse Project
+source_events:
+  - ev_2026_05_21_001
+related:
+  - per_jeff
+summary_generated_from: []
+---
+
+# Inventory Project
+`
+  );
+  await writeVaultFile(
+    root,
     "memory/review/mysql-scope.md",
     `---
 id: rev_mysql_scope
@@ -592,6 +614,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /data-finding-id/);
     assert.match(client.body, /renderHealthCenter/);
     assert.match(client.body, /brief-form/);
+    assert.match(client.body, /brief-target-select/);
+    assert.match(client.body, /\/api\/brief\/targets/);
+    assert.match(client.body, /brief-export-text/);
+    assert.match(client.body, /data-copy-target="#brief-export-text"/);
+    assert.match(client.body, /Review Risk/);
     assert.match(client.body, /renderBrief/);
     assert.match(client.body, /\/api\/brief/);
     assert.match(client.body, /refreshAfterAction/);
@@ -779,9 +806,45 @@ export async function runWorkbenchTests() {
     assert.equal(brief.target.id, "per_jeff");
     assert.equal(brief.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
     assert.equal(brief.openFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.match(brief.contextPack, /# Session brief: Jeff/);
+
+    const briefPersonTargets = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/brief/targets?kind=person" })).body
+    );
+    assert.equal(briefPersonTargets.kind, "person");
+    assert.deepEqual(
+      briefPersonTargets.targets.find((target) => target.id === "per_jeff"),
+      {
+        id: "per_jeff",
+        path: "memory/people/jeff.md",
+        type: "person",
+        name: "Jeff",
+        aliases: []
+      }
+    );
+
+    const briefContextTargets = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/brief/targets?kind=context" })).body
+    );
+    assert.equal(briefContextTargets.kind, "context");
+    assert.deepEqual(briefContextTargets.targets, [
+      {
+        id: "ctx_inventory_project",
+        path: "memory/contexts/inventory-project.md",
+        type: "context",
+        name: "Inventory Project",
+        aliases: ["Warehouse Project"]
+      }
+    ]);
 
     const briefWithoutKind = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/brief" });
     assert.equal(briefWithoutKind.status, 400);
+
+    const briefTargetsWithoutKind = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/brief/targets"
+    });
+    assert.equal(briefTargetsWithoutKind.status, 400);
 
     await writeVaultFile(root, "memory/followups/broken.md", "---\nid: fu_broken\n");
     await writeVaultFile(root, "memory/topics/broken.md", "---\nid: top_broken\n");
@@ -886,7 +949,7 @@ export async function runWorkbenchTests() {
     const applyRequest = {
       reviewId: "rev_mysql_scope",
       target: "memory/topics/mysql.md",
-      createContext: "Inventory Project",
+      context: "ctx_inventory_project",
       note: "Inventory Project confirmed."
     };
     const preview = JSON.parse(

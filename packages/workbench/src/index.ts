@@ -9,6 +9,7 @@ import {
   createHealthReviewTransaction,
   createReviewApplyTransaction,
   createReviewStateTransaction,
+  listSessionBriefTargets,
   listMarkdownFiles,
   listReviewItems,
   parseClaimBlockRecords,
@@ -31,6 +32,8 @@ import {
   type ReviewStateTransactionResult,
   type ReviewItemSummary,
   type SessionBriefKind,
+  type SessionBriefTarget,
+  type SessionBriefTargetKind,
   type ValidationResult
 } from "@assisto/core";
 
@@ -134,6 +137,10 @@ export interface WorkbenchFollowupSummary {
 }
 
 export type WorkbenchHealthSummary = MemoryHealthResult;
+
+export interface WorkbenchBriefTargetOption extends SessionBriefTarget {
+  aliases: string[];
+}
 
 export interface WorkbenchReadWarning {
   path: string;
@@ -346,6 +353,16 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/health") {
     return jsonRoute(200, await checkMemoryHealth(root));
+  }
+
+  if (requestUrl.pathname === "/api/brief/targets") {
+    const kind = optionalBriefTargetKind(requestUrl);
+
+    if (!kind) {
+      return jsonRoute(400, { error: "Missing required query parameter: kind=person|context." });
+    }
+
+    return jsonRoute(200, { kind, targets: await listSessionBriefTargets(root, kind) });
   }
 
   if (requestUrl.pathname === "/api/brief") {
@@ -957,6 +974,16 @@ function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
   return undefined;
 }
 
+function optionalBriefTargetKind(requestUrl: URL): SessionBriefTargetKind | undefined {
+  const kind = requestUrl.searchParams.get("kind")?.trim();
+
+  if (kind === "person" || kind === "context") {
+    return kind;
+  }
+
+  return undefined;
+}
+
 async function readRequestBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
@@ -1465,6 +1492,7 @@ let activeTab = "review";
 let reviewReasonFilter = "all";
 let transactionStateFilter = "pending";
 let transactionDetail = null;
+let briefTargets = { person: null, context: null };
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -2193,71 +2221,234 @@ function clearCopyOutput() {
 function renderBriefs() {
   view.innerHTML = \`<form class="toolbar" id="brief-form">
     <select id="brief-kind" name="kind">
-      <option value="today">today</option>
-      <option value="person">person</option>
-      <option value="context">context</option>
-      <option value="review">review</option>
-      <option value="followups">followups</option>
+      <option value="today">Today</option>
+      <option value="person">Person</option>
+      <option value="context">Context</option>
+      <option value="review">Review Risk</option>
+      <option value="followups">Follow-ups</option>
     </select>
-    <input id="brief-target" name="target" placeholder="Person or Context id/path">
+    <select id="brief-target-select" name="targetSelect" hidden disabled></select>
+    <input id="brief-target" name="target" placeholder="Optional id/path override" hidden>
     <button type="submit">Build</button>
-  </form><div id="brief-result" class="grid"></div>\`;
-  document.querySelector("#brief-form").addEventListener("submit", async (event) => {
+  </form><div id="brief-result" class="brief-result"></div>
+  <output id="copy-output" class="copy-output" aria-live="polite"></output>\`;
+  const form = document.querySelector("#brief-form");
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const kind = document.querySelector("#brief-kind").value;
-    const target = document.querySelector("#brief-target").value.trim();
+    const target = briefTargetValue();
     const query = new URLSearchParams({ kind });
 
     if (target) {
       query.set("target", target);
     }
 
-    const result = await fetchJson(\`/api/brief?\${query.toString()}\`);
-    renderBrief(result);
+    document.querySelector("#brief-result").innerHTML = '<article class="item"><h2>Loading brief</h2><p class="meta">Reading canonical markdown.</p></article>';
+
+    try {
+      const result = await fetchJson(\`/api/brief?\${query.toString()}\`);
+      renderBrief(result);
+    } catch (error) {
+      document.querySelector("#brief-result").innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
   });
+  document.querySelector("#brief-kind").addEventListener("change", () => {
+    clearCopyOutput();
+    void updateBriefTargetControls();
+  });
+  void updateBriefTargetControls();
 }
 
 function renderBrief(result) {
+  clearCopyOutput();
   const sections = [
-    sectionHtml(
+    briefSectionHtml(
       "Active claims",
       result.activeClaims,
-      (claim) => claim.claim_id,
-      (claim) => claim.statement,
-      (claim) => [claim.page_path, claim.evidence.join(", "), claim.scope_state]
+      briefClaimHtml,
+      "No active claims for this brief."
     ),
-    sectionHtml(
+    briefSectionHtml(
       "Uncertainty and review",
       [...result.uncertainClaims, ...result.reviewItems],
-      (item) => item.claim_id ?? item.id,
-      (item) => item.statement ?? item.review_reason ?? item.review_state,
-      (item) => item.page_path ? [item.page_path, item.uncertainty_markers.join(", ")] : [item.path, item.source_events.join(", ")]
+      briefUncertaintyHtml,
+      "No uncertain claims or linked review items."
     ),
-    sectionHtml(
+    briefSectionHtml(
       "Open follow-ups",
       result.openFollowUps,
-      (followup) => followup.id,
-      (followup) => followup.followup_state,
-      (followup) => [followup.path, followup.owner, followup.source_events.join(", ")]
+      briefFollowUpHtml,
+      "No open follow-ups for this brief."
     ),
-    sectionHtml(
+    briefSectionHtml(
       "Source Events",
       result.evidenceEvents,
-      (event) => event.id,
-      (event) => event.path,
-      (event) => [event.recorded_at, event.observed_at]
+      briefEventHtml,
+      "No source Events were cited."
+    ),
+    briefSectionHtml(
+      "Warnings",
+      result.warnings ?? [],
+      briefWarningHtml,
+      "No warnings."
     )
   ];
 
   document.querySelector("#brief-result").innerHTML = \`<article class="item">
     <h2>\${escapeHtml(result.title)}</h2>
     <p class="pill">\${escapeHtml(result.kind)}</p>
-    \${result.warnings.map((warning) => \`<p class="meta">\${escapeHtml(warning)}</p>\`).join("")}
-  </article>\${sections.join("")}\`;
+    \${result.target ? detailListHtml([
+      ["Target", result.target.id ?? result.target.path],
+      ["Path", result.target.path],
+      ["Aliases", (result.target.aliases ?? []).join(", ") || "none"]
+    ]) : ""}
+  </article>\${sections.join("")}\${briefExportHtml(result.contextPack)}\`;
+  bindCopyControls();
 }
 
-function sectionHtml(label, items, title, badge, details) {
-  return \`<section><h2>\${escapeHtml(label)}</h2>\${cardsHtml(items, title, badge, details)}</section>\`;
+async function updateBriefTargetControls() {
+  const kind = document.querySelector("#brief-kind")?.value;
+  const select = document.querySelector("#brief-target-select");
+  const manual = document.querySelector("#brief-target");
+
+  if (!select || !manual) {
+    return;
+  }
+
+  if (!briefKindNeedsTarget(kind)) {
+    select.hidden = true;
+    select.disabled = true;
+    manual.hidden = true;
+    manual.value = "";
+    select.innerHTML = "";
+    return;
+  }
+
+  select.hidden = false;
+  select.disabled = false;
+  manual.hidden = false;
+  select.innerHTML = '<option value="">Loading targets...</option>';
+
+  try {
+    const response = await briefTargetsFor(kind);
+    select.innerHTML = [
+      \`<option value="">Select \${escapeHtml(kind)}</option>\`,
+      ...response.targets.map((target) => briefTargetOptionHtml(target))
+    ].join("");
+  } catch (error) {
+    select.innerHTML = \`<option value="">\${escapeHtml(error.message)}</option>\`;
+  }
+}
+
+async function briefTargetsFor(kind) {
+  if (!briefTargets[kind]) {
+    briefTargets[kind] = await fetchJson(\`/api/brief/targets?kind=\${encodeURIComponent(kind)}\`);
+  }
+
+  return briefTargets[kind];
+}
+
+function briefTargetOptionHtml(target) {
+  const value = target.id ?? target.path;
+  const aliases = (target.aliases ?? []).join(", ");
+  const label = aliases ? \`\${target.name} · \${aliases}\` : target.name;
+
+  return \`<option value="\${escapeHtml(value)}">\${escapeHtml(label)}</option>\`;
+}
+
+function briefTargetValue() {
+  const kind = document.querySelector("#brief-kind").value;
+
+  if (briefKindNeedsTarget(kind)) {
+    return document.querySelector("#brief-target-select").value || document.querySelector("#brief-target").value.trim();
+  }
+
+  return "";
+}
+
+function briefKindNeedsTarget(kind) {
+  return kind === "person" || kind === "context";
+}
+
+function briefSectionHtml(label, items, renderItem, emptyText) {
+  const body = items.length
+    ? \`<div class="grid">\${items.map(renderItem).join("")}</div>\`
+    : \`<article class="item"><h3>Empty</h3><p class="meta">\${escapeHtml(emptyText)}</p></article>\`;
+
+  return \`<section><h2>\${escapeHtml(label)}</h2>\${body}</section>\`;
+}
+
+function briefClaimHtml(claim) {
+  return \`<article class="item">
+    <h3>\${escapeHtml(claim.claim_id)}</h3>
+    <p>\${escapeHtml(claim.statement)}</p>
+    <p class="pill">\${escapeHtml(claim.claim_state)} · \${escapeHtml(claim.claim_kind)} · \${escapeHtml(claim.scope_state)}</p>
+    \${detailListHtml([
+      ["Page", claim.page_path],
+      ["Scope", claim.scope ?? "null"],
+      ["Evidence", claim.evidence.join(", ") || "none"]
+    ])}
+    \${plainListHtml("Uncertainty markers", claim.uncertainty_markers ?? [])}
+  </article>\`;
+}
+
+function briefUncertaintyHtml(item) {
+  if (item.claim_id) {
+    return briefClaimHtml(item);
+  }
+
+  return \`<article class="item">
+    <h3>\${escapeHtml(item.id ?? item.path)}</h3>
+    <p class="pill">\${escapeHtml(item.review_reason ?? "review")} · \${escapeHtml(item.review_state ?? "unknown")}</p>
+    \${detailListHtml([
+      ["Path", item.path],
+      ["Affected files", (item.affected_files ?? []).join(", ") || "none"],
+      ["Source Events", (item.source_events ?? []).join(", ") || "none"],
+      ["Staged claims", (item.staged_claim_ids ?? []).join(", ") || "none"]
+    ])}
+  </article>\`;
+}
+
+function briefFollowUpHtml(followup) {
+  return \`<article class="item">
+    <h3>\${escapeHtml(followup.id)}</h3>
+    <p class="pill">\${escapeHtml(followup.followup_state)} · \${escapeHtml(followup.review_state)}</p>
+    \${detailListHtml([
+      ["Path", followup.path],
+      ["Owner", followup.owner ?? "unknown"],
+      ["Due", followup.due_at ?? "none"],
+      ["Source Events", followup.source_events.join(", ") || "none"],
+      ["Related", followup.related.join(", ") || "none"]
+    ])}
+  </article>\`;
+}
+
+function briefEventHtml(event) {
+  return \`<article class="item">
+    <h3>\${escapeHtml(event.id)}</h3>
+    <p class="pill">source Event</p>
+    \${detailListHtml([
+      ["Path", event.path],
+      ["Recorded", event.recorded_at ?? "unknown"],
+      ["Observed", event.observed_at ?? "unknown"]
+    ])}
+  </article>\`;
+}
+
+function briefWarningHtml(warning) {
+  return \`<article class="item">
+    <h3>Warning</h3>
+    <p class="meta">\${escapeHtml(warning)}</p>
+  </article>\`;
+}
+
+function briefExportHtml(contextPack) {
+  return \`<section><h2>Compact export</h2>
+    <article class="item">
+      <pre id="brief-export-text">\${escapeHtml(contextPack ?? "")}</pre>
+      <button type="button" class="copy-derived-text" data-copy-target="#brief-export-text">Copy brief</button>
+    </article>
+  </section>\`;
 }
 
 function memoryPath(file) {
