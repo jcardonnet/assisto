@@ -1690,7 +1690,16 @@ function render() {
 async function renderToday() {
   if (!today) {
     view.innerHTML = '<article class="item"><h2>Loading today</h2><p class="meta">Reading local markdown memory.</p></article>';
-    today = await fetchJson("/api/today");
+    const loadedToday = await fetchJson("/api/today");
+    today = loadedToday;
+
+    if (activeTab !== "today") {
+      return;
+    }
+  }
+
+  if (activeTab !== "today") {
+    return;
   }
 
   renderTodayHome(today);
@@ -1705,6 +1714,7 @@ function renderTodayHome(result) {
   view.innerHTML = \`<article class="item">
     <h2>Today</h2>
     <p class="pill">\${result.daily_review_complete ? "daily review complete" : "needs attention"}</p>
+    <p class="meta">Triage \${result.triage_complete ? "complete" : "needs decisions"}</p>
     <p class="meta">Generated \${escapeHtml(result.generated_at)}</p>
   </article>
   <section><h2>Daily loop</h2><div class="grid">\${countCards}</div></section>
@@ -1715,6 +1725,7 @@ function renderTodayHome(result) {
   \${todayEventsHtml(result.recent_events)}
   \${todayRecentTransactionsHtml(result.recent_transactions)}
   \${todayTextListSection("Health warnings", result.health_warnings, "No health warnings.")}
+  \${todayTextListSection("Read warnings", result.warnings, "No read warnings.")}
   \${todayTextListSection("Suggested manual actions", result.suggested_manual_actions, "No suggested manual actions.")}
   <div id="today-action-output" class="action-output"></div>\`;
   bindTodayActions();
@@ -1785,12 +1796,12 @@ function todayStaleNoopsHtml(events) {
         ["Affected files", event.affected_files.join(", ") || "none"],
         ["Suggested action", event.suggested_action]
       ])}
-      <form class="today-stale-reprocess-form" data-event-id="\${escapeHtml(event.event_id)}">
+      \${event.event_id ? \`<form class="today-stale-reprocess-form" data-event-id="\${escapeHtml(event.event_id)}">
         <div class="action-row">
           <button type="submit" name="mode" value="preview" class="secondary">Preview reprocess</button>
           <button type="submit" name="mode" value="apply">Stage reprocess</button>
         </div>
-      </form>
+      </form>\` : '<p class="meta">No source Event ID is available for reprocessing.</p>'}
     </article>\`,
     "No stale NOOP Events."
   );
@@ -1923,7 +1934,10 @@ async function runTodayAction(path, body) {
     if (result.created) {
       await refreshTodayAfterAction();
     }
-    document.querySelector("#today-action-output").innerHTML = actionResult;
+    const actionOutput = document.querySelector("#today-action-output");
+    if (actionOutput) {
+      actionOutput.innerHTML = actionResult;
+    }
   } catch (error) {
     output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
   }
@@ -1933,7 +1947,10 @@ async function refreshTodayAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
   today = await fetchJson("/api/today");
-  renderTodayHome(today);
+
+  if (activeTab === "today") {
+    renderTodayHome(today);
+  }
 }
 
 function activateTab(name) {
@@ -2855,7 +2872,16 @@ function memoryPath(file) {
 async function renderHealth() {
   if (!health) {
     view.innerHTML = '<article class="item"><h2>Loading health</h2><p class="meta">Reading markdown state.</p></article>';
-    health = await fetchJson("/api/health");
+    const loadedHealth = await fetchJson("/api/health");
+    health = loadedHealth;
+
+    if (activeTab !== "health") {
+      return;
+    }
+  }
+
+  if (activeTab !== "health") {
+    return;
   }
 
   renderHealthCenter(health);

@@ -591,6 +591,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /today-stale-reprocess-form/);
     assert.match(client.body, /today-transaction-apply-form/);
     assert.match(client.body, /today-open-review/);
+    assert.match(client.body, /Read warnings/);
     assert.match(client.body, /capture-form/);
     assert.match(client.body, /\/api\/capture\/preview/);
     assert.match(client.body, /\/api\/capture/);
@@ -656,6 +657,7 @@ export async function runWorkbenchTests() {
 
     const today = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/today" })).body);
     assert.equal(today.daily_review_complete, false);
+    assert.equal(today.triage_complete, false);
     assert.equal(today.counts.pending_transactions, 4);
     assert.equal(today.counts.staged_review_items, 1);
     assert.equal(today.counts.stale_noop_events, 1);

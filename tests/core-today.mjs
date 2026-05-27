@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { loadTsModule } from "./ts-module-loader.mjs";
-import { makeTempVault } from "./helpers/temp-vault.mjs";
+import { makeTempVault, writeVaultFile } from "./helpers/temp-vault.mjs";
 import { writeWorkbenchFixture } from "./workbench.mjs";
 
 export async function runCoreTodayTests() {
@@ -16,6 +16,7 @@ export async function runCoreTodayTests() {
     });
 
     assert.equal(today.generated_at, "2026-05-27T05:00:00.000Z");
+    assert.equal(today.triage_complete, false);
     assert.equal(today.daily_review_complete, false);
     assert.equal(today.counts.pending_transactions, 4);
     assert.equal(today.counts.staged_review_items, 1);
@@ -41,11 +42,28 @@ export async function runCoreTodayTests() {
   try {
     const today = await todayModule.buildTodayWorkbenchResult(emptyRoot);
 
+    assert.equal(today.triage_complete, true);
     assert.equal(today.daily_review_complete, true);
     assert.equal(today.counts.pending_transactions, 0);
     assert.equal(today.counts.staged_review_items, 0);
     assert.equal(today.counts.stale_noop_events, 0);
   } finally {
     await rm(emptyRoot, { recursive: true, force: true });
+  }
+
+  const malformedRoot = await makeTempVault("assisto-core-today-malformed-");
+
+  try {
+    await writeVaultFile(
+      malformedRoot,
+      "memory/transactions/pending/tx_broken.md",
+      "---\nid: tx_broken\ntype: transaction\ntransaction_state: pending\n---\n"
+    );
+    const today = await todayModule.buildTodayWorkbenchResult(malformedRoot);
+
+    assert.equal(today.daily_review_complete, false);
+    assert.match(today.warnings.join("\n"), /Skipped malformed transaction page/);
+  } finally {
+    await rm(malformedRoot, { recursive: true, force: true });
   }
 }

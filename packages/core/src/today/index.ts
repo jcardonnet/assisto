@@ -11,6 +11,7 @@ export interface TodayWorkbenchOptions {
 
 export interface TodayWorkbenchResult {
   generated_at: string;
+  triage_complete: boolean;
   daily_review_complete: boolean;
   counts: {
     pending_transactions: number;
@@ -89,6 +90,11 @@ interface ParsedPage {
   frontmatter: Frontmatter;
 }
 
+interface TransactionCollection {
+  transactions: TodayTransactionSummary[];
+  warnings: string[];
+}
+
 const defaultNow = "2026-05-26T12:00:00.000Z";
 const defaultRecentLimit = 8;
 
@@ -98,13 +104,14 @@ export async function buildTodayWorkbenchResult(
 ): Promise<TodayWorkbenchResult> {
   const now = options.now ?? defaultNow;
   const recentLimit = options.recentLimit ?? defaultRecentLimit;
-  const [health, reviewItems, transactions, followups, events] = await Promise.all([
+  const [health, reviewItems, transactionCollection, followups, events] = await Promise.all([
     checkMemoryHealth(root, { now }),
     listReviewItems(root),
     collectTransactions(root),
     collectFollowups(root),
     collectEvents(root)
   ]);
+  const transactions = transactionCollection.transactions;
   const pendingTransactions = transactions
     .filter((transaction) => transaction.transaction_state === "pending")
     .sort(newestTransactionFirst);
@@ -119,10 +126,12 @@ export async function buildTodayWorkbenchResult(
       .filter((finding) => finding.severity === "high")
       .map((finding) => `${finding.code}: ${finding.message}`)
   ];
+  const triageComplete = pendingTransactions.length === 0 && reviewItems.length === 0 && staleNoopEvents.length === 0;
 
   return {
     generated_at: now,
-    daily_review_complete: pendingTransactions.length === 0 && reviewItems.length === 0 && staleNoopEvents.length === 0,
+    triage_complete: triageComplete,
+    daily_review_complete: triageComplete && followups.length === 0 && healthWarnings.length === 0 && transactionCollection.warnings.length === 0,
     counts: {
       pending_transactions: pendingTransactions.length,
       staged_review_items: reviewItems.length,
@@ -141,22 +150,23 @@ export async function buildTodayWorkbenchResult(
     health_warnings: healthWarnings,
     suggested_manual_actions: todaySuggestedActions(health, pendingTransactions, reviewItems, staleNoopEvents),
     health,
-    warnings: []
+    warnings: transactionCollection.warnings
   };
 }
 
-async function collectTransactions(root: string): Promise<TodayTransactionSummary[]> {
+async function collectTransactions(root: string): Promise<TransactionCollection> {
   const transactions: TodayTransactionSummary[] = [];
+  const warnings: string[] = [];
 
   for (const file of await listFilesOrEmpty(root, "memory/transactions/**/*.md")) {
     try {
       transactions.push(transactionSummary(file, parseTransactionMarkdown(await readMarkdownPage(root, file))));
-    } catch {
-      // Malformed transaction pages are surfaced by validation and health.
+    } catch (error) {
+      warnings.push(`Skipped malformed transaction page: ${file} (${error instanceof Error ? error.message : String(error)})`);
     }
   }
 
-  return transactions;
+  return { transactions, warnings };
 }
 
 async function collectFollowups(root: string): Promise<TodayFollowUpSummary[]> {
