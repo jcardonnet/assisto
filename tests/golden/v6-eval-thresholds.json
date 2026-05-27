@@ -1,0 +1,16 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "generatedPersistenceViolationsMax": 0,
+  "autonomousMergesMax": 0,
+  "autonomousSupersessionsMax": 0,
+  "eventRawTextRewritesMax": 0,
+  "dailyDogfoodFlowMin": 1,
+  "globalCaptureFlowMin": 1,
+  "reviewTurboFlowMin": 1,
+  "answerDraftFlowMin": 1,
+  "frictionLogFlowMin": 1,
+  "importTriageFlowMin": 1,
+  "duplicateImportPreventionMin": 1,
+  "contextOperatingFlowMin": 1,
+  "citedAnswerCoverageMin": 1
+}
