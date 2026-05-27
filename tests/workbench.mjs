@@ -755,6 +755,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /import-form/);
     assert.match(client.body, /\/api\/import\/preview/);
     assert.match(client.body, /\/api\/import/);
+    assert.match(client.body, /\/api\/import\/triage\/preview/);
+    assert.match(client.body, /\/api\/import\/triage/);
+    assert.match(client.body, /import-triage-form/);
+    assert.match(client.body, /Split unit/);
+    assert.match(client.body, /Merge next/);
     assert.match(client.body, /renderImportResult/);
     assert.match(client.body, /renderEntities/);
     assert.match(client.body, /entity-alias-form/);
@@ -1004,6 +1009,77 @@ export async function runWorkbenchTests() {
       await assert.rejects(() => readVaultFile(importCreateRoot, "memory/people/joe.md"), /ENOENT/);
     } finally {
       await rm(importCreateRoot, { recursive: true, force: true });
+    }
+
+    const importTriagePreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/import/triage/preview",
+          body: JSON.stringify({
+            units: [
+              {
+                unit_id: "unit_1",
+                action: "keep",
+                raw_text: "Joe is the DBA.",
+                source_label: "workbench triage",
+                observed_at: "2026-05-22",
+                context: "ctx_inventory_project"
+              },
+              {
+                unit_id: "unit_2",
+                action: "skip",
+                raw_text: "Skip this import unit."
+              }
+            ]
+          })
+        })
+      ).body
+    );
+    assert.equal(importTriagePreview.action, "import_triage");
+    assert.equal(importTriagePreview.created, false);
+    assert.equal(importTriagePreview.units_kept, 1);
+    assert.equal(importTriagePreview.units_skipped, 1);
+    assert.equal(importTriagePreview.units[0].context, "ctx_inventory_project");
+    await assert.rejects(() => readVaultFile(root, importTriagePreview.units[0].event_path), /ENOENT/);
+
+    const importTriageCreateRoot = await makeTempVault("assisto-workbench-import-triage-route-");
+
+    try {
+      const importTriageCreate = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(importTriageCreateRoot, {
+            method: "POST",
+            url: "/api/import/triage",
+            body: JSON.stringify({
+              units: [
+                {
+                  unit_id: "unit_1",
+                  action: "keep",
+                  raw_text: "Joe is the DBA.",
+                  source_label: "workbench triage",
+                  observed_at: "2026-05-22",
+                  context: "ctx_inventory_project"
+                },
+                {
+                  unit_id: "unit_2",
+                  action: "skip",
+                  raw_text: "Skip this import unit."
+                }
+              ]
+            })
+          })
+        ).body
+      );
+      assert.equal(importTriageCreate.action, "import_triage");
+      assert.equal(importTriageCreate.created, true);
+      assert.equal(importTriageCreate.units_kept, 1);
+      assert.equal(importTriageCreate.units_skipped, 1);
+      assert.match(await readVaultFile(importTriageCreateRoot, importTriageCreate.units[0].event_path), /source_label: workbench triage/);
+      assert.match(await readVaultFile(importTriageCreateRoot, importTriageCreate.units[0].transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(importTriageCreateRoot, "memory/people/joe.md"), /ENOENT/);
+    } finally {
+      await rm(importTriageCreateRoot, { recursive: true, force: true });
     }
 
     const transactionDetail = JSON.parse(

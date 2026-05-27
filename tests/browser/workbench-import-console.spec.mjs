@@ -34,3 +34,43 @@ test("import tab previews, creates pending transactions, and dedupes by source h
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("import tab triages units with split, skip, and per-unit metadata", async ({ page }) => {
+  const root = await makeTempVault("assisto-browser-import-triage-");
+  const workbench = await loadTsModule("packages/workbench/src/index.ts");
+  let server;
+
+  try {
+    server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
+
+    await page.goto(server.url);
+    await page.getByRole("button", { name: "Import" }).click();
+    await page.getByLabel("Batch text").fill("Joe is the DBA.\n\nWe use MySQL.\n---\nI will ask Jeff about budgets.");
+    await page.getByRole("button", { name: "Prepare triage" }).click();
+    await expect(page.getByRole("heading", { name: "Import triage" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Split unit" }).first().click();
+    await expect(page.getByLabel("Unit 3 text")).toBeVisible();
+    await page.getByLabel("Unit 1 source label").fill("triaged person note");
+    await page.getByLabel("Unit 1 observed at").fill("2026-05-22");
+    await page.getByLabel("Unit 1 context").fill("ctx_inventory_project");
+    await page.getByLabel("Unit 2 action").selectOption("skip");
+
+    await page.getByRole("button", { name: "Preview triage" }).click();
+    await expect(page.getByRole("heading", { name: "Preview triage" })).toBeVisible();
+    await expect(page.getByText("triaged person note")).toBeVisible();
+    await expect(page.getByText("triage_skip")).toBeVisible();
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ENOENT/);
+
+    await page.getByRole("button", { name: "Create triage" }).click();
+    await expect(page.getByRole("heading", { name: "Triage imports created" })).toBeVisible();
+    assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /source_label: triaged person note/);
+    assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ctx_inventory_project/);
+    assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"), /transaction_state: pending/);
+    assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_002.md"), /transaction_state: pending/);
+    await assert.rejects(() => readVaultFile(root, "memory/people/joe.md"), /ENOENT/);
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
