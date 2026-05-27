@@ -9,6 +9,7 @@ import {
 import { loadVaultIndex, type VaultIndex } from "../vault";
 
 export type SessionBriefKind = "today" | "person" | "context" | "review" | "followups";
+export type SessionBriefTargetKind = Extract<SessionBriefKind, "person" | "context">;
 
 export interface BuildSessionBriefOptions {
   kind: SessionBriefKind;
@@ -21,6 +22,7 @@ export interface SessionBriefTarget {
   path: string;
   type?: string;
   name: string;
+  aliases: string[];
 }
 
 export interface SessionBriefClaim {
@@ -153,6 +155,44 @@ export async function buildSessionBrief(
   };
 }
 
+export async function listSessionBriefTargets(root: string, kind: SessionBriefTargetKind): Promise<SessionBriefTarget[]> {
+  const folder = kind === "person" ? "memory/people/" : "memory/contexts/";
+  const files = [
+    ...(await listFilesOrEmpty(root, `${folder}*.md`)),
+    ...(await listFilesOrEmpty(root, `${folder}**/*.md`))
+  ].sort((left, right) => left.localeCompare(right));
+  const targets: SessionBriefTarget[] = [];
+
+  for (const file of files) {
+    try {
+      const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+      const type = stringValue(parsed.frontmatter.type);
+      const objectState = stringValue(parsed.frontmatter.object_state) ?? "active";
+
+      if (type !== kind || objectState === "archived") {
+        continue;
+      }
+
+      targets.push({
+        id: stringValue(parsed.frontmatter.id),
+        path: file,
+        type,
+        name: pageName(file, parsed.body),
+        aliases: stringArrayValue(parsed.frontmatter.aliases).sort((left, right) => left.localeCompare(right))
+      });
+    } catch {
+      // Health checks surface malformed pages; target lookup stays read-only and skips unreadable pages.
+    }
+  }
+
+  return targets.sort(
+    (left, right) =>
+      left.name.localeCompare(right.name) ||
+      (left.id ?? "").localeCompare(right.id ?? "") ||
+      left.path.localeCompare(right.path)
+  );
+}
+
 async function loadVaultIndexOrEmpty(root: string): Promise<VaultIndex> {
   try {
     return await loadVaultIndex(root);
@@ -223,7 +263,8 @@ async function resolveTarget(
     id: stringValue(parsed.frontmatter.id),
     path: targetPath,
     type: stringValue(parsed.frontmatter.type),
-    name: pageName(targetPath, parsed.body)
+    name: pageName(targetPath, parsed.body),
+    aliases: stringArrayValue(parsed.frontmatter.aliases).sort((left, right) => left.localeCompare(right))
   };
 }
 

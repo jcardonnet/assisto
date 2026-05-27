@@ -273,6 +273,28 @@ export async function runCoreBriefTests() {
     assert.match(person.contextPack, /Generated explanations were not saved/);
     assert.match(person.contextPack, /Jeff is my manager/);
 
+    const personTargets = await briefs.listSessionBriefTargets(root, "person");
+    assert.deepEqual(personTargets, [
+      {
+        id: "per_jeff",
+        path: "memory/people/jeff.md",
+        type: "person",
+        name: "Jeff",
+        aliases: []
+      }
+    ]);
+
+    const contextTargets = await briefs.listSessionBriefTargets(root, "context");
+    assert.deepEqual(contextTargets, [
+      {
+        id: "ctx_inventory_project",
+        path: "memory/contexts/inventory-project.md",
+        type: "context",
+        name: "Inventory Project",
+        aliases: ["Warehouse Project"]
+      }
+    ]);
+
     const context = await briefs.buildSessionBrief(root, { kind: "context", target: "ctx_inventory_project" });
     assert.equal(context.target?.path, "memory/contexts/inventory-project.md");
     assert.equal(context.activeClaims.some((claim) => claim.claim_id === "clm_inventory_uses_mysql"), true);
