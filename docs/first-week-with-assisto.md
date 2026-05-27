@@ -12,9 +12,11 @@ wm workbench serve --host 127.0.0.1 --port 3721
 
 Open the printed URL. Start on the Today tab. It is a derived dashboard; it does not write a completion marker.
 
+The Today tab is now the Dogfood Home. Treat it as the cockpit for the loop: it shows the next recommended manual action, pending Transactions, staged ReviewItems, stale NOOP Events, open FollowUps, recent activity, health warnings, quick briefs, and recent friction logs. All of those sections are derived from markdown.
+
 ## Daily capture
 
-Use the Capture tab for small, real notes:
+Use Quick capture from any Workbench tab, or use the Capture tab for larger notes. Keep notes small and real:
 
 ```text
 Jeff is my manager for Inventory Project.
@@ -30,6 +32,8 @@ CLI parity:
 wm capture --observed-at 2026-05-27 --source-label "daily note" "I need to ask Jeff about onboarding."
 ```
 
+If the optional OpenAI provider is configured, use it only for candidate extraction. Deterministic validation still decides whether candidates become pending Transactions or staged review, and no Transaction is applied automatically.
+
 ## Review pending work
 
 Use Today and Transactions to decide what to apply or reject. Use Review for staged claims that need scope, context, contradiction, or entity judgment.
@@ -41,6 +45,8 @@ Good first-week rhythm:
 - use explicit Context selection for staged claims;
 - use explicit supersession only when you know the old claim should stop being active.
 
+The Review tab also has Review Turbo lanes. Use them to decide what kind of manual judgment is needed: safe apply, needs context, identity ambiguity, conflict/change, stale NOOP, or other. The lanes are navigation, not batch approval. Work one item at a time.
+
 ## Import 20-50 curated notes
 
 Import only hand-picked Markdown or text notes. Avoid full meeting transcript dumps.
@@ -51,6 +57,8 @@ wm import notes --path ~/notes/assisto-seed --glob "*.md,*.txt" --limit 50
 ```
 
 For pasted batches, split units with a line containing only `---`. Duplicate raw imports are skipped with `source_hash`.
+
+In the Workbench Import tab, use triage before create when a batch is messy. Triage lets you split, merge, skip, set observed dates, set source labels, and assign Context per unit. Kept units still create one Event plus one pending Transaction each. Skipped and duplicate units do not write Events.
 
 ## Ask cited questions
 
@@ -65,6 +73,10 @@ What source Event supports this claim?
 ```
 
 Trust citations, uncertainty, and missing-memory guidance more than prose. Ask output is derived and disposable.
+
+If Ask cannot answer something important, use the “Log retrieval miss” action. This creates an Event plus a pending NOOP Transaction so the miss becomes reviewable without inventing a fact or creating a standalone friction page.
+
+Optional answer drafts are ephemeral. They can use only the deterministic answer basis, must cite claims or Events, and are not saved to memory.
 
 ## Use briefs before work
 
@@ -82,6 +94,12 @@ wm brief recent person per_jeff
 
 Briefs are compact derived views. Copy/export does not persist anything unless you separately route text through capture or import.
 
+## Work context pages
+
+Use People/Topics/Contexts to inspect project surfaces. Context detail pages include active facts, decisions-as-claims, open questions-as-claims, owners, roles, related people/topics, FollowUps, ReviewItems, source Events, and quick links to briefs.
+
+Corrections belong in the Context note/correction form. Preview first. Stage only when the raw text is right. This writes an Event plus a pending Transaction; it does not edit the Context page directly and it does not create standalone Decision or OpenQuestion pages.
+
 ## End-of-day health
 
 Run health after each dogfood session:
@@ -97,3 +115,14 @@ wm health check --stage-review --note "End-of-day triage"
 ```
 
 Keep the loop boring and safe: capture, review, apply, ask with citations, brief, then health-check.
+
+## Weekly cleanup
+
+Once or twice a week:
+
+- review Context operating pages for stale facts and open questions;
+- log retrieval misses that keep recurring;
+- import only the most useful curated notes;
+- reprocess stale NOOP Events when newer detectors can extract better candidates;
+- reject pending Transactions you no longer trust;
+- run `pnpm eval:v6` before relying on a new local build for dogfooding.
