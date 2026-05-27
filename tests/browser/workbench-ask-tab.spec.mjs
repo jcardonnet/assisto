@@ -1,9 +1,35 @@
 import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "@playwright/test";
 import { makeTempVault, readVaultFile } from "../helpers/temp-vault.mjs";
 import { loadTsModule } from "../ts-module-loader.mjs";
 import { writeWorkbenchFixture } from "../workbench.mjs";
+
+test("ask tab stays active when the initial today load finishes late", async ({ page }) => {
+  const root = await makeTempVault("assisto-browser-ask-tab-race-");
+  const workbench = await loadTsModule("packages/workbench/src/index.ts");
+  let server;
+
+  try {
+    await writeWorkbenchFixture(root);
+    server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
+    await page.route("**/api/today", async (route) => {
+      await delay(150);
+      await route.continue();
+    });
+
+    await page.goto(server.url);
+    await page.locator('[data-tab="ask"]').click();
+    await expect(page.locator("#ask-input")).toBeVisible();
+    await expect(page.locator('[data-tab="ask"]')).toHaveAttribute("aria-pressed", "true");
+    await page.waitForTimeout(250);
+    await expect(page.locator("#ask-input")).toBeVisible();
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("ask tab renders structured cited answer basis with non-persistent copy controls", async ({ page }) => {
   const root = await makeTempVault("assisto-browser-ask-tab-");

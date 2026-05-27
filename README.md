@@ -232,7 +232,7 @@ pnpm test:integration
 
 `pnpm test:browser` runs Chromium-only Playwright tests for Workbench DOM flows.
 
-The current implementation includes deterministic ingestion, a Capture Console for daily note entry, a candidate extraction pipeline, provider-ready LLM-assisted extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, Playwright browser coverage, and MVP/v2/v3/retrieval/v4 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
+The current implementation includes deterministic ingestion, a Capture Console for daily note entry, a Today Home daily loop, a candidate extraction pipeline, optional OpenAI-compatible extraction that still stages through deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, Playwright browser coverage, and MVP/v2/v3/retrieval/v4 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 
 ## Workbench
 
@@ -248,9 +248,9 @@ The server binds to `127.0.0.1:3721` by default. Override only when needed:
 wm workbench serve --host 127.0.0.1 --port 3721
 ```
 
-Workbench endpoints under `/api/*` expose capture preview/create, review inbox, transaction summaries and details, retrieval query results, follow-ups, derived session briefs, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while capture/create, apply/mark/reprocess, and explicit health staging actions create Events and/or pending Transactions through core helpers. The Capture tab can preview daily notes with observed date, source label, context metadata, validation, and proposed writes before creating the Event plus pending Transaction. The Transactions tab can inspect parsed transaction bodies, proposed file writes, validation results, source Events, affected files, and application/rejection notes; explicit apply/reject actions call core transaction helpers and never bypass validation. The browser UI groups review items by `review_reason`, surfaces suggested manual actions, and renders action previews and created results with operations, affected files, source Events, and proposed file writes instead of relying on raw JSON. Briefs are disposable derived views; they cite active claims, open follow-ups, staged review, and source Events without persisting generated explanations.
+Workbench endpoints under `/api/*` expose Today Home, capture preview/create, review inbox, transaction summaries and details, retrieval query results, follow-ups, derived session briefs, and a health summary. Review resolution actions are human-triggered and transaction-backed: previews run against a temporary copy of `memory/`, while capture/create, apply/mark/reprocess, and explicit health staging actions create Events and/or pending Transactions through core helpers. The Today tab summarizes pending Transactions, staged ReviewItems, stale NOOP Events, open FollowUps, recent Events, recent decisions, health/read warnings, and suggested manual actions; quick actions call the existing preview/apply/reject/reprocess endpoints. Today exposes a derived triage-complete state for zero pending/staged/stale items and a stricter daily-review-complete state when follow-ups and warnings are also clear. The Capture tab can preview daily notes with observed date, source label, context metadata, validation, and proposed writes before creating the Event plus pending Transaction. The Transactions tab can inspect parsed transaction bodies, proposed file writes, validation results, source Events, affected files, and application/rejection notes; explicit apply/reject actions call core transaction helpers and never bypass validation. The browser UI groups review items by `review_reason`, surfaces suggested manual actions, and renders action previews and created results with operations, affected files, source Events, and proposed file writes instead of relying on raw JSON. Briefs are disposable derived views; they cite active claims, open follow-ups, staged review, and source Events without persisting generated explanations.
 
-`pnpm test:e2e` includes a browser-style Workbench HTTP flow that loads the shell/assets and exercises capture, review triage, staged claim application, Event reprocessing, Ask, Health, and Brief endpoints. `pnpm test:browser` adds DOM-level Chromium coverage for the Capture Console and Transaction Console flows. `pnpm eval:v4` gates the same v4 safety shape: no unsafe canonical writes, no generated persistence, no autonomous supersession, no Event raw text rewrites, cited derived output, review flow success, health detection, no-match guidance, and session brief generation.
+`pnpm test:e2e` includes a browser-style Workbench HTTP flow that loads the shell/assets and exercises Today, capture, review triage, staged claim application, Event reprocessing, Ask, Health, and Brief endpoints. `pnpm test:browser` adds DOM-level Chromium coverage for Today Home, the Capture Console, and Transaction Console flows. `pnpm eval:v4` gates the same v4 safety shape: no unsafe canonical writes, no generated persistence, no autonomous supersession, no Event raw text rewrites, cited derived output, review flow success, health detection, no-match guidance, and session brief generation.
 
 Capture daily notes from the CLI:
 
@@ -258,6 +258,13 @@ Capture daily notes from the CLI:
 wm capture "Joe is the DBA. We use MySQL."
 wm capture --dry-run --observed-at 2026-05-21 --source-label standup --context ctx_inventory_project "Joe is the DBA."
 wm capture --file ./daily-note.md --source-label daily-note
+```
+
+Review the derived daily loop from the CLI:
+
+```bash
+wm today
+wm today --json
 ```
 
 Run health checks from the CLI:

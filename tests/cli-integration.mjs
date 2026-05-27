@@ -5,6 +5,7 @@ import path from "node:path";
 import { loadTsModule } from "./ts-module-loader.mjs";
 import { writeHealthFixture } from "./core-health.mjs";
 import { writeBriefFixture } from "./core-briefs.mjs";
+import { writeWorkbenchFixture } from "./workbench.mjs";
 
 let cliModule = null;
 
@@ -218,6 +219,24 @@ export async function runCliIntegrationTests() {
     assert.doesNotMatch(followups.stdout, /fu_closed/);
   } finally {
     await rm(briefRoot, { recursive: true, force: true });
+  }
+
+  const todayRoot = await makeTempVault();
+
+  try {
+    await writeWorkbenchFixture(todayRoot);
+    const today = await runWm(todayRoot, ["today"]);
+    assert.match(today.stdout, /Daily review: needs attention/);
+    assert.match(today.stdout, /pending_transactions\t4/);
+    assert.match(today.stdout, /Stale NOOP Events/);
+    assert.match(today.stdout, /ev_2026_05_21_003 via tx_2026_05_21_002/);
+
+    const todayJsonResult = await runWm(todayRoot, ["today", "--json"]);
+    const todayJson = JSON.parse(todayJsonResult.stdout);
+    assert.equal(todayJson.daily_review_complete, false);
+    assert.equal(todayJson.staged_review_groups[0].review_reason, "unscoped_claim");
+  } finally {
+    await rm(todayRoot, { recursive: true, force: true });
   }
 
   const rejectRoot = await makeTempVault();

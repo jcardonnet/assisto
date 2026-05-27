@@ -6,6 +6,7 @@ import {
   applyTransaction,
   checkMemoryHealth,
   buildSessionBrief,
+  buildTodayWorkbenchResult,
   createCaptureNote,
   createHealthReviewTransaction,
   createOpenAiExtractionProvider,
@@ -40,6 +41,7 @@ import {
   type SessionBriefKind,
   type SessionBriefTarget,
   type SessionBriefTargetKind,
+  type TodayWorkbenchResult,
   type ValidationResult
 } from "@assisto/core";
 
@@ -143,6 +145,7 @@ export interface WorkbenchFollowupSummary {
 }
 
 export type WorkbenchHealthSummary = MemoryHealthResult;
+export type WorkbenchToday = TodayWorkbenchResult;
 
 export type WorkbenchBriefTargetOption = SessionBriefTarget;
 
@@ -323,6 +326,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/snapshot") {
     return jsonRoute(200, await createWorkbenchSnapshot(root, { query: optionalQuery(requestUrl), includeHealth: false }));
+  }
+
+  if (requestUrl.pathname === "/api/today") {
+    return jsonRoute(200, await buildTodayWorkbenchResult(root));
   }
 
   if (requestUrl.pathname === "/api/review") {
@@ -1154,8 +1161,9 @@ function workbenchHtml(): string {
         <output id="status" class="status">Loading</output>
       </header>
       <nav class="tabs" aria-label="Workbench">
+        <button type="button" data-tab="today" aria-pressed="true">Today</button>
         <button type="button" data-tab="capture" aria-pressed="false">Capture</button>
-        <button type="button" data-tab="review" aria-pressed="true">Review</button>
+        <button type="button" data-tab="review" aria-pressed="false">Review</button>
         <button type="button" data-tab="transactions" aria-pressed="false">Transactions</button>
         <button type="button" data-tab="ask" aria-pressed="false">Ask</button>
         <button type="button" data-tab="health" aria-pressed="false">Health</button>
@@ -1567,7 +1575,8 @@ function workbenchClientJs(): string {
 const status = document.querySelector("#status");
 let snapshot = null;
 let health = null;
-let activeTab = "review";
+let today = null;
+let activeTab = "today";
 let reviewReasonFilter = "all";
 let transactionStateFilter = "pending";
 let transactionDetail = null;
@@ -1621,6 +1630,11 @@ function render() {
     return;
   }
 
+  if (activeTab === "today") {
+    void renderToday();
+    return;
+  }
+
   if (activeTab === "capture") {
     renderCapture();
     return;
@@ -1671,6 +1685,280 @@ function render() {
   }
 
   renderBriefs();
+}
+
+async function renderToday() {
+  if (!today) {
+    view.innerHTML = '<article class="item"><h2>Loading today</h2><p class="meta">Reading local markdown memory.</p></article>';
+    const loadedToday = await fetchJson("/api/today");
+    today = loadedToday;
+
+    if (activeTab !== "today") {
+      return;
+    }
+  }
+
+  if (activeTab !== "today") {
+    return;
+  }
+
+  renderTodayHome(today);
+}
+
+function renderTodayHome(result) {
+  const countCards = Object.keys(result.counts).map((key) => \`<article class="item">
+    <h3>\${escapeHtml(key.replaceAll("_", " "))}</h3>
+    <p class="pill">\${escapeHtml(result.counts[key])}</p>
+  </article>\`).join("");
+
+  view.innerHTML = \`<article class="item">
+    <h2>Today</h2>
+    <p class="pill">\${result.daily_review_complete ? "daily review complete" : "needs attention"}</p>
+    <p class="meta">Triage \${result.triage_complete ? "complete" : "needs decisions"}</p>
+    <p class="meta">Generated \${escapeHtml(result.generated_at)}</p>
+  </article>
+  <section><h2>Daily loop</h2><div class="grid">\${countCards}</div></section>
+  \${todayPendingTransactionsHtml(result.pending_transactions)}
+  \${todayReviewGroupsHtml(result.staged_review_groups)}
+  \${todayStaleNoopsHtml(result.stale_noop_events)}
+  \${todayFollowupsHtml(result.open_followups)}
+  \${todayEventsHtml(result.recent_events)}
+  \${todayRecentTransactionsHtml(result.recent_transactions)}
+  \${todayTextListSection("Health warnings", result.health_warnings, "No health warnings.")}
+  \${todayTextListSection("Read warnings", result.warnings, "No read warnings.")}
+  \${todayTextListSection("Suggested manual actions", result.suggested_manual_actions, "No suggested manual actions.")}
+  <div id="today-action-output" class="action-output"></div>\`;
+  bindTodayActions();
+}
+
+function todayPendingTransactionsHtml(transactions) {
+  return todaySectionHtml(
+    "Pending Transactions",
+    transactions,
+    (transaction) => \`<article class="item">
+      <h3>\${escapeHtml(transaction.id)}</h3>
+      <p class="pill">\${escapeHtml(transaction.operations.join(", ") || "NOOP")} · \${escapeHtml(transaction.risk_level ?? "risk unknown")}</p>
+      \${detailListHtml([
+        ["Path", transaction.path],
+        ["Source Events", transaction.source_events.join(", ") || "none"],
+        ["Affected files", transaction.affected_files.join(", ") || "none"],
+        ["Requires review", String(Boolean(transaction.requires_review))]
+      ])}
+      <div class="action-stack">
+        <form class="today-transaction-apply-form" data-transaction-id="\${escapeHtml(transaction.id)}">
+          <div class="action-row">
+            <button type="submit" name="mode" value="preview" class="secondary">Preview apply</button>
+            <button type="submit" name="mode" value="apply">Apply transaction</button>
+          </div>
+        </form>
+        <form class="today-transaction-reject-form" data-transaction-id="\${escapeHtml(transaction.id)}">
+          <div class="action-row">
+            <input name="reason" placeholder="Rejection reason">
+            <button type="submit" name="mode" value="preview" class="secondary">Preview reject</button>
+            <button type="submit" name="mode" value="apply">Reject transaction</button>
+          </div>
+        </form>
+      </div>
+    </article>\`,
+    "No pending Transactions."
+  );
+}
+
+function todayReviewGroupsHtml(groups) {
+  return todaySectionHtml(
+    "Staged ReviewItems",
+    groups,
+    (group) => \`<article class="item">
+      <h3>\${escapeHtml(group.review_reason.replaceAll("_", " "))}</h3>
+      <p class="pill">\${escapeHtml(group.count)} item\${group.count === 1 ? "" : "s"}</p>
+      \${detailListHtml([
+        ["Suggested action", group.suggested_action],
+        ["Items", group.items.map((item) => item.id).join(", ") || "none"]
+      ])}
+      <div class="action-row">
+        <button type="button" class="secondary today-open-review" data-review-reason="\${escapeHtml(group.review_reason)}">Open Review</button>
+      </div>
+    </article>\`,
+    "No staged ReviewItems."
+  );
+}
+
+function todayStaleNoopsHtml(events) {
+  return todaySectionHtml(
+    "Stale NOOP Events",
+    events,
+    (event) => \`<article class="item">
+      <h3>\${escapeHtml(event.event_id || event.finding_id)}</h3>
+      <p class="pill">\${escapeHtml(event.transaction_id ?? "transaction unknown")}</p>
+      \${detailListHtml([
+        ["Finding", event.finding_id],
+        ["Message", event.message],
+        ["Affected files", event.affected_files.join(", ") || "none"],
+        ["Suggested action", event.suggested_action]
+      ])}
+      \${event.event_id ? \`<form class="today-stale-reprocess-form" data-event-id="\${escapeHtml(event.event_id)}">
+        <div class="action-row">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview reprocess</button>
+          <button type="submit" name="mode" value="apply">Stage reprocess</button>
+        </div>
+      </form>\` : '<p class="meta">No source Event ID is available for reprocessing.</p>'}
+    </article>\`,
+    "No stale NOOP Events."
+  );
+}
+
+function todayFollowupsHtml(followups) {
+  return todaySectionHtml(
+    "Open FollowUps",
+    followups,
+    (followup) => \`<article class="item">
+      <h3>\${escapeHtml(followup.id)}</h3>
+      <p class="pill">\${escapeHtml(followup.followup_state)} · \${escapeHtml(followup.review_state)}</p>
+      \${detailListHtml([
+        ["Path", followup.path],
+        ["Owner", followup.owner ?? "unknown"],
+        ["Due", followup.due_at ?? "none"],
+        ["Source Events", followup.source_events.join(", ") || "none"],
+        ["Related", followup.related.join(", ") || "none"]
+      ])}
+    </article>\`,
+    "No open FollowUps."
+  );
+}
+
+function todayEventsHtml(events) {
+  return todaySectionHtml(
+    "Recent Events",
+    events,
+    (event) => \`<article class="item">
+      <h3>\${escapeHtml(event.id)}</h3>
+      <p class="pill">\${escapeHtml(event.source_label ?? "event")}</p>
+      \${detailListHtml([
+        ["Path", event.path],
+        ["Recorded", event.recorded_at ?? "unknown"],
+        ["Observed", event.observed_at ?? "unknown"],
+        ["Participants", event.participants.join(", ") || "none"],
+        ["Topics", event.topics.join(", ") || "none"],
+        ["Derived claims", event.derived_claims.join(", ") || "none"]
+      ])}
+    </article>\`,
+    "No recent Events."
+  );
+}
+
+function todayRecentTransactionsHtml(transactions) {
+  return todaySectionHtml(
+    "Recent Decisions",
+    transactions,
+    (transaction) => \`<article class="item">
+      <h3>\${escapeHtml(transaction.id)}</h3>
+      <p class="pill">\${escapeHtml(transaction.transaction_state)} · \${escapeHtml(transaction.operations.join(", ") || "NOOP")}</p>
+      \${detailListHtml([
+        ["Path", transaction.path],
+        ["Created", transaction.created_at ?? "unknown"],
+        ["Affected files", transaction.affected_files.join(", ") || "none"]
+      ])}
+    </article>\`,
+    "No recent applied or rejected Transactions."
+  );
+}
+
+function todayTextListSection(label, items, emptyText) {
+  return todaySectionHtml(
+    label,
+    items,
+    (item) => \`<article class="item"><p class="meta">\${escapeHtml(item)}</p></article>\`,
+    emptyText
+  );
+}
+
+function todaySectionHtml(label, items, renderItem, emptyText) {
+  const body = items.length
+    ? \`<div class="grid">\${items.map(renderItem).join("")}</div>\`
+    : \`<article class="item"><h3>Empty</h3><p class="meta">\${escapeHtml(emptyText)}</p></article>\`;
+
+  return \`<section data-today-section="\${escapeHtml(sectionSlug(label))}"><h2>\${escapeHtml(label)}</h2>\${body}</section>\`;
+}
+
+function bindTodayActions() {
+  for (const button of document.querySelectorAll(".today-open-review")) {
+    button.addEventListener("click", () => {
+      reviewReasonFilter = button.dataset.reviewReason ?? "all";
+      activateTab("review");
+    });
+  }
+
+  for (const form of document.querySelectorAll(".today-stale-reprocess-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runTodayAction(preview ? "/api/events/reprocess/preview" : "/api/events/reprocess", {
+        eventId: form.dataset.eventId,
+        stageOnly: true
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".today-transaction-apply-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runTodayAction(preview ? "/api/transactions/apply/preview" : "/api/transactions/apply", {
+        id: form.dataset.transactionId
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".today-transaction-reject-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runTodayAction(preview ? "/api/transactions/reject/preview" : "/api/transactions/reject", {
+        id: form.dataset.transactionId,
+        reason: form.elements.reason.value
+      });
+    });
+  }
+}
+
+async function runTodayAction(path, body) {
+  const output = document.querySelector("#today-action-output");
+  output.innerHTML = "<pre>Running</pre>";
+
+  try {
+    const result = await postJson(path, body);
+    const actionResult = renderActionResult(result);
+    if (result.created) {
+      await refreshTodayAfterAction();
+    }
+    const actionOutput = document.querySelector("#today-action-output");
+    if (actionOutput) {
+      actionOutput.innerHTML = actionResult;
+    }
+  } catch (error) {
+    output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+  }
+}
+
+async function refreshTodayAfterAction() {
+  snapshot = await fetchJson("/api/snapshot");
+  health = null;
+  today = await fetchJson("/api/today");
+
+  if (activeTab === "today") {
+    renderTodayHome(today);
+  }
+}
+
+function activateTab(name) {
+  activeTab = name;
+  for (const tab of document.querySelectorAll("[data-tab]")) {
+    tab.setAttribute("aria-pressed", String(tab.dataset.tab === name));
+  }
+  render();
 }
 
 function renderCapture() {
@@ -1875,6 +2163,7 @@ async function runTransactionAction(path, body) {
     const result = await postJson(path, body);
     snapshot = await fetchJson("/api/snapshot");
     health = null;
+    today = null;
     transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(result.transaction_id)}\`).catch(() => null);
     renderTransactions();
     document.querySelector("#transaction-action-output").innerHTML = renderActionResult(result);
@@ -2045,6 +2334,7 @@ async function runAction(path, body) {
 async function refreshAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
+  today = null;
 
   if (activeTab === "health") {
     health = await fetchJson("/api/health");
@@ -2582,7 +2872,16 @@ function memoryPath(file) {
 async function renderHealth() {
   if (!health) {
     view.innerHTML = '<article class="item"><h2>Loading health</h2><p class="meta">Reading markdown state.</p></article>';
-    health = await fetchJson("/api/health");
+    const loadedHealth = await fetchJson("/api/health");
+    health = loadedHealth;
+
+    if (activeTab !== "health") {
+      return;
+    }
+  }
+
+  if (activeTab !== "health") {
+    return;
   }
 
   renderHealthCenter(health);

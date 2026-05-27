@@ -573,6 +573,7 @@ wm ask --answer-basis "<question>"
 wm health check
 wm health check --stage-review --note "<text>"
 wm brief <today|person|context|review|followups> [id|path]
+wm today [--json]
 ```
 
 ### Codex prompt
@@ -592,12 +593,14 @@ Commands:
 - wm ask --pack-context "<question>"
 - wm ask --answer-basis "<question>"
 - wm brief <today|person|context|review|followups> [id|path]
+- wm today [--json]
 
 Rules:
 - ingest creates Event + pending Transaction
 - ingest does not directly edit canonical pages
 - ask only creates a context pack; it does not generate final model answer
 - brief only creates a disposable derived view; it does not persist generated explanation text
+- today only creates a derived daily workbench summary; it does not persist completion state
 - no LLM calls yet; use fixture/rule-based extraction for MVP tests
 
 Tests:
