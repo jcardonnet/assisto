@@ -138,8 +138,11 @@ export interface WorkbenchFollowupSummary {
 
 export type WorkbenchHealthSummary = MemoryHealthResult;
 
-export interface WorkbenchBriefTargetOption extends SessionBriefTarget {
-  aliases: string[];
+export type WorkbenchBriefTargetOption = SessionBriefTarget;
+
+export interface WorkbenchBriefTargetsResponse {
+  kind: SessionBriefTargetKind;
+  targets: WorkbenchBriefTargetOption[];
 }
 
 export interface WorkbenchReadWarning {
@@ -356,13 +359,19 @@ export async function handleWorkbenchRoute(
   }
 
   if (requestUrl.pathname === "/api/brief/targets") {
-    const kind = optionalBriefTargetKind(requestUrl);
+    const parsedKind = parseBriefTargetKind(requestUrl);
+    const kind = parsedKind.kind;
 
     if (!kind) {
-      return jsonRoute(400, { error: "Missing required query parameter: kind=person|context." });
+      return jsonRoute(400, { error: parsedKind.error });
     }
 
-    return jsonRoute(200, { kind, targets: await listSessionBriefTargets(root, kind) });
+    const response: WorkbenchBriefTargetsResponse = {
+      kind,
+      targets: await listSessionBriefTargets(root, kind)
+    };
+
+    return jsonRoute(200, response);
   }
 
   if (requestUrl.pathname === "/api/brief") {
@@ -974,14 +983,18 @@ function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
   return undefined;
 }
 
-function optionalBriefTargetKind(requestUrl: URL): SessionBriefTargetKind | undefined {
+function parseBriefTargetKind(requestUrl: URL): { kind: SessionBriefTargetKind; error?: never } | { kind?: never; error: string } {
   const kind = requestUrl.searchParams.get("kind")?.trim();
 
-  if (kind === "person" || kind === "context") {
-    return kind;
+  if (!kind) {
+    return { error: "Missing required query parameter: kind=person|context." };
   }
 
-  return undefined;
+  if (kind === "person" || kind === "context") {
+    return { kind };
+  }
+
+  return { error: "Invalid query parameter kind; expected person|context." };
 }
 
 async function readRequestBody(request: IncomingMessage): Promise<string> {
@@ -2284,7 +2297,7 @@ function renderBrief(result) {
       "Source Events",
       result.evidenceEvents,
       briefEventHtml,
-      "No source Events were cited."
+      "No source events were cited."
     ),
     briefSectionHtml(
       "Warnings",
@@ -2426,7 +2439,7 @@ function briefFollowUpHtml(followup) {
 function briefEventHtml(event) {
   return \`<article class="item">
     <h3>\${escapeHtml(event.id)}</h3>
-    <p class="pill">source Event</p>
+    <p class="pill">Source event</p>
     \${detailListHtml([
       ["Path", event.path],
       ["Recorded", event.recorded_at ?? "unknown"],

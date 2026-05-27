@@ -157,7 +157,10 @@ export async function buildSessionBrief(
 
 export async function listSessionBriefTargets(root: string, kind: SessionBriefTargetKind): Promise<SessionBriefTarget[]> {
   const folder = kind === "person" ? "memory/people/" : "memory/contexts/";
-  const files = (await listFilesOrEmpty(root, "memory/**/*.md")).filter((file) => file.startsWith(folder));
+  const files = [
+    ...(await listFilesOrEmpty(root, `${folder}*.md`)),
+    ...(await listFilesOrEmpty(root, `${folder}**/*.md`))
+  ].sort((left, right) => left.localeCompare(right));
   const targets: SessionBriefTarget[] = [];
 
   for (const file of files) {

@@ -845,6 +845,14 @@ export async function runWorkbenchTests() {
       url: "/api/brief/targets"
     });
     assert.equal(briefTargetsWithoutKind.status, 400);
+    assert.match(JSON.parse(briefTargetsWithoutKind.body).error, /Missing required query parameter/);
+
+    const briefTargetsWithInvalidKind = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/brief/targets?kind=topic"
+    });
+    assert.equal(briefTargetsWithInvalidKind.status, 400);
+    assert.match(JSON.parse(briefTargetsWithInvalidKind.body).error, /Invalid query parameter kind/);
 
     await writeVaultFile(root, "memory/followups/broken.md", "---\nid: fu_broken\n");
     await writeVaultFile(root, "memory/topics/broken.md", "---\nid: top_broken\n");
