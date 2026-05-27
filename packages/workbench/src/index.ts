@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  buildDogfoodHomeResult,
   checkMemoryHealth,
   buildSessionBrief,
   buildTodayWorkbenchResult,
@@ -35,6 +36,7 @@ import {
   type CaptureCreateResult,
   type CapturePreviewResult,
   type ContextPackResult,
+  type DogfoodHomeResult,
   type ExtractionProvider,
   type EntityKind,
   type EntityStewardshipPreview,
@@ -156,6 +158,7 @@ export interface WorkbenchFollowupSummary {
 
 export type WorkbenchHealthSummary = MemoryHealthResult;
 export type WorkbenchToday = TodayWorkbenchResult;
+export type WorkbenchDogfoodHome = DogfoodHomeResult;
 
 export type WorkbenchBriefTargetOption = SessionBriefTarget;
 
@@ -340,6 +343,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/today") {
     return jsonRoute(200, await buildTodayWorkbenchResult(root));
+  }
+
+  if (requestUrl.pathname === "/api/dogfood/home") {
+    return jsonRoute(200, await buildDogfoodHomeResult(root));
   }
 
   if (requestUrl.pathname === "/api/review") {
@@ -1742,7 +1749,7 @@ function workbenchClientJs(): string {
 const status = document.querySelector("#status");
 let snapshot = null;
 let health = null;
-let today = null;
+let dogfoodHome = null;
 let activeTab = "today";
 let reviewReasonFilter = "all";
 let transactionStateFilter = "pending";
@@ -1873,10 +1880,10 @@ function render() {
 }
 
 async function renderToday() {
-  if (!today) {
-    view.innerHTML = '<article class="item"><h2>Loading today</h2><p class="meta">Reading local markdown memory.</p></article>';
-    const loadedToday = await fetchJson("/api/today");
-    today = loadedToday;
+  if (!dogfoodHome) {
+    view.innerHTML = '<article class="item"><h2>Loading Dogfood Home</h2><p class="meta">Reading local markdown memory.</p></article>';
+    const loadedHome = await fetchJson("/api/dogfood/home");
+    dogfoodHome = loadedHome;
 
     if (activeTab !== "today") {
       return;
@@ -1887,20 +1894,34 @@ async function renderToday() {
     return;
   }
 
-  renderTodayHome(today);
+  renderDogfoodHome(dogfoodHome);
 }
 
-function renderTodayHome(result) {
+function renderDogfoodHome(result) {
   const countCards = Object.keys(result.counts).map((key) => \`<article class="item">
     <h3>\${escapeHtml(key.replaceAll("_", " "))}</h3>
     <p class="pill">\${escapeHtml(result.counts[key])}</p>
   </article>\`).join("");
 
   view.innerHTML = \`<article class="item">
-    <h2>Today</h2>
-    <p class="pill">\${result.daily_review_complete ? "daily review complete" : "needs attention"}</p>
-    <p class="meta">Triage \${result.triage_complete ? "complete" : "needs decisions"}</p>
+    <h2>Dogfood Home</h2>
+    <p class="pill">\${result.today.daily_review_complete ? "daily review complete" : "needs attention"}</p>
+    <p class="meta">Triage \${result.today.triage_complete ? "complete" : "needs decisions"}</p>
     <p class="meta">Generated \${escapeHtml(result.generated_at)}</p>
+    <dl class="detail-list">
+      <div>
+        <dt>next recommended action</dt>
+        <dd><strong>\${escapeHtml(result.next_recommended_action.label)}</strong>\${result.next_recommended_action.target_id ? \` · \${escapeHtml(result.next_recommended_action.target_id)}\` : ""}</dd>
+      </div>
+      <div>
+        <dt>daily progress</dt>
+        <dd>\${escapeHtml(result.daily_progress.completed_steps)} of \${escapeHtml(result.daily_progress.total_steps)} clear · \${escapeHtml(result.daily_progress.open_items)} open decision item\${result.daily_progress.open_items === 1 ? "" : "s"}</dd>
+      </div>
+      <div>
+        <dt>capture prompt</dt>
+        <dd>\${escapeHtml(result.capture_prompt.prompt)}</dd>
+      </div>
+    </dl>
   </article>
   <section><h2>Daily loop</h2><div class="grid">\${countCards}</div></section>
   <section><h2>Brief shortcuts</h2><div class="action-row">
@@ -2138,10 +2159,10 @@ async function runTodayAction(path, body) {
 async function refreshTodayAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
-  today = await fetchJson("/api/today");
+  dogfoodHome = await fetchJson("/api/dogfood/home");
 
   if (activeTab === "today") {
-    renderTodayHome(today);
+    renderDogfoodHome(dogfoodHome);
   }
 }
 
@@ -2425,7 +2446,7 @@ async function runEntityAction(path, body) {
     const result = await postJson(path, body);
     if (result.created) {
       snapshot = await fetchJson("/api/snapshot");
-      today = null;
+      dogfoodHome = null;
       health = null;
     }
     output.innerHTML = renderActionResult(result);
@@ -2601,7 +2622,7 @@ async function runTransactionAction(path, body) {
     const result = await postJson(path, body);
     snapshot = await fetchJson("/api/snapshot");
     health = null;
-    today = null;
+    dogfoodHome = null;
     transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(result.transaction_id)}\`).catch(() => null);
     renderTransactions();
     document.querySelector("#transaction-action-output").innerHTML = renderActionResult(result);
@@ -2772,7 +2793,7 @@ async function runAction(path, body) {
 async function refreshAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
-  today = null;
+  dogfoodHome = null;
 
   if (activeTab === "health") {
     health = await fetchJson("/api/health");

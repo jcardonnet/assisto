@@ -587,8 +587,9 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /data-tab="briefs"/);
 
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
-    assert.match(client.body, /renderTodayHome/);
-    assert.match(client.body, /\/api\/today/);
+    assert.match(client.body, /renderDogfoodHome/);
+    assert.match(client.body, /\/api\/dogfood\/home/);
+    assert.match(client.body, /next recommended action/);
     assert.match(client.body, /daily review complete/);
     assert.match(client.body, /today-stale-reprocess-form/);
     assert.match(client.body, /today-transaction-apply-form/);
@@ -687,6 +688,14 @@ export async function runWorkbenchTests() {
     assert.equal(today.open_followups[0].id, "fu_ask_jeff");
     assert.equal(today.recent_events[0].id, "ev_2026_05_21_003");
     assert.match(today.suggested_manual_actions.join("\n"), /Review pending Transactions/);
+
+    const dogfoodHome = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/dogfood/home" })).body
+    );
+    assert.equal(dogfoodHome.daily_progress.completed, false);
+    assert.equal(dogfoodHome.next_recommended_action.action, "review_pending_transaction");
+    assert.equal(dogfoodHome.next_recommended_action.target_id, "tx_2026_05_21_apply");
+    assert.equal(dogfoodHome.quick_briefs.some((brief) => brief.kind === "today"), true);
 
     const capturePreview = await workbench.handleWorkbenchRoute(root, {
       method: "POST",

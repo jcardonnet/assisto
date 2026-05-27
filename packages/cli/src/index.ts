@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  buildDogfoodHomeResult,
   buildSessionBrief,
   buildTodayWorkbenchResult,
   checkMemoryHealth,
@@ -97,6 +98,10 @@ export async function main(
 
     if (command === "today") {
       return await commandToday(parsed.root, rest, io);
+    }
+
+    if (command === "dogfood") {
+      return await commandDogfood(parsed.root, rest, io);
     }
 
     if (command === "review") {
@@ -430,6 +435,50 @@ async function commandToday(root: string, args: string[], io: CliIo): Promise<nu
   if (today.suggested_manual_actions.length > 0) {
     io.stdout("\nSuggested manual actions\n");
     for (const action of today.suggested_manual_actions) {
+      io.stdout(`- ${action}\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function commandDogfood(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm dogfood status [--json]\n");
+    return 0;
+  }
+
+  if (subcommand !== "status") {
+    throw new Error("Usage: wm dogfood status [--json]");
+  }
+
+  const home = await buildDogfoodHomeResult(root);
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(home, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Dogfood Home (${home.generated_at})\n`);
+  io.stdout(`Daily progress: ${home.daily_progress.completed ? "complete" : "needs attention"}\n`);
+  io.stdout(
+    `Next action: ${home.next_recommended_action.label}${
+      home.next_recommended_action.target_id ? ` (${home.next_recommended_action.target_id})` : ""
+    }\n\n`
+  );
+  io.stdout("Counts\n");
+
+  for (const [key, value] of Object.entries(home.counts)) {
+    io.stdout(`${key}\t${value}\n`);
+  }
+
+  io.stdout(`\nCapture prompt: ${home.capture_prompt.prompt}\n`);
+
+  if (home.suggested_manual_actions.length > 0) {
+    io.stdout("\nSuggested manual actions\n");
+    for (const action of home.suggested_manual_actions) {
       io.stdout(`- ${action}\n`);
     }
   }
@@ -952,6 +1001,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] today [--json]",
+      "  wm [--root <path>] dogfood status [--json]",
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",
       "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",
