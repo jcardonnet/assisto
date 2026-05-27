@@ -134,7 +134,8 @@ Current v5 scope:
 - Today Home for pending transactions, staged reviews, stale NOOP Events, follow-ups, recent activity, and health warnings;
 - curated Markdown/text backfill import that writes one Event plus one pending Transaction per unit and dedupes by optional Event `source_hash`;
 - People/Topics/Contexts explorer and stewardship actions that stage alias or Context metadata changes as pending Transactions, with ambiguous links surfaced as ReviewItems;
-- retrieval intent planning for person facts, manager/reporting, role/ownership, context, evidence, follow-up, review-risk, and recent-change questions.
+- retrieval intent planning for person facts, manager/reporting, role/ownership, context, evidence, follow-up, review-risk, and recent-change questions;
+- disposable briefing workflows for Today, before-meeting Person prep, project/Context status, follow-up review, review risk, and recent changes, with Workbench quick links from Today, Ask, and entity detail views.
 
 Still deferred:
 
@@ -610,7 +611,8 @@ wm ask --pack-context "<question>"
 wm ask --answer-basis "<question>"
 wm health check
 wm health check --stage-review --note "<text>"
-wm brief <today|person|context|review|followups> [id|path]
+wm brief <today|person|context|review|followups|recent> [id|path]
+wm brief recent [person|context] [id|path]
 wm today [--json]
 ```
 
@@ -630,7 +632,8 @@ Commands:
 - wm review inbox
 - wm ask --pack-context "<question>"
 - wm ask --answer-basis "<question>"
-- wm brief <today|person|context|review|followups> [id|path]
+- wm brief <today|person|context|review|followups|recent> [id|path]
+- wm brief recent [person|context] [id|path]
 - wm today [--json]
 
 Rules:

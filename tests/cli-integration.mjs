@@ -63,7 +63,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /import notes/);
   assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
-  assert.match(help.stdout, /brief <today\|person\|context\|review\|followups>/);
+  assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
 
   const txRoot = await makeTempVault();
 
@@ -272,6 +272,11 @@ export async function runCliIntegrationTests() {
     assert.match(followups.stdout, /# Session brief: Follow-ups/);
     assert.match(followups.stdout, /fu_ask_jeff/);
     assert.doesNotMatch(followups.stdout, /fu_closed/);
+
+    const recent = await runWm(briefRoot, ["brief", "recent", "person", "per_jeff"]);
+    assert.match(recent.stdout, /# Session brief: Recent changes: Jeff/);
+    assert.match(recent.stdout, /Jeff is my manager/);
+    assert.doesNotMatch(recent.stdout, /prefers email/);
   } finally {
     await rm(briefRoot, { recursive: true, force: true });
   }

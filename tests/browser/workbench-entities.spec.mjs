@@ -31,6 +31,14 @@ test("entities tab shows evidence and stages stewardship transactions without ca
     await expect(detailPanel.locator("li").filter({ hasText: "ev_2026_05_21_001 · memory/events" })).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "fu_ask_jeff" })).toBeVisible();
 
+    await detailPanel.getByRole("button", { name: "Recent changes" }).click();
+    await expect(page.locator("#brief-kind")).toHaveValue("recent");
+    await expect(page.locator("#brief-target-kind")).toHaveValue("person");
+    await expect(page.locator("#brief-export-text")).toContainText("# Session brief: Recent changes: Jeff");
+
+    await page.getByRole("button", { name: "People/Topics/Contexts" }).click();
+    await expect(detailPanel.getByRole("heading", { name: "Jeff" })).toBeVisible();
+
     const aliasForm = detailPanel.locator(".entity-alias-form");
     await aliasForm.getByPlaceholder("New alias").fill("Jeffrey");
     await aliasForm.getByRole("button", { name: "Preview alias" }).click();

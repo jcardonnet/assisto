@@ -430,7 +430,13 @@ export async function handleWorkbenchRoute(
       return jsonRoute(400, { error: "Missing required query parameter: kind." });
     }
 
-    return jsonRoute(200, await buildSessionBrief(root, { kind, target: optionalTarget(requestUrl) }));
+    const targetKind = optionalBriefTargetKind(requestUrl);
+
+    if (targetKind.error) {
+      return jsonRoute(400, { error: targetKind.error });
+    }
+
+    return jsonRoute(200, await buildSessionBrief(root, { kind, targetKind: targetKind.kind, target: optionalTarget(requestUrl) }));
   }
 
   return jsonRoute(404, { error: "Not found." });
@@ -1144,11 +1150,25 @@ function optionalTarget(requestUrl: URL): string | undefined {
 function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
   const kind = requestUrl.searchParams.get("kind")?.trim();
 
-  if (kind === "today" || kind === "person" || kind === "context" || kind === "review" || kind === "followups") {
+  if (kind === "today" || kind === "person" || kind === "context" || kind === "review" || kind === "followups" || kind === "recent") {
     return kind;
   }
 
   return undefined;
+}
+
+function optionalBriefTargetKind(requestUrl: URL): { kind?: SessionBriefTargetKind; error?: string } {
+  const kind = requestUrl.searchParams.get("targetKind")?.trim();
+
+  if (!kind) {
+    return {};
+  }
+
+  if (kind === "person" || kind === "context") {
+    return { kind };
+  }
+
+  return { error: "Invalid query parameter targetKind; expected person|context." };
 }
 
 function optionalEntityKind(requestUrl: URL): EntityKind | undefined {
@@ -1728,18 +1748,23 @@ let reviewReasonFilter = "all";
 let transactionStateFilter = "pending";
 let transactionDetail = null;
 let briefTargets = { person: null, context: null };
+let pendingBriefRequest = null;
 let entityKind = "person";
 let entityList = null;
 let entityDetail = null;
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
-    activeTab = button.dataset.tab;
-    for (const tab of document.querySelectorAll("[data-tab]")) {
-      tab.setAttribute("aria-pressed", String(tab === button));
-    }
+    selectWorkbenchTab(button.dataset.tab);
     render();
   });
+}
+
+function selectWorkbenchTab(tabName) {
+  activeTab = tabName;
+  for (const tab of document.querySelectorAll("[data-tab]")) {
+    tab.setAttribute("aria-pressed", String(tab.dataset.tab === tabName));
+  }
 }
 
 async function loadSnapshot() {
@@ -1878,6 +1903,12 @@ function renderTodayHome(result) {
     <p class="meta">Generated \${escapeHtml(result.generated_at)}</p>
   </article>
   <section><h2>Daily loop</h2><div class="grid">\${countCards}</div></section>
+  <section><h2>Brief shortcuts</h2><div class="action-row">
+    \${briefLinkButtonHtml("today", "", "", "Daily brief")}
+    \${briefLinkButtonHtml("recent", "", "", "What changed recently")}
+    \${briefLinkButtonHtml("followups", "", "", "Follow-up review")}
+    \${briefLinkButtonHtml("review", "", "", "Review-risk brief")}
+  </div></section>
   \${todayPendingTransactionsHtml(result.pending_transactions)}
   \${todayReviewGroupsHtml(result.staged_review_groups)}
   \${todayStaleNoopsHtml(result.stale_noop_events)}
@@ -1889,6 +1920,7 @@ function renderTodayHome(result) {
   \${todayTextListSection("Suggested manual actions", result.suggested_manual_actions, "No suggested manual actions.")}
   <div id="today-action-output" class="action-output"></div>\`;
   bindTodayActions();
+  bindBriefLinks();
 }
 
 function todayPendingTransactionsHtml(transactions) {
@@ -2271,6 +2303,7 @@ function renderEntityExplorer() {
   </section>
   <div id="entity-action-output" class="action-output"></div>\`;
   bindEntityActions();
+  bindBriefLinks();
 }
 
 function entityDetailHtml(detail) {
@@ -2284,6 +2317,7 @@ function entityDetailHtml(detail) {
       ["Related", detail.related.join(", ") || "none"]
     ])}
     <div class="action-stack">
+      \${entityBriefLinksHtml(detail)}
       <form class="entity-alias-form" data-entity-id="\${escapeHtml(detail.id ?? detail.path)}">
         <label class="field"><span>Alias</span><input name="alias" placeholder="New alias"></label>
         <div class="action-row">
@@ -2307,6 +2341,20 @@ function entityDetailHtml(detail) {
   \${entityListSectionHtml("Linked ReviewItems", detail.linkedReviewItems, (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
   \${entityListSectionHtml("Linked FollowUps", detail.linkedFollowUps, (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
   \${entityListSectionHtml("Related pages", detail.relatedPages, (item) => \`\${item.id ?? item.path} · \${item.type ?? "page"} · \${item.path}\`)}\`;
+}
+
+function entityBriefLinksHtml(detail) {
+  if (detail.type !== "person" && detail.type !== "context") {
+    return "";
+  }
+
+  const target = detail.id ?? detail.path;
+  const label = detail.type === "person" ? "Before meeting brief" : "Context status brief";
+
+  return \`<div class="action-row">
+    \${briefLinkButtonHtml(detail.type, detail.type, target, label)}
+    \${briefLinkButtonHtml("recent", detail.type, target, "Recent changes")}
+  </div>\`;
 }
 
 function entityClaimSectionHtml(label, claims) {
@@ -2844,6 +2892,7 @@ function renderAskResult(result) {
 
   document.querySelector("#ask-result").innerHTML = sections.join("");
   bindCopyControls();
+  bindBriefLinks();
 }
 
 function retrievalPlanHtml(result) {
@@ -2966,6 +3015,13 @@ function pageSummaryHtml(page) {
     \`id: \${page.id ?? "unknown"}\`,
     \`why: \${page.whyIncluded ?? "loaded from deterministic match"}\`
   ];
+  const targetType = page.type === "person" || page.type === "context" ? page.type : "";
+  const briefLinks = targetType
+    ? \`<div class="action-row">
+      \${briefLinkButtonHtml(targetType, targetType, page.id ?? page.path, targetType === "person" ? "Before meeting brief" : "Context status brief")}
+      \${briefLinkButtonHtml("recent", targetType, page.id ?? page.path, "Recent changes")}
+    </div>\`
+    : "";
   return \`<article class="item ask-card">
     <h3>\${escapeHtml(page.name)}</h3>
     <p class="pill">\${escapeHtml(page.type ?? "page")} · score \${escapeHtml(page.score ?? 0)}</p>
@@ -2973,6 +3029,7 @@ function pageSummaryHtml(page) {
     \${plainListHtml("Matched terms", page.matchedTerms ?? [])}
     \${plainListHtml("Uncertainty markers", page.uncertaintyMarkers ?? [])}
     <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+    \${briefLinks}
   </article>\`;
 }
 
@@ -3076,14 +3133,40 @@ function clearCopyOutput() {
   }
 }
 
+function briefLinkButtonHtml(kind, targetKind, target, label) {
+  return \`<button type="button" class="secondary open-brief-link" data-brief-kind="\${escapeHtml(kind)}" data-brief-target-kind="\${escapeHtml(targetKind ?? "")}" data-brief-target="\${escapeHtml(target ?? "")}">\${escapeHtml(label)}</button>\`;
+}
+
+function bindBriefLinks() {
+  for (const button of document.querySelectorAll(".open-brief-link")) {
+    button.addEventListener("click", () => {
+      pendingBriefRequest = {
+        kind: button.dataset.briefKind,
+        targetKind: button.dataset.briefTargetKind,
+        target: button.dataset.briefTarget
+      };
+      selectWorkbenchTab("briefs");
+      render();
+    });
+  }
+}
+
 function renderBriefs() {
+  const requestedBrief = pendingBriefRequest;
+  pendingBriefRequest = null;
   view.innerHTML = \`<form class="toolbar" id="brief-form">
     <select id="brief-kind" name="kind">
       <option value="today">Today</option>
+      <option value="person">Before meeting with Person</option>
+      <option value="context">Project/Context status</option>
+      <option value="followups">Follow-up review</option>
+      <option value="review">Review-risk brief</option>
+      <option value="recent">What changed recently</option>
+    </select>
+    <select id="brief-target-kind" name="targetKind" hidden disabled>
+      <option value="">All recent memory</option>
       <option value="person">Person</option>
       <option value="context">Context</option>
-      <option value="review">Review Risk</option>
-      <option value="followups">Follow-ups</option>
     </select>
     <select id="brief-target-select" name="targetSelect" hidden disabled></select>
     <input id="brief-target" name="target" placeholder="Optional id/path override" hidden>
@@ -3094,8 +3177,13 @@ function renderBriefs() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const kind = document.querySelector("#brief-kind").value;
+    const targetKind = briefTargetKindValue();
     const target = briefTargetValue();
     const query = new URLSearchParams({ kind });
+
+    if (targetKind) {
+      query.set("targetKind", targetKind);
+    }
 
     if (target) {
       query.set("target", target);
@@ -3114,7 +3202,11 @@ function renderBriefs() {
     clearCopyOutput();
     void updateBriefTargetControls();
   });
-  void updateBriefTargetControls();
+  document.querySelector("#brief-target-kind").addEventListener("change", () => {
+    clearCopyOutput();
+    void updateBriefTargetControls();
+  });
+  void initializeBriefForm(requestedBrief);
 }
 
 function renderBrief(result) {
@@ -3166,14 +3258,26 @@ function renderBrief(result) {
 
 async function updateBriefTargetControls() {
   const kind = document.querySelector("#brief-kind")?.value;
+  const targetKindSelect = document.querySelector("#brief-target-kind");
   const select = document.querySelector("#brief-target-select");
   const manual = document.querySelector("#brief-target");
 
-  if (!select || !manual) {
+  if (!targetKindSelect || !select || !manual) {
     return;
   }
 
-  if (!briefKindNeedsTarget(kind)) {
+  if (kind === "recent") {
+    targetKindSelect.hidden = false;
+    targetKindSelect.disabled = false;
+  } else {
+    targetKindSelect.hidden = true;
+    targetKindSelect.disabled = true;
+    targetKindSelect.value = "";
+  }
+
+  const lookupKind = briefTargetKindValue();
+
+  if (!lookupKind) {
     select.hidden = true;
     select.disabled = true;
     manual.hidden = true;
@@ -3188,14 +3292,48 @@ async function updateBriefTargetControls() {
   select.innerHTML = '<option value="">Loading targets...</option>';
 
   try {
-    const response = await briefTargetsFor(kind);
+    const response = await briefTargetsFor(lookupKind);
     select.innerHTML = [
-      \`<option value="">Select \${escapeHtml(kind)}</option>\`,
+      \`<option value="">Select \${escapeHtml(lookupKind)}</option>\`,
       ...response.targets.map((target) => briefTargetOptionHtml(target))
     ].join("");
   } catch (error) {
     select.innerHTML = \`<option value="">\${escapeHtml(error.message)}</option>\`;
   }
+}
+
+async function initializeBriefForm(requestedBrief) {
+  if (requestedBrief?.kind) {
+    document.querySelector("#brief-kind").value = requestedBrief.kind;
+  }
+
+  if (requestedBrief?.targetKind) {
+    document.querySelector("#brief-target-kind").value = requestedBrief.targetKind;
+  }
+
+  await updateBriefTargetControls();
+
+  if (requestedBrief?.target) {
+    applyBriefTargetValue(requestedBrief.target);
+  }
+
+  if (requestedBrief) {
+    document.querySelector("#brief-form").requestSubmit();
+  }
+}
+
+function applyBriefTargetValue(target) {
+  const select = document.querySelector("#brief-target-select");
+  const manual = document.querySelector("#brief-target");
+  const matchingOption = [...select.options].some((option) => option.value === target);
+
+  if (matchingOption) {
+    select.value = target;
+    manual.value = "";
+    return;
+  }
+
+  manual.value = target;
 }
 
 async function briefTargetsFor(kind) {
@@ -3217,15 +3355,25 @@ function briefTargetOptionHtml(target) {
 function briefTargetValue() {
   const kind = document.querySelector("#brief-kind").value;
 
-  if (briefKindNeedsTarget(kind)) {
+  if (briefTargetKindValue()) {
     return document.querySelector("#brief-target-select").value || document.querySelector("#brief-target").value.trim();
   }
 
   return "";
 }
 
-function briefKindNeedsTarget(kind) {
-  return kind === "person" || kind === "context";
+function briefTargetKindValue() {
+  const kind = document.querySelector("#brief-kind").value;
+
+  if (kind === "person" || kind === "context") {
+    return kind;
+  }
+
+  if (kind === "recent") {
+    return document.querySelector("#brief-target-kind").value;
+  }
+
+  return "";
 }
 
 function briefSectionHtml(label, items, renderItem, emptyText) {

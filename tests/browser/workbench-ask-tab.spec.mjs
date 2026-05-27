@@ -67,6 +67,11 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(page.locator("#copy-output")).toContainText("Derived text only; not saved");
     await expect(page.locator("#copy-output")).toContainText("clm_jeff_manager");
 
+    await page.getByRole("button", { name: "Before meeting brief" }).first().click();
+    await expect(page.locator("#brief-kind")).toHaveValue("person");
+    await expect(page.locator("#brief-export-text")).toContainText("# Session brief: Jeff");
+
+    await page.locator('[data-tab="ask"]').click();
     await page.locator("#ask-input").fill("What is the Neptune deploy key?");
     await page.locator("#ask-form").getByRole("button", { name: "Ask" }).click();
     await expect(page.locator("#copy-output")).toBeHidden();

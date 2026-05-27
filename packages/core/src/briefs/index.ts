@@ -8,11 +8,12 @@ import {
 } from "../markdown";
 import { loadVaultIndex, type VaultIndex } from "../vault";
 
-export type SessionBriefKind = "today" | "person" | "context" | "review" | "followups";
+export type SessionBriefKind = "today" | "person" | "context" | "review" | "followups" | "recent";
 export type SessionBriefTargetKind = Extract<SessionBriefKind, "person" | "context">;
 
 export interface BuildSessionBriefOptions {
   kind: SessionBriefKind;
+  targetKind?: SessionBriefTargetKind;
   target?: string;
   now?: string;
 }
@@ -97,36 +98,36 @@ export async function buildSessionBrief(
   const pages = await loadBriefPages(root);
   const events = pages.filter((page) => stringValue(page.frontmatter.type) === "event");
   const target = await resolveTarget(root, vaultIndex, options);
-  const selectedPages = selectBriefPages(options.kind, pages, events, target, now);
+  const focusEventIds = focusEventIdsForBrief(options.kind, events, now);
+  const selectedPages = selectBriefPages(options.kind, pages, events, target, now, focusEventIds);
   const activeClaims = dedupeClaims(
     selectedPages.flatMap((page) =>
       page.claims
-        .filter((claim) => stringValue(claim.fields.claim_state) === "active")
+        .filter((claim) => stringValue(claim.fields.claim_state) === "active" && claimMatchesFocusEvents(claim, focusEventIds))
         .map((claim) => toBriefClaim(page, claim))
     )
   );
   const uncertainClaims = dedupeClaims(
     selectedPages.flatMap((page) =>
       page.claims
-        .filter((claim) => isUncertainClaim(page, claim))
+        .filter((claim) => isUncertainClaim(page, claim) && claimMatchesFocusEvents(claim, focusEventIds))
         .map((claim) => toBriefClaim(page, claim))
     )
   );
-  const openFollowUps = collectOpenFollowUps(pages, options.kind, target, selectedPages);
-  const reviewItems = collectReviewItems(pages, options.kind, target, selectedPages);
+  const openFollowUps = collectOpenFollowUps(pages, options.kind, target, selectedPages, focusEventIds);
+  const reviewItems = collectReviewItems(pages, options.kind, target, selectedPages, focusEventIds);
   const evidenceEventIds = new Set<string>([
     ...activeClaims.flatMap((claim) => claim.evidence),
     ...uncertainClaims.flatMap((claim) => claim.evidence),
     ...openFollowUps.flatMap((followup) => followup.source_events),
     ...reviewItems.flatMap((item) => item.source_events)
   ]);
-  const todayEventIds =
-    options.kind === "today"
-      ? new Set(events.filter((event) => isSameBriefDay(event, now)).map(eventId).filter(isPresentString))
-      : null;
+  const directBriefEventIds = target && focusEventIds
+    ? new Set(selectedPages.flatMap(referencedEventIds).filter((id) => focusEventIds.has(id)))
+    : focusEventIds;
 
-  if (todayEventIds) {
-    for (const eventId of todayEventIds) {
+  if (directBriefEventIds) {
+    for (const eventId of directBriefEventIds) {
       evidenceEventIds.add(eventId);
     }
   }
@@ -243,12 +244,14 @@ async function resolveTarget(
   vaultIndex: VaultIndex,
   options: BuildSessionBriefOptions
 ): Promise<SessionBriefTarget | undefined> {
-  if (options.kind !== "person" && options.kind !== "context") {
+  const targetKind = options.kind === "recent" ? options.targetKind : options.kind;
+
+  if (targetKind !== "person" && targetKind !== "context") {
     return undefined;
   }
 
   if (!options.target) {
-    throw new Error(`wm brief ${options.kind} requires an id or path target.`);
+    throw new Error(`wm brief ${options.kind}${options.kind === "recent" ? ` ${targetKind}` : ""} requires an id or path target.`);
   }
 
   const targetPath = resolveTargetPath(vaultIndex, options.target);
@@ -287,7 +290,8 @@ function selectBriefPages(
   pages: LoadedBriefPage[],
   events: LoadedBriefPage[],
   target: SessionBriefTarget | undefined,
-  now: string
+  now: string,
+  focusEventIds: Set<string> | null
 ): LoadedBriefPage[] {
   if (kind === "review") {
     return pages.filter((page) => page.path.startsWith("memory/review/") && isActiveReviewItem(page));
@@ -298,14 +302,26 @@ function selectBriefPages(
   }
 
   if (kind === "today") {
-    const todayEventIds = new Set(events.filter((event) => isSameBriefDay(event, now)).map(eventId).filter(Boolean));
-
     return pages.filter((page) => {
       if (stringValue(page.frontmatter.type) === "event") {
         return false;
       }
 
-      return referencedEventIds(page).some((id) => todayEventIds.has(id));
+      return referencedEventIds(page).some((id) => focusEventIds?.has(id));
+    });
+  }
+
+  if (kind === "recent") {
+    return pages.filter((page) => {
+      if (stringValue(page.frontmatter.type) === "event") {
+        return false;
+      }
+
+      if (!referencedEventIds(page).some((id) => focusEventIds?.has(id))) {
+        return false;
+      }
+
+      return !target || pageMatchesBriefTarget(page, target);
     });
   }
 
@@ -334,7 +350,8 @@ function collectOpenFollowUps(
   pages: LoadedBriefPage[],
   kind: SessionBriefKind,
   target: SessionBriefTarget | undefined,
-  selectedPages: LoadedBriefPage[]
+  selectedPages: LoadedBriefPage[],
+  focusEventIds: Set<string> | null
 ): SessionBriefFollowUp[] {
   const selectedIds = new Set(selectedPages.map((page) => stringValue(page.frontmatter.id)).filter((id): id is string => Boolean(id)));
   const selectedPaths = new Set(selectedPages.map((page) => stripMemoryPrefix(page.path)));
@@ -346,11 +363,16 @@ function collectOpenFollowUps(
       continue;
     }
 
-    if (kind !== "followups" && kind !== "today" && !isLinkedToBrief(page, target, selectedIds, selectedPaths, selectedEvents)) {
+    if (focusEventIds && !referencedEventIds(page).some((id) => focusEventIds.has(id))) {
       continue;
     }
 
-    if (kind === "today" && !referencedEventIds(page).some((id) => selectedEvents.has(id))) {
+    if (
+      kind !== "followups" &&
+      kind !== "today" &&
+      !(kind === "recent" && !target) &&
+      !isLinkedToBrief(page, target, selectedIds, selectedPaths, selectedEvents)
+    ) {
       continue;
     }
 
@@ -373,7 +395,8 @@ function collectReviewItems(
   pages: LoadedBriefPage[],
   kind: SessionBriefKind,
   target: SessionBriefTarget | undefined,
-  selectedPages: LoadedBriefPage[]
+  selectedPages: LoadedBriefPage[],
+  focusEventIds: Set<string> | null
 ): SessionBriefReviewItem[] {
   const selectedIds = new Set(selectedPages.map((page) => stringValue(page.frontmatter.id)).filter((id): id is string => Boolean(id)));
   const selectedPaths = new Set(selectedPages.map((page) => stripMemoryPrefix(page.path)));
@@ -385,11 +408,16 @@ function collectReviewItems(
       continue;
     }
 
-    if (kind !== "review" && kind !== "today" && !isLinkedToBrief(page, target, selectedIds, selectedPaths, selectedEvents)) {
+    if (focusEventIds && !referencedEventIds(page).some((id) => focusEventIds.has(id))) {
       continue;
     }
 
-    if (kind === "today" && !referencedEventIds(page).some((id) => selectedEvents.has(id))) {
+    if (
+      kind !== "review" &&
+      kind !== "today" &&
+      !(kind === "recent" && !target) &&
+      !isLinkedToBrief(page, target, selectedIds, selectedPaths, selectedEvents)
+    ) {
       continue;
     }
 
@@ -426,6 +454,17 @@ function isLinkedToBrief(
     related.some((id) => selectedIds.has(id)) ||
     affectedFiles.some((file) => selectedPaths.has(file)) ||
     sourceEvents.some((id) => selectedEvents.has(id))
+  );
+}
+
+function pageMatchesBriefTarget(page: LoadedBriefPage, target: SessionBriefTarget): boolean {
+  const targetId = target.id ?? "";
+  const related = stringArrayValue(page.frontmatter.related);
+
+  return (
+    page.path === target.path ||
+    (targetId.length > 0 && related.includes(targetId)) ||
+    page.claims.some((claim) => stringValue(claim.fields.scope) === targetId)
   );
 }
 
@@ -468,6 +507,10 @@ function claimUncertaintyMarkers(page: LoadedBriefPage, claim: ParsedClaimBlockR
   }
 
   return markers;
+}
+
+function claimMatchesFocusEvents(claim: ParsedClaimBlockRecord, focusEventIds: Set<string> | null): boolean {
+  return !focusEventIds || stringArrayValue(claim.fields.evidence).some((id) => focusEventIds.has(id));
 }
 
 function dedupeClaims(claims: SessionBriefClaim[]): SessionBriefClaim[] {
@@ -588,6 +631,10 @@ function renderSessionBrief(result: Omit<SessionBriefResult, "contextPack">): st
 }
 
 function briefTitle(kind: SessionBriefKind, target: SessionBriefTarget | undefined): string {
+  if (kind === "recent" && target) {
+    return `Recent changes: ${target.name}`;
+  }
+
   if (target) {
     return target.name;
   }
@@ -602,6 +649,10 @@ function briefTitle(kind: SessionBriefKind, target: SessionBriefTarget | undefin
 
   if (kind === "review") {
     return "Review risk";
+  }
+
+  if (kind === "recent") {
+    return "What changed recently";
   }
 
   return kind;
@@ -652,6 +703,39 @@ function isSameBriefDay(event: LoadedBriefPage, now: string): boolean {
   const recorded = stringValue(event.frontmatter.recorded_at);
 
   return Boolean(nowDate && (datePart(observed) === nowDate || datePart(recorded) === nowDate));
+}
+
+function focusEventIdsForBrief(kind: SessionBriefKind, events: LoadedBriefPage[], now: string): Set<string> | null {
+  if (kind === "today") {
+    return new Set(events.filter((event) => isSameBriefDay(event, now)).map(eventId).filter(isPresentString));
+  }
+
+  if (kind === "recent") {
+    return new Set(events.filter((event) => isRecentBriefEvent(event, now)).map(eventId).filter(isPresentString));
+  }
+
+  return null;
+}
+
+function isRecentBriefEvent(event: LoadedBriefPage, now: string): boolean {
+  const reference = eventInstant(stringValue(event.frontmatter.observed_at)) ?? eventInstant(stringValue(event.frontmatter.recorded_at));
+  const nowInstant = eventInstant(now);
+
+  if (!reference || !nowInstant || reference > nowInstant) {
+    return false;
+  }
+
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  return nowInstant - reference <= sevenDaysMs;
+}
+
+function eventInstant(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function datePart(value: string | undefined): string | undefined {

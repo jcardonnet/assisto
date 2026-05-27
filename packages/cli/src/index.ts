@@ -604,15 +604,17 @@ async function commandHealth(root: string, args: string[], io: CliIo): Promise<n
 }
 
 async function commandBrief(root: string, args: string[], io: CliIo): Promise<number> {
-  const [rawKind, target] = args;
+  const [rawKind] = args;
 
   if (!rawKind || rawKind === "--help" || rawKind === "-h") {
-    io.stdout("Usage: wm brief <today|person|context|review|followups> [id|path]\n");
+    io.stdout("Usage: wm brief <today|person|context|review|followups|recent> [id|path]\n");
+    io.stdout("       wm brief recent [person|context] [id|path]\n");
     return 0;
   }
 
   const kind = parseBriefKind(rawKind);
-  const result = await buildSessionBrief(root, { kind, target });
+  const briefOptions = parseBriefOptions(kind, args.slice(1));
+  const result = await buildSessionBrief(root, briefOptions);
   io.stdout(result.contextPack);
 
   return 0;
@@ -836,11 +838,29 @@ function parseOptionalPositiveInt(value: string | null, optionName: string): num
 }
 
 function parseBriefKind(value: string): SessionBriefKind {
-  if (value === "today" || value === "person" || value === "context" || value === "review" || value === "followups") {
+  if (value === "today" || value === "person" || value === "context" || value === "review" || value === "followups" || value === "recent") {
     return value;
   }
 
-  throw new Error("Usage: wm brief <today|person|context|review|followups> [id|path]");
+  throw new Error("Usage: wm brief <today|person|context|review|followups|recent> [id|path]");
+}
+
+function parseBriefOptions(kind: SessionBriefKind, args: string[]): { kind: SessionBriefKind; targetKind?: "person" | "context"; target?: string } {
+  if (kind !== "recent") {
+    return { kind, target: args[0] };
+  }
+
+  const [targetKind, target] = args;
+
+  if (!targetKind) {
+    return { kind };
+  }
+
+  if (targetKind !== "person" && targetKind !== "context") {
+    throw new Error("Usage: wm brief recent [person|context] [id|path]");
+  }
+
+  return { kind, targetKind, target };
 }
 
 function printImportResult(result: ImportNotesResult, io: CliIo): void {
@@ -940,7 +960,8 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] ask --pack-context "<question>"',
       '  wm [--root <path>] ask --answer-basis "<question>"',
       "  wm [--root <path>] health check [--stage-review] [--note <text>]",
-      "  wm [--root <path>] brief <today|person|context|review|followups> [id|path]",
+      "  wm [--root <path>] brief <today|person|context|review|followups|recent> [id|path]",
+      "  wm [--root <path>] brief recent [person|context] [id|path]",
       "  wm [--root <path>] workbench serve [--host 127.0.0.1] [--port 3721]",
       ""
     ].join("\n")
