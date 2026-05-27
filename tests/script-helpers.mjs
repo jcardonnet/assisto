@@ -11,8 +11,13 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["pr:closeout"], "node scripts/pr-closeout.mjs");
   assert.equal(packageJson.scripts["mxbai:upload"], "bash scripts/mxbai-upload.sh");
   assert.equal(packageJson.scripts["mxbai:smoke"], "bash scripts/mxbai-smoke.sh");
+  assert.equal(packageJson.scripts["agent:start"], "node scripts/agent-control.mjs start");
+  assert.equal(packageJson.scripts["agent:status"], "node scripts/agent-control.mjs status");
+  assert.equal(packageJson.scripts["agent:handoff"], "node scripts/agent-control.mjs handoff");
+  assert.equal(packageJson.scripts["agent:note"], "node scripts/agent-control.mjs note");
 
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /Usage: pnpm validate:local/);
+  assert.match(readFileSync(".gitignore", "utf8"), /\.assisto-agent\/runs\//);
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /TMPDIR=\/tmp/);
   assert.match(readFileSync("scripts/env-doctor.mjs", "utf8"), /Usage: pnpm env:doctor/);
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /Usage: pnpm check:memory-data/);

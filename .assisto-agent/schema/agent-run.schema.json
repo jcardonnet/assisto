@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assisto.local/schema/agent-run.schema.json",
+  "title": "AgentRun",
+  "type": "object",
+  "required": [
+    "id",
+    "schema_version",
+    "slug",
+    "objective",
+    "branch",
+    "base_ref",
+    "created_at",
+    "updated_at",
+    "changed_files",
+    "touched_subsystems",
+    "commands",
+    "validation_status",
+    "review_state",
+    "pr_url",
+    "blockers",
+    "next_action",
+    "notes"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^run_[0-9]{8}T[0-9]{6}Z_[a-z0-9][a-z0-9-]*$" },
+    "schema_version": { "const": 1 },
+    "slug": { "type": "string" },
+    "objective": { "type": "string" },
+    "branch": { "type": "string" },
+    "base_ref": { "type": "string" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "changed_files": { "type": "array", "items": { "type": "string" } },
+    "touched_subsystems": { "type": "array", "items": { "type": "string" } },
+    "commands": { "type": "array", "items": { "type": "object" } },
+    "validation_status": { "enum": ["not_run", "running", "passed", "failed", "partial"] },
+    "review_state": { "enum": ["not_requested", "requested", "threads_pending", "addressed", "non_actionable", "approved"] },
+    "pr_url": { "type": ["string", "null"] },
+    "blockers": { "type": "array", "items": { "type": "string" } },
+    "next_action": { "type": "string" },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "text", "created_at"],
+        "properties": {
+          "kind": { "enum": ["decision", "blocker", "validation", "review", "next"] },
+          "text": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
