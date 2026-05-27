@@ -31,8 +31,10 @@ import {
   transactionFilePaths,
   previewCaptureNote,
   previewImportNotes,
+  previewAnswerDraft,
   retrieveContextForAnswer,
   validateTransaction,
+  type AnswerDraftResult,
   type CaptureCreateResult,
   type CapturePreviewResult,
   type ContextPackResult,
@@ -546,6 +548,10 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createEventReprocessPreview(root, input, true));
     }
 
+    if (pathname === "/api/ask/draft/preview") {
+      return jsonRoute(200, await createAskDraftPreview(root, input));
+    }
+
     if (pathname === "/api/entities/alias/preview") {
       return jsonRoute(200, await createEntityAliasPreview(root, input, false));
     }
@@ -702,6 +708,11 @@ async function createEventReprocessPreview(
     : await withPreviewRoot(root, (previewRoot) => reprocessEvent(previewRoot, eventId));
 
   return ingestTransactionPreview("reprocess_event", result, created);
+}
+
+async function createAskDraftPreview(root: string, input: Record<string, unknown>): Promise<AnswerDraftResult> {
+  const question = requiredStringInput(input, "question", "q");
+  return previewAnswerDraft(root, question);
 }
 
 async function createEntityAliasPreview(
@@ -1746,6 +1757,7 @@ textarea {
   padding: 8px 14px;
 }
 
+.toolbar button.secondary,
 .action-row button.secondary {
   background: transparent;
   color: var(--accent);
@@ -2257,7 +2269,8 @@ function render() {
   if (activeTab === "ask") {
     view.innerHTML = \`<form class="toolbar" id="ask-form">
       <input id="ask-input" name="q" value="Who is my manager?">
-      <button type="submit">Ask</button>
+      <button type="submit" name="mode" value="ask">Ask</button>
+      <button type="submit" name="mode" value="draft" class="secondary">Draft answer</button>
     </form>
     <div id="ask-result" class="ask-result"></div>
     <output id="copy-output" class="copy-output" aria-live="polite"></output>\`;
@@ -2271,11 +2284,18 @@ function render() {
         return;
       }
 
-      document.querySelector("#ask-result").innerHTML = '<article class="item"><h2>Loading</h2><p class="meta">Reading markdown memory.</p></article>';
+      const draft = event.submitter?.value === "draft";
+      document.querySelector("#ask-result").innerHTML = draft
+        ? '<article class="item"><h2>Drafting</h2><p class="meta">Reading deterministic memory basis before asking the optional provider.</p></article>'
+        : '<article class="item"><h2>Loading</h2><p class="meta">Reading markdown memory.</p></article>';
 
       try {
-        const result = await fetchJson(\`/api/ask?q=\${encodeURIComponent(question)}\`);
-        renderAnswerBasis(result);
+        if (draft) {
+          renderAnswerDraft(await postJson("/api/ask/draft/preview", { question }));
+        } else {
+          const result = await fetchJson(\`/api/ask?q=\${encodeURIComponent(question)}\`);
+          renderAnswerBasis(result);
+        }
       } catch (error) {
         document.querySelector("#ask-result").innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
       }
@@ -3354,6 +3374,40 @@ function plainListHtml(label, items) {
 
 function renderAnswerBasis(result) {
   renderAskResult(result);
+}
+
+function renderAnswerDraft(result) {
+  if (result.basis) {
+    renderAskResult(result.basis);
+    document.querySelector("#ask-result").insertAdjacentHTML("afterbegin", answerDraftHtml(result));
+  } else {
+    clearCopyOutput();
+    document.querySelector("#ask-result").innerHTML = answerDraftHtml(result);
+  }
+
+  bindCopyControls();
+}
+
+function answerDraftHtml(result) {
+  const answerText = result.answer_text || "Draft unavailable.";
+  const citationLines = (result.citations ?? []).map((citation) => \`citation: \${citation}\`);
+  const copyButton = result.answer_text
+    ? \`<button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(result.answer_text)}">Copy draft</button>\`
+    : "";
+
+  return \`<section data-ask-section="draft-answer">
+    <h2>Draft answer</h2>
+    <article class="item ask-card">
+      <h3>\${escapeHtml(result.provider_name ?? "provider")}</h3>
+      <p>\${escapeHtml(answerText)}</p>
+      <p class="pill">generated \${escapeHtml(result.generated_at ?? "unknown")} · \${escapeHtml(result.provider_model ?? "model unspecified")}</p>
+      \${citationLinesHtml(citationLines)}
+      \${plainListHtml("What memory cannot confirm", result.cannot_confirm ?? [])}
+      \${plainListHtml("Warnings", result.warnings ?? [])}
+      <p class="meta">Draft text is derived and not saved to memory.</p>
+      \${copyButton}
+    </article>
+  </section>\`;
 }
 
 function renderAskResult(result) {

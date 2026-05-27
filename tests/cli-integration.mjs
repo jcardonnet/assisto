@@ -253,6 +253,38 @@ export async function runCliIntegrationTests() {
     assert.equal(Array.isArray(answerBasis.manualActions), true);
     assert.equal(Array.isArray(answerBasis.suggestedNextQuestions), true);
     assert.match(answerBasis.contextPack, /# Context pack/);
+
+    const oldOpenAiKey = process.env.OPENAI_API_KEY;
+    const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;
+
+    try {
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ASSISTO_OPENAI_MODEL;
+
+      const draftResult = await runWm(askRoot, [
+        "ask",
+        "--draft",
+        "How should I explain Joe and Mike the difference between Solr and Qdrant?"
+      ]);
+      const draft = JSON.parse(draftResult.stdout);
+
+      assert.equal(draft.provider_name, "openai");
+      assert.equal(draft.answer_text, "");
+      assert.equal(draft.warnings.some((warning) => /OPENAI_API_KEY/.test(warning)), true);
+      assert.match(draft.basis.contextPack, /# Context pack/);
+    } finally {
+      if (oldOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = oldOpenAiKey;
+      }
+
+      if (oldOpenAiModel === undefined) {
+        delete process.env.ASSISTO_OPENAI_MODEL;
+      } else {
+        process.env.ASSISTO_OPENAI_MODEL = oldOpenAiModel;
+      }
+    }
   } finally {
     await rm(askRoot, { recursive: true, force: true });
   }

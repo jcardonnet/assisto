@@ -40,6 +40,25 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await writeWorkbenchFixture(root);
     const beforePersonPage = await readVaultFile(root, "memory/people/jeff.md");
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
+    await page.route("**/api/ask/draft/preview", async (route) => {
+      const body = route.request().postDataJSON();
+      assert.equal(body.question, "Who is my manager?");
+
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          question: body.question,
+          provider_name: "mock-drafter",
+          provider_model: "mock-model",
+          generated_at: "2026-05-27T15:00:00.000Z",
+          answer_text: "Jeff is your manager.",
+          citations: ["clm_jeff_manager", "ev_2026_05_21_001"],
+          cannot_confirm: ["Memory does not confirm when Jeff became manager."],
+          warnings: ["Draft is ephemeral and not saved."],
+          basis: {}
+        })
+      });
+    });
 
     await page.goto(server.url);
     await page.locator('[data-tab="ask"]').click();
@@ -70,6 +89,20 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await page.getByRole("button", { name: "Before meeting brief" }).first().click();
     await expect(page.locator("#brief-kind")).toHaveValue("person");
     await expect(page.locator("#brief-export-text")).toContainText("# Session brief: Jeff");
+
+    await page.locator('[data-tab="ask"]').click();
+    await page.locator("#ask-input").fill("Who is my manager?");
+    await page.locator("#ask-form").getByRole("button", { name: "Ask" }).click();
+    await expect(answerSection.getByText("Jeff is my manager.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Draft answer" }).click();
+    const draftSection = page.locator('[data-ask-section="draft-answer"]');
+    await expect(draftSection.getByText("Jeff is your manager.")).toBeVisible();
+    await expect(draftSection.getByText("clm_jeff_manager")).toBeVisible();
+    await expect(draftSection.getByText("Memory does not confirm when Jeff became manager.")).toBeVisible();
+    await expect(draftSection.getByText("Draft is ephemeral and not saved.")).toBeVisible();
+    await page.getByRole("button", { name: "Copy draft" }).click();
+    await expect(page.locator("#copy-output")).toContainText("Jeff is your manager.");
 
     await page.locator('[data-tab="ask"]').click();
     await page.locator("#ask-input").fill("What is the Neptune deploy key?");
