@@ -764,9 +764,12 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /renderEntities/);
     assert.match(client.body, /entity-alias-form/);
     assert.match(client.body, /entity-context-form/);
+    assert.match(client.body, /entity-context-note-form/);
+    assert.match(client.body, /Context operating page/);
     assert.match(client.body, /\/api\/entities\?kind=/);
     assert.match(client.body, /\/api\/entities\/alias\/preview/);
     assert.match(client.body, /\/api\/entities\/context\/preview/);
+    assert.match(client.body, /\/api\/entities\/context-note\/preview/);
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /reviewSummaryHtml/);
@@ -1422,6 +1425,12 @@ export async function runWorkbenchTests() {
     assert.equal(entityDetail.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
     assert.equal(entityDetail.linkedFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
 
+    const contextEntityDetail = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/entities/detail?id=ctx_inventory_project" })).body
+    );
+    assert.equal(contextEntityDetail.contextOperatingPage.context_id, "ctx_inventory_project");
+    assert.equal(contextEntityDetail.contextOperatingPage.roleClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+
     const entityAliasPreview = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {
@@ -1468,6 +1477,53 @@ export async function runWorkbenchTests() {
     assert.deepEqual(unresolvedContextPreview.operations, ["STAGE_REVIEW"]);
     assert.match(unresolvedContextPreview.proposed_file_writes[0].path, /^memory\/review\/rev_entity_context_resolution_/);
     await assert.rejects(() => readVaultFile(root, unresolvedContextPreview.proposed_file_writes[0].path), /ENOENT/);
+
+    const beforeContextPage = await readVaultFile(root, "memory/contexts/inventory-project.md");
+    const contextNotePreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/context-note/preview",
+          body: JSON.stringify({
+            id: "ctx_inventory_project",
+            noteType: "correction",
+            note: "Inventory Project uses PostgreSQL for reporting."
+          })
+        })
+      ).body
+    );
+    assert.equal(contextNotePreview.action, "stage_context_note");
+    assert.equal(contextNotePreview.created, false);
+    assert.equal(contextNotePreview.context_path, "memory/contexts/inventory-project.md");
+    await assert.rejects(() => readVaultFile(root, contextNotePreview.transaction_path), /ENOENT/);
+    assert.equal(await readVaultFile(root, "memory/contexts/inventory-project.md"), beforeContextPage);
+
+    const contextNoteRoot = await makeTempVault("assisto-workbench-context-note-route-");
+
+    try {
+      await writeWorkbenchFixture(contextNoteRoot);
+      const beforeContextNotePage = await readVaultFile(contextNoteRoot, "memory/contexts/inventory-project.md");
+      const contextNoteStage = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(contextNoteRoot, {
+            method: "POST",
+            url: "/api/entities/context-note/stage",
+            body: JSON.stringify({
+              id: "ctx_inventory_project",
+              noteType: "correction",
+              note: "Inventory Project uses PostgreSQL for reporting."
+            })
+          })
+        ).body
+      );
+      assert.equal(contextNoteStage.action, "stage_context_note");
+      assert.equal(contextNoteStage.created, true);
+      assert.match(await readVaultFile(contextNoteRoot, contextNoteStage.event_path), /source_label: context_correction:ctx_inventory_project/);
+      assert.match(await readVaultFile(contextNoteRoot, contextNoteStage.transaction_path), /transaction_state: pending/);
+      assert.equal(await readVaultFile(contextNoteRoot, "memory/contexts/inventory-project.md"), beforeContextNotePage);
+    } finally {
+      await rm(contextNoteRoot, { recursive: true, force: true });
+    }
 
     const entitiesWithoutKind = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/entities" });
     assert.equal(entitiesWithoutKind.status, 400);

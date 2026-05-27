@@ -22,6 +22,37 @@ export async function runCoreEntityTests() {
     assert.equal(detail.linkedFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
     assert.equal(detail.relatedPages.some((page) => page.id === "ctx_inventory_project"), true);
 
+    await writeContextOperatingFixtures(root);
+    const contextDetail = await entities.getEntityDetail(root, "ctx_inventory_project");
+    assert.equal(contextDetail.type, "context");
+    assert.equal(contextDetail.contextOperatingPage.context_id, "ctx_inventory_project");
+    assert.equal(contextDetail.contextOperatingPage.activeFacts.some((claim) => claim.claim_id === "clm_inventory_uses_mysql"), true);
+    assert.equal(contextDetail.contextOperatingPage.roleClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(contextDetail.contextOperatingPage.decisionClaims.some((claim) => claim.claim_id === "clm_inventory_decision_mysql"), true);
+    assert.equal(contextDetail.contextOperatingPage.openQuestionClaims.some((claim) => claim.claim_id === "clm_inventory_open_question"), true);
+    assert.equal(contextDetail.contextOperatingPage.ownerClaims.some((claim) => claim.claim_id === "clm_inventory_owner"), true);
+    assert.equal(contextDetail.contextOperatingPage.relatedPeople.some((page) => page.id === "per_jeff"), true);
+    assert.equal(contextDetail.contextOperatingPage.relatedTopics.some((page) => page.id === "top_mysql"), true);
+    assert.equal(contextDetail.contextOperatingPage.openFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.equal(contextDetail.contextOperatingPage.recentChanges.some((claim) => claim.claim_id === "clm_inventory_decision_mysql"), true);
+
+    const beforeContext = await readVaultFile(root, "memory/contexts/inventory-project.md");
+    const contextNote = await entities.createContextNoteTransaction(root, "ctx_inventory_project", "Inventory Project uses PostgreSQL for reporting.", {
+      now: "2026-05-24T12:00:00-03:00",
+      noteType: "correction"
+    });
+
+    assert.equal(contextNote.action, "stage_context_note");
+    assert.equal(contextNote.created, true);
+    assert.equal(contextNote.context_id, "ctx_inventory_project");
+    assert.equal(contextNote.context_path, "memory/contexts/inventory-project.md");
+    assert.equal(contextNote.validation.passed, true);
+    assert.equal(contextNote.event_path.startsWith("memory/events/2026/2026-05/2026-05-24-"), true);
+    assert.match(await readVaultFile(root, contextNote.event_path), /source_label: context_correction:ctx_inventory_project/);
+    assert.match(await readVaultFile(root, contextNote.event_path), /ctx_inventory_project/);
+    assert.match(await readVaultFile(root, contextNote.transaction_path), /transaction_state: pending/);
+    assert.equal(await readVaultFile(root, "memory/contexts/inventory-project.md"), beforeContext);
+
     const beforeJeff = await readVaultFile(root, "memory/people/jeff.md");
     const alias = await entities.createEntityAliasTransaction(root, "per_jeff", "Jeffrey", {
       now: "2026-05-24T12:00:00-03:00",
@@ -144,6 +175,83 @@ summary_generated_from:
   observed_at: 2026-05-21
   valid_from: null
   valid_to: null
+`
+  );
+}
+
+async function writeContextOperatingFixtures(root) {
+  const contextPage = await readVaultFile(root, "memory/contexts/inventory-project.md");
+
+  await writeVaultFile(
+    root,
+    "memory/contexts/inventory-project.md",
+    `${contextPage.trimEnd()}
+
+- claim_id: clm_inventory_decision_mysql
+  statement: Decision: Inventory Project will keep MySQL for catalog storage.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_003]
+  recorded_at: 2026-05-22T10:00:00-03:00
+  observed_at: 2026-05-22
+  valid_from: null
+  valid_to: null
+
+- claim_id: clm_inventory_open_question
+  statement: Open question: Inventory Project needs to confirm the reporting dashboard owner.
+  claim_kind: assumption
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_003]
+  recorded_at: 2026-05-22T10:05:00-03:00
+  observed_at: 2026-05-22
+  valid_from: null
+  valid_to: null
+
+- claim_id: clm_inventory_owner
+  statement: Jeff owns Inventory Project coordination.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_003]
+  recorded_at: 2026-05-22T10:10:00-03:00
+  observed_at: 2026-05-22
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/events/2026/2026-05/2026-05-21-003.md",
+    `---
+id: ev_2026_05_21_003
+type: event
+object_state: active
+review_state: reviewed
+recorded_at: 2026-05-22T10:00:00-03:00
+observed_at: 2026-05-22
+source_type: user_note
+source_actor: user
+participants: []
+topics: []
+contexts:
+  - ctx_inventory_project
+derived_claims: []
+transactions: []
+---
+
+# Event ev_2026_05_21_003
+
+## Raw text
+
+Decision: Inventory Project will keep MySQL. Open question: confirm dashboard owner. Jeff owns coordination.
 `
   );
 }
