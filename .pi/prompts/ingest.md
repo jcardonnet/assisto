@@ -31,4 +31,5 @@ Safety constraints:
 - Do not auto-merge entities.
 - Do not auto-resolve contradictions.
 - Do not persist generated explanations unless explicitly saved.
-- Do not enable vector search, graph DB behavior, MCP, or LLM extraction.
+- Do not enable vector search, graph DB behavior, or MCP.
+- Use `provider: "openai"` only when the user explicitly requests OpenAI-backed candidate extraction or the runtime is configured for that workflow. OpenAI output is candidate data only and still goes through deterministic staging and transaction validation.

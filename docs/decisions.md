@@ -452,7 +452,7 @@ Date: 2026-05-20
 
 ### Context
 
-The target runtime is Pi Agent Harness with GPT-5.5 and Obsidian. Implementation will be done with Codex Pro.
+The target runtime is Pi Agent Harness with an optional env-configured extraction provider and Obsidian. Implementation will be done with Codex Pro.
 
 ### Decision
 
@@ -461,7 +461,7 @@ Use:
 ```text
 Obsidian = canonical markdown UI/store
 Pi Agent Harness = runtime command/tool/agent shell
-GPT-5.5 = reasoning model
+OpenAI-compatible extraction = optional candidate provider
 Codex Pro = implementation agent
 Git = audit/review/rollback
 ```
@@ -484,7 +484,7 @@ Negative:
 ### Deferred work
 
 - Pi extension after CLI and eval harness.
-- Optional GPT extraction after deterministic tests pass.
+- Optional OpenAI-compatible candidate extraction after deterministic tests pass.
 
 ---
 
@@ -495,7 +495,7 @@ Date: 2026-05-20
 
 ### Context
 
-GPT-5.5 can extract candidate claims, entities, scopes, and follow-ups. But direct LLM output is not safe enough to mutate durable memory.
+An LLM provider can extract candidate claims, entities, scopes, and follow-ups. But direct LLM output is not safe enough to mutate durable memory.
 
 ### Decision
 
@@ -533,11 +533,11 @@ Negative:
 - More pipeline complexity.
 - Some useful model suggestions may be blocked.
 
-### Deferred work
+### Implementation notes
 
-- Mocked LLM output tests.
-- Optional provider interface.
-- Extraction prompt tuning.
+- Mocked provider output tests cover unsafe follow-ups, unscoped claims, ambiguous entities, malformed output, and generated explanation omission.
+- The optional OpenAI-compatible provider is env-backed through `OPENAI_API_KEY`, `ASSISTO_OPENAI_MODEL`, and optional `ASSISTO_OPENAI_BASE_URL`.
+- No model default is hard-coded; missing configuration creates candidate-review fallback output instead of network calls or canonical writes.
 
 ---
 

@@ -39,8 +39,8 @@ export async function runPiExtensionTests() {
     assert.equal(piEntry.default, piEntry.factory);
 
     const factoryExtension = piEntry.default({ vaultRoot: root });
-    assert.equal(factoryExtension.tools.length, 14);
-    assert.equal(factoryExtension.commands.length, 10);
+    assert.equal(factoryExtension.tools.length, 15);
+    assert.equal(factoryExtension.commands.length, 11);
 
     const nativeTools = [];
     const nativeCommands = [];
@@ -58,6 +58,7 @@ export async function runPiExtensionTests() {
       nativeTools.map((tool) => tool.name).sort(),
       [
         "wm_apply_transaction",
+        "wm_capture_note",
         "wm_ingest_note",
         "wm_lint",
         "wm_list_review_items",
@@ -78,6 +79,7 @@ export async function runPiExtensionTests() {
       [
         "wm-apply",
         "wm-ask",
+        "wm-capture",
         "wm-ingest",
         "wm-lint",
         "wm-event-reprocess",
@@ -115,6 +117,7 @@ export async function runPiExtensionTests() {
       registeredTools.map((tool) => tool.name).sort(),
       [
         "wm_apply_transaction",
+        "wm_capture_note",
         "wm_ingest_note",
         "wm_lint",
         "wm_list_review_items",
@@ -135,6 +138,7 @@ export async function runPiExtensionTests() {
       [
         "/wm-apply",
         "/wm-ask",
+        "/wm-capture",
         "/wm-ingest",
         "/wm-lint",
         "/wm-event-reprocess",
@@ -146,8 +150,8 @@ export async function runPiExtensionTests() {
       ].sort()
     );
     assert.equal(registeredGuards.length, 1);
-    assert.equal(registered.tools.length, 14);
-    assert.equal(registered.commands.length, 10);
+    assert.equal(registered.tools.length, 15);
+    assert.equal(registered.commands.length, 11);
 
     const directCanonical = piExtension.checkWorkMemoryWrite({ path: "memory/people/joe.md" });
     assert.equal(directCanonical.allowed, false);
@@ -356,6 +360,44 @@ affected_files:
     assert.equal(commandReprocess.event_id, "ev_2026_05_20_010");
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+
+  const captureRoot = await makeTempVault();
+
+  try {
+    const tools = toolMap(piExtension.createWorkMemoryExtension({ vaultRoot: captureRoot }));
+    const openAiFallback = await tools.get("wm_ingest_note").run({ note: "Alice is the PM.", provider: "openai" });
+    assert.equal(openAiFallback.provider_name, "openai");
+    assert.equal(openAiFallback.deterministic_review_reasons.includes("llm_output_malformed"), true);
+
+    const capturePreview = await tools.get("wm_capture_note").run({
+      note: "Bob is the QA owner.",
+      observed_at: "2026-05-21",
+      source_label: "pi capture",
+      dry_run: true
+    });
+    assert.equal(capturePreview.created, false);
+    assert.equal(capturePreview.provider_name, "rule-based");
+    assert.equal(capturePreview.validation.passed, true);
+    await assert.rejects(() => readVaultFile(captureRoot, capturePreview.event_path));
+
+    const captureCreate = await tools.get("wm_capture_note").run({
+      note: "Bob is the QA owner.",
+      observed_at: "2026-05-21",
+      source_label: "pi capture",
+      provider: "rule"
+    });
+    assert.equal(captureCreate.created, true);
+    assert.match(await readVaultFile(captureRoot, captureCreate.event_path), /source_label: pi capture/);
+    await assert.rejects(() => readVaultFile(captureRoot, "memory/people/bob.md"));
+
+    const commandCapture = await piExtension
+      .createWorkMemoryExtension({ vaultRoot: captureRoot })
+      .commands.find((command) => command.name === "/wm-capture")
+      .run("Alice is the PM.");
+    assert.equal(commandCapture.created, true);
+  } finally {
+    await rm(captureRoot, { recursive: true, force: true });
   }
 
   const rejectRoot = await makeTempVault();

@@ -8,9 +8,9 @@ import {
   buildSessionBrief,
   createCaptureNote,
   createHealthReviewTransaction,
+  createOpenAiExtractionProvider,
   createReviewApplyTransaction,
   createReviewStateTransaction,
-  LlmExtractionProvider,
   listSessionBriefTargets,
   listMarkdownFiles,
   listReviewItems,
@@ -28,6 +28,7 @@ import {
   type CaptureCreateResult,
   type CapturePreviewResult,
   type ContextPackResult,
+  type ExtractionProvider,
   type FrontmatterValue,
   type IngestNoteResult,
   type HealthReviewTransactionResult,
@@ -492,13 +493,13 @@ async function createCapturePreview(
   return created ? createCaptureNote(root, note, options) : previewCaptureNote(root, note, options);
 }
 
-function captureProvider(name: string): LlmExtractionProvider | undefined {
+function captureProvider(name: string): ExtractionProvider | undefined {
   if (name === "rule") {
     return undefined;
   }
 
   if (name === "openai") {
-    return new LlmExtractionProvider();
+    return createOpenAiExtractionProvider();
   }
 
   throw new Error("Capture provider must be rule or openai.");

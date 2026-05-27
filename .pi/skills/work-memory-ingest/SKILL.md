@@ -31,6 +31,8 @@ Useful CLI commands:
 ```bash
 pnpm --filter @assisto/cli wm ingest --dry-run "<note>"
 pnpm --filter @assisto/cli wm ingest "<note>"
+pnpm --filter @assisto/cli wm capture --dry-run "<note>"
+pnpm --filter @assisto/cli wm capture "<note>"
 pnpm --filter @assisto/cli wm tx show <transaction-id>
 pnpm --filter @assisto/cli wm review inbox
 ```
@@ -63,6 +65,18 @@ pnpm --filter @assisto/cli wm review inbox
 
 6. Do not apply the transaction unless the user explicitly asks or the workflow requires review approval.
 
+## Optional OpenAI Candidate Extraction
+
+Use `--provider openai` or tool input `provider: "openai"` only when the user explicitly requests OpenAI-backed extraction or the runtime workflow is configured for it.
+
+Required environment:
+
+- `OPENAI_API_KEY`
+- `ASSISTO_OPENAI_MODEL`
+- optional `ASSISTO_OPENAI_BASE_URL`
+
+OpenAI output is candidate data only. Malformed output, unsafe follow-ups, ambiguous entities, unscoped system facts, generated explanations, and validation failures must stage review or fallback transactions rather than directly editing canonical memory.
+
 ## Forbidden Behavior
 
 - Never write directly to `memory/people/`, `memory/topics/`, `memory/contexts/`, or `memory/followups/` from ingestion.
@@ -72,7 +86,7 @@ pnpm --filter @assisto/cli wm review inbox
 - Never auto-merge people, topics, or contexts.
 - Never auto-resolve contradictions.
 - Never persist generated explanations unless the user explicitly asks to save them.
-- Never call GPT/LLM extraction for MVP ingestion.
+- Never let OpenAI or any LLM provider write canonical memory directly or bypass deterministic validation.
 
 ## Required Invariants
 

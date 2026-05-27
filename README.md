@@ -6,7 +6,7 @@ The project is designed to run with:
 
 - **Obsidian** as the canonical markdown UI/store;
 - **Pi Agent Harness** as the interactive runtime environment;
-- **GPT-5.5** as the reasoning model;
+- an optional OpenAI-compatible extraction provider configured by environment;
 - **Codex Pro** as the implementation agent;
 - **Git** as the audit, rollback, and review layer.
 
@@ -196,7 +196,7 @@ Use Codex in small tasks:
 7. Implement CLI.
 8. Implement MVP eval harness.
 9. Implement Pi extension wrapper.
-10. Add optional GPT extraction after deterministic tests pass.
+10. Add optional OpenAI-compatible candidate extraction after deterministic tests pass.
 
 Do not ask Codex to invent the architecture while coding. Give it a narrow task, allowed file scope, invariants, and tests.
 
@@ -350,7 +350,7 @@ Golden thresholds live in `tests/golden/mvp-eval-thresholds.json`; scenarios liv
 |---|---|
 | Canonical memory | Obsidian-readable markdown under `memory/` |
 | Interactive agent | Pi Agent Harness |
-| Reasoning model | GPT-5.5 |
+| Candidate extraction model | Optional OpenAI-compatible provider via `OPENAI_API_KEY` and `ASSISTO_OPENAI_MODEL` |
 | Implementation agent | Codex Pro |
 | Audit/versioning | Git |
 | Workflow instructions | `AGENTS.md`, `.pi/skills`, `.pi/prompts` |
@@ -367,6 +367,7 @@ It registers these tools:
 ```text
 wm_validate
 wm_ingest_note
+wm_capture_note
 wm_list_transactions
 wm_show_transaction
 wm_apply_transaction
@@ -385,6 +386,7 @@ It registers these commands:
 
 ```text
 /wm-ingest
+/wm-capture
 /wm-review
 /wm-review-show
 /wm-review-mark
@@ -396,7 +398,7 @@ It registers these commands:
 /wm-lint
 ```
 
-The wrapper preserves MVP transaction invariants. Direct writes to `memory/people/`, `memory/topics/`, `memory/contexts/`, and `memory/followups/` are blocked unless invoked through `wm_apply_transaction`; `.obsidian/` writes are blocked; writes outside `memory/` and `.pi/` produce warnings. Review apply and Event reprocess commands create pending Transactions only. It does not implement MCP, vector search, separate memory semantics, or autonomous background linting.
+The wrapper preserves MVP transaction invariants. Direct writes to `memory/people/`, `memory/topics/`, `memory/contexts/`, and `memory/followups/` are blocked unless invoked through `wm_apply_transaction`; `.obsidian/` writes are blocked; writes outside `memory/` and `.pi/` produce warnings. Capture, ingest, review apply, and Event reprocess commands create pending Transactions only. The optional `openai` extraction provider is candidate-only and requires `OPENAI_API_KEY` plus `ASSISTO_OPENAI_MODEL`; it does not implement MCP, vector search, separate memory semantics, autonomous merges, or autonomous background linting.
 
 ## Pi prompt templates
 
@@ -405,6 +407,7 @@ Common Pi command prompts live under `.pi/prompts/`:
 | Template | Command | Tool |
 |---|---|---|
 | `.pi/prompts/ingest.md` | `/ingest <note>` | `wm_ingest_note` |
+| `.pi/prompts/capture.md` | `/capture <note>` | `wm_capture_note` |
 | `.pi/prompts/ask.md` | `/ask <question>` | `wm_pack_context` |
 | `.pi/prompts/review-inbox.md` | `/review-inbox` | `wm_review_inbox` |
 | `.pi/prompts/apply-transaction.md` | `/apply-transaction <tx-id>` | `wm_apply_transaction` |
@@ -428,4 +431,4 @@ All skills forbid direct canonical writes, unscoped claim promotion, committed f
 
 ## Current status
 
-This repository starts as a spec-first prototype. Implement the deterministic core before adding GPT extraction, vector search, graph traversal, MCP, or background automation.
+This repository has a deterministic markdown/transaction core, Workbench UI, Pi wrapper, evals, and an optional OpenAI-compatible candidate extraction provider. The provider is never authoritative: malformed output, unsafe follow-ups, ambiguous entities, generated explanations, unscoped system facts, and validation failures are staged for review instead of becoming canonical truth.

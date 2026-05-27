@@ -1,5 +1,6 @@
 import {
   applyTransaction,
+  createCaptureNote,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -9,6 +10,7 @@ import {
   parseMarkdownFile,
   readMarkdownPage,
   rejectTransaction,
+  previewCaptureNote,
   showReviewItem,
   toValidationDocument,
   transactionFilePaths,
@@ -20,7 +22,12 @@ import {
   type ValidationDocument,
   type ValidationResult
 } from "@assisto/core";
-import { ingestWithExtractionProvider, LlmExtractionProvider } from "../../core/src/extraction";
+import {
+  createOpenAiExtractionProvider,
+  ingestWithExtractionProvider,
+  LlmExtractionProvider,
+  type ExtractionProvider
+} from "../../core/src/extraction";
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
 import { retrieveContextForAnswer } from "../../core/src/retrieval";
@@ -28,6 +35,7 @@ import { retrieveContextForAnswer } from "../../core/src/retrieval";
 export type WorkMemoryToolName =
   | "wm_validate"
   | "wm_ingest_note"
+  | "wm_capture_note"
   | "wm_list_transactions"
   | "wm_show_transaction"
   | "wm_apply_transaction"
@@ -43,6 +51,7 @@ export type WorkMemoryToolName =
 
 export type WorkMemoryCommandName =
   | "/wm-ingest"
+  | "/wm-capture"
   | "/wm-review"
   | "/wm-review-show"
   | "/wm-review-mark"
@@ -244,9 +253,27 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
       description: "Create an Event and pending Transaction for a note.",
       run: async (input) => {
         const note = stringInput(input, "note");
-        const provider = input?.provider === "llm" ? new LlmExtractionProvider() : undefined;
+        const provider = extractionProviderFromInput(input, { allowLlmStub: true });
 
         return ingestWithExtractionProvider(rootFromInput(input, vaultRoot), note, { provider });
+      }
+    },
+    {
+      name: "wm_capture_note",
+      description: "Capture a daily work note through a preview or pending Transaction.",
+      run: async (input) => {
+        const root = rootFromInput(input, vaultRoot);
+        const note = stringInput(input, "note");
+        const options = {
+          observed_at: optionalStringInput(input, "observed_at") ?? optionalStringInput(input, "observedAt"),
+          source_label: optionalStringInput(input, "source_label") ?? optionalStringInput(input, "sourceLabel"),
+          context: optionalStringInput(input, "context"),
+          provider: extractionProviderFromInput(input, { allowLlmStub: false })
+        };
+
+        return input?.dry_run === true || input?.dryRun === true
+          ? previewCaptureNote(root, note, options)
+          : createCaptureNote(root, note, options);
       }
     },
     {
@@ -359,6 +386,29 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
       name: "/wm-ingest",
       description: "Ingest a note into a pending work-memory transaction.",
       run: async (input) => byName.get("wm_ingest_note")!.run({ note: commandText(input) })
+    },
+    {
+      name: "/wm-capture",
+      description:
+        'Capture a work note. Args: [--dry-run] [--provider rule|openai] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] <note>',
+      run: async (input) => {
+        const tokens = commandTokens(input);
+        const note = commandNoteTokens(tokens, [
+          "--provider",
+          "--observed-at",
+          "--source-label",
+          "--context"
+        ]).join(" ");
+
+        return byName.get("wm_capture_note")!.run({
+          note,
+          dry_run: tokens.includes("--dry-run"),
+          provider: commandOption(tokens, "--provider"),
+          observed_at: commandOption(tokens, "--observed-at"),
+          source_label: commandOption(tokens, "--source-label"),
+          context: commandOption(tokens, "--context")
+        });
+      }
     },
     {
       name: "/wm-review",
@@ -603,6 +653,7 @@ function toolLabel(name: WorkMemoryToolName): string {
   const labels: Record<WorkMemoryToolName, string> = {
     wm_validate: "WM Validate",
     wm_ingest_note: "WM Ingest Note",
+    wm_capture_note: "WM Capture Note",
     wm_list_transactions: "WM List Transactions",
     wm_show_transaction: "WM Show Transaction",
     wm_apply_transaction: "WM Apply Transaction",
@@ -626,6 +677,7 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
     description: "Vault root. Defaults to the current working directory."
   };
   const note = { type: "string" as const, description: "Short note to ingest." };
+  const captureNote = { type: "string" as const, description: "Short work note to capture." };
   const id = { type: "string" as const, description: "Transaction ID." };
   const reviewId = { type: "string" as const, description: "Review item ID or path." };
   const reviewState = { type: "string" as const, enum: ["reviewed", "contested", "archived"] };
@@ -637,12 +689,28 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
   const supersede = { type: "string" as const, description: "Existing claim ID to supersede through review." };
   const reviewNote = { type: "string" as const, description: "Optional human review note." };
   const stageOnly = { type: "boolean" as const, description: "Must be true; reprocessing only stages a transaction." };
+  const dryRun = { type: "boolean" as const, description: "Preview the capture without writing to the vault." };
+  const observedAt = { type: "string" as const, description: "When the event happened, if known." };
+  const sourceLabel = { type: "string" as const, description: "Human source label such as standup or slack." };
 
   const baseProperties = { root };
 
   switch (name) {
     case "wm_ingest_note":
-      return objectSchema({ ...baseProperties, note, provider: { type: "string", enum: ["rule", "llm"] } }, ["note"]);
+      return objectSchema({ ...baseProperties, note, provider: { type: "string", enum: ["rule", "llm", "openai"] } }, ["note"]);
+    case "wm_capture_note":
+      return objectSchema(
+        {
+          ...baseProperties,
+          note: captureNote,
+          provider: { type: "string", enum: ["rule", "openai"] },
+          observed_at: observedAt,
+          source_label: sourceLabel,
+          context,
+          dry_run: dryRun
+        },
+        ["note"]
+      );
     case "wm_show_transaction":
     case "wm_apply_transaction":
       return objectSchema({ ...baseProperties, id }, ["id"]);
@@ -956,6 +1024,27 @@ function optionalStringInput(input: Record<string, unknown> | undefined, key: st
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function extractionProviderFromInput(
+  input: Record<string, unknown> | undefined,
+  options: { allowLlmStub: boolean }
+): ExtractionProvider | undefined {
+  const provider = optionalStringInput(input, "provider") ?? "rule";
+
+  if (provider === "rule") {
+    return undefined;
+  }
+
+  if (provider === "openai") {
+    return createOpenAiExtractionProvider();
+  }
+
+  if (options.allowLlmStub && provider === "llm") {
+    return new LlmExtractionProvider();
+  }
+
+  throw new Error(`Unsupported extraction provider: ${provider}`);
+}
+
 function reviewStateInput(input: Record<string, unknown> | undefined, key: string): ReviewActionState {
   const value = stringInput(input, key);
 
@@ -1047,6 +1136,32 @@ function commandOption(tokens: string[], name: string): string | undefined {
 
   const value = tokens[index + 1];
   return value && !value.startsWith("--") ? value : undefined;
+}
+
+function commandNoteTokens(tokens: string[], valueOptions: string[]): string[] {
+  const optionNames = new Set([...valueOptions, "--dry-run"]);
+  const values: string[] = [];
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+
+    if (!token) {
+      continue;
+    }
+
+    if (valueOptions.includes(token)) {
+      index += 1;
+      continue;
+    }
+
+    if (optionNames.has(token)) {
+      continue;
+    }
+
+    values.push(token);
+  }
+
+  return values;
 }
 
 function recordInput(value: unknown): Record<string, unknown> {
