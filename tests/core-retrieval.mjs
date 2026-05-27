@@ -427,6 +427,7 @@ export async function runCoreRetrievalTests() {
     assert.deepEqual(noMatch.answerCandidates, []);
     assert.equal(noMatch.missingInformation.some((item) => item.code === "no_match"), true);
     assert.equal(noMatch.manualActions.some((action) => action.action === "capture_note"), true);
+    assert.equal(noMatch.manualActions.some((action) => action.action === "log_friction"), true);
     assert.equal(noMatch.warnings.some((warning) => /No named/.test(warning)), true);
     assert.match(noMatch.contextPack, /No-match guidance/);
   } finally {

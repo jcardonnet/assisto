@@ -139,10 +139,29 @@ test("ask tab renders no-match guidance without inventing memory", async ({ page
     ).toBeVisible();
     await expect(answerSection.getByText("No active answer candidates found.")).toBeVisible();
     await expect(manualActionSection.getByText("Capture a note if this should become memory")).toBeVisible();
+    await expect(manualActionSection.getByText("Log this retrieval miss")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Log retrieval miss" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched pages" })).toBeVisible();
     const matchedPagesSection = page.locator('[data-ask-section="matched-pages"]');
     await expect(matchedPagesSection.getByText("No matched people, topics, or contexts.")).toBeVisible();
     await expect(page.locator(".ask-card", { hasText: "Neptune deploy key" })).toHaveCount(0);
+
+    await page.getByLabel("Friction note").fill("Memory could not answer the Neptune deploy key question.");
+    await page.getByRole("button", { name: "Preview log" }).click();
+    await expect(page.locator("#ask-friction-output").getByRole("heading", { name: "Preview only" })).toBeVisible();
+    await expect(page.locator("#ask-friction-output")).toContainText("log friction");
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ENOENT/);
+
+    await page.getByRole("button", { name: "Log miss" }).click();
+    await expect(page.locator("#ask-friction-output").getByRole("heading", { name: "Pending transaction created" })).toBeVisible();
+    assert.match(
+      await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_label: friction:retrieval_miss/
+    );
+    assert.match(
+      await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"),
+      /NOOP/
+    );
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
   } finally {
     await server?.close();

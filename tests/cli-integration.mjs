@@ -64,6 +64,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
+  assert.match(help.stdout, /friction log/);
 
   const txRoot = await makeTempVault();
 
@@ -153,6 +154,37 @@ export async function runCliIntegrationTests() {
     assert.match(openAiDryRun.stdout, /Staged review proposals:/);
   } finally {
     await rm(captureRoot, { recursive: true, force: true });
+  }
+
+  const frictionRoot = await makeTempVault();
+
+  try {
+    const frictionResult = await runWm(frictionRoot, [
+      "friction",
+      "log",
+      "--kind",
+      "retrieval_miss",
+      "--question",
+      "What is the Neptune deploy key?",
+      "--note",
+      "Memory could not answer the Neptune deploy key question."
+    ]);
+
+    assert.match(frictionResult.stdout, /Friction event: ev_2026_05_20_001/);
+    assert.match(frictionResult.stdout, /Pending friction transaction: tx_2026_05_20_001/);
+    assert.match(frictionResult.stdout, /Validation: passed/);
+    assert.match(
+      await readVaultFile(frictionRoot, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_label: friction:retrieval_miss/
+    );
+    assert.match(
+      await readVaultFile(frictionRoot, "memory/transactions/pending/tx_2026_05_20_001.md"),
+      /NOOP/
+    );
+    await expectMissing(frictionRoot, "memory/review/friction.md");
+    await expectMissing(frictionRoot, "memory/topics/friction.md");
+  } finally {
+    await rm(frictionRoot, { recursive: true, force: true });
   }
 
   const importRoot = await makeTempVault();
