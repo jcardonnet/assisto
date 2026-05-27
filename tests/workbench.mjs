@@ -579,6 +579,7 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /data-tab="today" aria-pressed="true"/);
     assert.match(shell.body, /data-tab="capture"/);
     assert.match(shell.body, /data-tab="import"/);
+    assert.match(shell.body, /data-tab="entities"/);
     assert.match(shell.body, /data-tab="review" aria-pressed="false"/);
     assert.match(shell.body, /data-tab="transactions"/);
     assert.match(shell.body, /data-tab="ask"/);
@@ -600,6 +601,12 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/import\/preview/);
     assert.match(client.body, /\/api\/import/);
     assert.match(client.body, /renderImportResult/);
+    assert.match(client.body, /renderEntities/);
+    assert.match(client.body, /entity-alias-form/);
+    assert.match(client.body, /entity-context-form/);
+    assert.match(client.body, /\/api\/entities\?kind=/);
+    assert.match(client.body, /\/api\/entities\/alias\/preview/);
+    assert.match(client.body, /\/api\/entities\/context\/preview/);
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /reviewSummaryHtml/);
@@ -982,6 +989,76 @@ export async function runWorkbenchTests() {
     assert.equal(briefTargetsWithInvalidKind.status, 400);
     assert.match(JSON.parse(briefTargetsWithInvalidKind.body).error, /Invalid query parameter kind/);
 
+    const entities = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/entities?kind=person" })).body
+    );
+    assert.equal(entities.kind, "person");
+    assert.equal(entities.items.some((item) => item.id === "per_jeff" && item.active_claims === 1), true);
+
+    const entityDetail = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/entities/detail?id=per_jeff" })).body
+    );
+    assert.equal(entityDetail.id, "per_jeff");
+    assert.equal(entityDetail.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(entityDetail.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
+    assert.equal(entityDetail.linkedFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
+
+    const entityAliasPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/alias/preview",
+          body: JSON.stringify({ id: "per_jeff", alias: "Jeffrey" })
+        })
+      ).body
+    );
+    assert.equal(entityAliasPreview.action, "stage_entity_alias");
+    assert.equal(entityAliasPreview.created, false);
+    assert.equal(entityAliasPreview.validation.passed, true);
+    assert.deepEqual(entityAliasPreview.operations, ["UPSERT_CLAIM"]);
+    assert.equal(entityAliasPreview.proposed_file_writes[0].path, "memory/people/jeff.md");
+    assert.match(entityAliasPreview.proposed_file_writes[0].content, /- Jeffrey/);
+    await assert.rejects(() => readVaultFile(root, entityAliasPreview.transaction_path), /ENOENT/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
+
+    const entityAliasStage = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/alias/stage",
+          body: JSON.stringify({ id: "per_jeff", alias: "Jeffrey" })
+        })
+      ).body
+    );
+    assert.equal(entityAliasStage.action, "stage_entity_alias");
+    assert.equal(entityAliasStage.created, true);
+    assert.match(await readVaultFile(root, entityAliasStage.transaction_path), /Stage alias "Jeffrey"/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
+
+    const unresolvedContextPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/context/preview",
+          body: JSON.stringify({ id: "per_jeff", context: "No Such Project" })
+        })
+      ).body
+    );
+    assert.equal(unresolvedContextPreview.action, "stage_entity_context");
+    assert.equal(unresolvedContextPreview.created, false);
+    assert.deepEqual(unresolvedContextPreview.operations, ["STAGE_REVIEW"]);
+    assert.match(unresolvedContextPreview.proposed_file_writes[0].path, /^memory\/review\/rev_entity_context_resolution_/);
+    await assert.rejects(() => readVaultFile(root, unresolvedContextPreview.proposed_file_writes[0].path), /ENOENT/);
+
+    const entitiesWithoutKind = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/entities" });
+    assert.equal(entitiesWithoutKind.status, 400);
+
+    const missingEntityDetail = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/entities/detail?id=per_missing"
+    });
+    assert.equal(missingEntityDetail.status, 404);
+
     await writeVaultFile(root, "memory/followups/broken.md", "---\nid: fu_broken\n");
     await writeVaultFile(root, "memory/topics/broken.md", "---\nid: top_broken\n");
 
@@ -992,7 +1069,7 @@ export async function runWorkbenchTests() {
     assert.equal(followups.warnings.some((warning) => warning.path === "memory/followups/broken.md"), true);
 
     const health = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/health" })).body);
-    assert.equal(health.counts.pending_transactions, 2);
+    assert.equal(health.counts.pending_transactions, 3);
     assert.equal(health.counts.stale_noop_events, 1);
     assert.equal(health.counts.contested_claims >= 1, true);
     assert.equal(health.counts.orphan_pages, 1);
