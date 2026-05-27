@@ -25,6 +25,9 @@ test-results/
 # Codex/local agent runtime state
 .codex/
 .agents/
+.assisto-agent/runs/
+.assisto-agent/logs/
+.assisto-agent/cache/
 
 # Pi runtime caches; keep .pi skills, prompts, and extensions tracked
 .pi/cache/
