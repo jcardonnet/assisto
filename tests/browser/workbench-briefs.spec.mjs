@@ -16,12 +16,18 @@ test("briefs tab loads presets, targets, and derived export text without persist
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 
     await page.goto(server.url);
+    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "What changed recently" }).click();
+    await expect(page.locator("#brief-kind")).toHaveValue("recent");
+    await expect(page.locator("#brief-export-text")).toContainText("# Session brief: What changed recently");
+
     await page.locator('[data-tab="briefs"]').click();
     await expect(page.locator("#brief-kind")).toContainText("Today");
-    await expect(page.locator("#brief-kind")).toContainText("Person");
-    await expect(page.locator("#brief-kind")).toContainText("Context");
-    await expect(page.locator("#brief-kind")).toContainText("Review Risk");
-    await expect(page.locator("#brief-kind")).toContainText("Follow-ups");
+    await expect(page.locator("#brief-kind")).toContainText("Before meeting with Person");
+    await expect(page.locator("#brief-kind")).toContainText("Project/Context status");
+    await expect(page.locator("#brief-kind")).toContainText("Review-risk brief");
+    await expect(page.locator("#brief-kind")).toContainText("Follow-up review");
+    await expect(page.locator("#brief-kind")).toContainText("What changed recently");
 
     await page.locator("#brief-kind").selectOption("person");
     await expect(page.locator("#brief-target-select")).toBeVisible();
@@ -45,6 +51,11 @@ test("briefs tab loads presets, targets, and derived export text without persist
     await page.locator("#brief-kind").selectOption("context");
     await expect(page.locator("#brief-target-select")).toContainText("Inventory Project");
     await expect(page.locator("#brief-target-select")).toContainText("Warehouse Project");
+
+    await page.locator("#brief-kind").selectOption("recent");
+    await expect(page.locator("#brief-target-kind")).toBeVisible();
+    await page.locator("#brief-target-kind").selectOption("person");
+    await expect(page.locator("#brief-target-select")).toContainText("Jeff");
 
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
   } finally {

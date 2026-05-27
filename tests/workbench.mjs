@@ -643,11 +643,14 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /data-finding-id/);
     assert.match(client.body, /renderHealthCenter/);
     assert.match(client.body, /brief-form/);
+    assert.match(client.body, /brief-target-kind/);
     assert.match(client.body, /brief-target-select/);
     assert.match(client.body, /\/api\/brief\/targets/);
     assert.match(client.body, /brief-export-text/);
     assert.match(client.body, /data-copy-target="#brief-export-text"/);
-    assert.match(client.body, /Review Risk/);
+    assert.match(client.body, /Before meeting with Person/);
+    assert.match(client.body, /What changed recently/);
+    assert.match(client.body, /open-brief-link/);
     assert.match(client.body, /renderBrief/);
     assert.match(client.body, /\/api\/brief/);
     assert.match(client.body, /refreshAfterAction/);
@@ -951,6 +954,25 @@ export async function runWorkbenchTests() {
     assert.equal(brief.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
     assert.equal(brief.openFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
     assert.match(brief.contextPack, /# Session brief: Jeff/);
+
+    const recentBrief = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/brief?kind=recent&targetKind=person&target=per_jeff"
+        })
+      ).body
+    );
+    assert.equal(recentBrief.kind, "recent");
+    assert.equal(recentBrief.target.id, "per_jeff");
+    assert.match(recentBrief.contextPack, /# Session brief: Recent changes: Jeff/);
+
+    const invalidBriefTargetKind = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/brief?kind=recent&targetKind=topic"
+    });
+    assert.equal(invalidBriefTargetKind.status, 400);
+    assert.match(JSON.parse(invalidBriefTargetKind.body).error, /Invalid query parameter targetKind/);
 
     const briefPersonTargets = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/brief/targets?kind=person" })).body

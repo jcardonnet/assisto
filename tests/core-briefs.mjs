@@ -249,6 +249,56 @@ We use MySQL.
   );
 }
 
+async function writeOldBriefFixture(root) {
+  const jeffPage = await readVaultFile(root, "memory/people/jeff.md");
+
+  await writeVaultFile(
+    root,
+    "memory/people/jeff.md",
+    `${jeffPage.trimEnd()}
+
+- claim_id: clm_jeff_prefers_email
+  statement: Jeff prefers email for non-urgent updates.
+  claim_kind: preference
+  claim_state: active
+  evidence_strength: explicit
+  scope: null
+  scope_state: complete
+  evidence: [ev_2026_05_10_001]
+  recorded_at: 2026-05-10T10:00:00-03:00
+  observed_at: 2026-05-10
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/events/2026/2026-05/2026-05-10-001.md",
+    `---
+id: ev_2026_05_10_001
+type: event
+object_state: active
+review_state: reviewed
+recorded_at: 2026-05-10T10:00:00-03:00
+observed_at: 2026-05-10
+source_type: user_note
+source_actor: user
+participants: []
+topics: []
+contexts: []
+derived_claims: []
+transactions: []
+---
+
+# Event ev_2026_05_10_001
+
+## Raw text
+
+Jeff prefers email for non-urgent updates.
+`
+  );
+}
+
 export async function runCoreBriefTests() {
   const briefs = await loadTsModule("packages/core/src/briefs/index.ts");
   const fsModule = await loadTsModule("packages/core/src/fs/index.ts");
@@ -256,6 +306,7 @@ export async function runCoreBriefTests() {
 
   try {
     await writeBriefFixture(root);
+    await writeOldBriefFixture(root);
     const beforeFiles = await fsModule.listMarkdownFiles(root, "memory/**/*.md");
 
     const person = await briefs.buildSessionBrief(root, {
@@ -313,7 +364,27 @@ export async function runCoreBriefTests() {
 
     const today = await briefs.buildSessionBrief(root, { kind: "today", now: "2026-05-21T23:59:00.000Z" });
     assert.equal(today.evidenceEvents.length, 2);
+    assert.equal(today.activeClaims.some((claim) => claim.claim_id === "clm_jeff_prefers_email"), false);
     assert.equal(today.warnings.some((warning) => /derived view/i.test(warning)), true);
+
+    const recent = await briefs.buildSessionBrief(root, { kind: "recent", now: "2026-05-22T12:00:00.000Z" });
+    assert.equal(recent.title, "What changed recently");
+    assert.equal(recent.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
+    assert.equal(recent.evidenceEvents.some((event) => event.id === "ev_2026_05_10_001"), false);
+    assert.equal(recent.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(recent.activeClaims.some((claim) => claim.claim_id === "clm_jeff_prefers_email"), false);
+
+    const recentPerson = await briefs.buildSessionBrief(root, {
+      kind: "recent",
+      targetKind: "person",
+      target: "per_jeff",
+      now: "2026-05-22T12:00:00.000Z"
+    });
+    assert.equal(recentPerson.title, "Recent changes: Jeff");
+    assert.equal(recentPerson.target?.id, "per_jeff");
+    assert.equal(recentPerson.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(recentPerson.uncertainClaims.some((claim) => claim.claim_id === "clm_mysql_unknown_scope"), false);
+    assert.match(recentPerson.contextPack, /# Session brief: Recent changes: Jeff/);
 
     const afterFiles = await fsModule.listMarkdownFiles(root, "memory/**/*.md");
     assert.deepEqual(afterFiles, beforeFiles);
