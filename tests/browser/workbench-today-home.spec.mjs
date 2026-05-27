@@ -16,7 +16,9 @@ test("today tab summarizes daily triage and previews actions through existing ro
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 
     await page.goto(server.url);
-    await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dogfood Home" })).toBeVisible();
+    await expect(page.getByText("next recommended action")).toBeVisible();
+    await expect(page.getByText("Review pending transaction", { exact: true })).toBeVisible();
     await expect(page.getByText("needs attention")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Pending Transactions", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Staged ReviewItems", exact: true })).toBeVisible();

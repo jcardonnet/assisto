@@ -295,6 +295,16 @@ export async function runCliIntegrationTests() {
     const todayJson = JSON.parse(todayJsonResult.stdout);
     assert.equal(todayJson.daily_review_complete, false);
     assert.equal(todayJson.staged_review_groups[0].review_reason, "unscoped_claim");
+
+    const dogfood = await runWm(todayRoot, ["dogfood", "status"]);
+    assert.match(dogfood.stdout, /Dogfood Home/);
+    assert.match(dogfood.stdout, /Next action: Review pending transaction/);
+    assert.match(dogfood.stdout, /pending_transactions\t4/);
+
+    const dogfoodJsonResult = await runWm(todayRoot, ["dogfood", "status", "--json"]);
+    const dogfoodJson = JSON.parse(dogfoodJsonResult.stdout);
+    assert.equal(dogfoodJson.next_recommended_action.action, "review_pending_transaction");
+    assert.equal(dogfoodJson.daily_progress.open_items, 7);
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }

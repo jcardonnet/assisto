@@ -16,7 +16,7 @@ test("briefs tab loads presets, targets, and derived export text without persist
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 
     await page.goto(server.url);
-    await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dogfood Home", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "What changed recently" }).click();
     await expect(page.locator("#brief-kind")).toHaveValue("recent");
     await expect(page.locator("#brief-export-text")).toContainText("# Session brief: What changed recently");
