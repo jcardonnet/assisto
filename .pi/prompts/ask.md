@@ -16,8 +16,9 @@ pnpm --filter @assisto/cli wm ask --pack-context "<question>"
 pnpm --filter @assisto/cli wm ask --answer-basis "<question>"
 ```
 
-Report the structured result and preserve the raw `contextPack` if the user asks for detail. Start with `answerCandidates` and `supportingClaims`, then call out:
+Report the structured result and preserve the raw `contextPack` if the user asks for detail. Start with `queryIntent`, `plannedLookups`, `answerCandidates`, and `supportingClaims`, then call out:
 
+- The deterministic retrieval intent, planned lookup types, and lookup result states.
 - Exact people, topics, and contexts loaded.
 - What memory can say from active `answerCandidates`.
 - What memory cannot confirm from `missingInformation`, warnings, or uncertain claims.
@@ -25,6 +26,7 @@ Report the structured result and preserve the raw `contextPack` if the user asks
 - Uncertain, staged, superseded, rejected, contested, partial, or unknown-scope claims.
 - Linked ReviewItems or FollowUps from `linkedReviewItems` and `linkedFollowUps`.
 - Relevant Events included.
+- Suggested manual actions and next questions from `manualActions` and `suggestedNextQuestions`.
 - No-match guidance when no page or relation claim matched.
 
 Safety constraints:

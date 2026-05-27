@@ -45,6 +45,8 @@ pnpm --filter @assisto/cli wm validate
    ```
 
 3. Read the structured result first, then the text pack:
+   - `queryIntent`;
+   - `plannedLookups`;
    - `answerCandidates`;
    - `supportingClaims`;
    - `matchedPages`;
@@ -54,6 +56,8 @@ pnpm --filter @assisto/cli wm validate
    - `linkedFollowUps`;
    - `evidenceEvents`;
    - `missingInformation`;
+   - `manualActions`;
+   - `suggestedNextQuestions`;
    - `warnings`;
    - `contextPack`.
 4. Prefer active claims.
@@ -77,6 +81,7 @@ pnpm --filter @assisto/cli wm validate
 - Canonical state remains markdown under `memory/`.
 - Retrieval output is derived and disposable.
 - `answerCandidates` and `supportingClaims` are derived from loaded active claims, not generated explanations.
+- `queryIntent`, `plannedLookups`, `manualActions`, and `suggestedNextQuestions` are derived planner metadata, not canonical memory.
 - Active claims are preferred over staged, superseded, rejected, or contested claims.
 - Unscoped, partial, staged, and contested claims must carry uncertainty in the answer.
 - Every factual context claim should retain source Event citation coverage.

@@ -133,7 +133,8 @@ Current v5 scope:
 - optional OpenAI-compatible extraction as candidate-only input with deterministic validation;
 - Today Home for pending transactions, staged reviews, stale NOOP Events, follow-ups, recent activity, and health warnings;
 - curated Markdown/text backfill import that writes one Event plus one pending Transaction per unit and dedupes by optional Event `source_hash`;
-- People/Topics/Contexts explorer and stewardship actions that stage alias or Context metadata changes as pending Transactions, with ambiguous links surfaced as ReviewItems.
+- People/Topics/Contexts explorer and stewardship actions that stage alias or Context metadata changes as pending Transactions, with ambiguous links surfaced as ReviewItems;
+- retrieval intent planning for person facts, manager/reporting, role/ownership, context, evidence, follow-up, review-risk, and recent-change questions.
 
 Still deferred:
 
