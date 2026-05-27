@@ -22,6 +22,7 @@ export interface IngestPipelineContext {
   transactionId: string;
   captureContexts?: string[];
   sourceLabel?: string;
+  sourceHash?: string;
 }
 
 export interface CandidateSpan {

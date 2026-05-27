@@ -563,6 +563,10 @@ function renderEventMarkdown(
     frontmatter.source_label = context.sourceLabel;
   }
 
+  if (context.sourceHash) {
+    frontmatter.source_hash = context.sourceHash;
+  }
+
   const body = [
     `# Event ${context.eventId}`,
     "",
@@ -605,7 +609,8 @@ function createPipelineContext(
     eventLinkPath: stripMemoryPrefix(eventPath).replace(/\.md$/i, ""),
     transactionId,
     captureContexts: contextsFromOption(options.context),
-    sourceLabel: options.source_label
+    sourceLabel: options.source_label,
+    sourceHash: options.source_hash
   };
 }
 

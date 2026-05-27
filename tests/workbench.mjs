@@ -578,6 +578,7 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /data-tab="today"/);
     assert.match(shell.body, /data-tab="today" aria-pressed="true"/);
     assert.match(shell.body, /data-tab="capture"/);
+    assert.match(shell.body, /data-tab="import"/);
     assert.match(shell.body, /data-tab="review" aria-pressed="false"/);
     assert.match(shell.body, /data-tab="transactions"/);
     assert.match(shell.body, /data-tab="ask"/);
@@ -595,6 +596,10 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /capture-form/);
     assert.match(client.body, /\/api\/capture\/preview/);
     assert.match(client.body, /\/api\/capture/);
+    assert.match(client.body, /import-form/);
+    assert.match(client.body, /\/api\/import\/preview/);
+    assert.match(client.body, /\/api\/import/);
+    assert.match(client.body, /renderImportResult/);
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /reviewSummaryHtml/);
@@ -719,10 +724,50 @@ export async function runWorkbenchTests() {
       assert.equal(createPayload.created, true);
       assert.equal(createPayload.validation.passed, true);
       assert.match(await readVaultFile(captureCreateRoot, createPayload.event_path), /source_label: workbench capture/);
-      assert.match(await readVaultFile(captureCreateRoot, createPayload.transaction_path), /transaction_state: pending/);
-      await assert.rejects(() => readVaultFile(captureCreateRoot, "memory/people/joe.md"), /ENOENT/);
+    assert.match(await readVaultFile(captureCreateRoot, createPayload.transaction_path), /transaction_state: pending/);
+    await assert.rejects(() => readVaultFile(captureCreateRoot, "memory/people/joe.md"), /ENOENT/);
     } finally {
       await rm(captureCreateRoot, { recursive: true, force: true });
+    }
+
+    const importPreview = await workbench.handleWorkbenchRoute(root, {
+      method: "POST",
+      url: "/api/import/preview",
+      body: JSON.stringify({
+        text: "Joe is the DBA. We use MySQL.\n---\nI will ask Jeff about budgets.",
+        sourceLabel: "workbench import",
+        observedAt: "2026-05-21",
+        limit: 1
+      })
+    });
+    assert.equal(importPreview.status, 200);
+    const importPreviewPayload = JSON.parse(importPreview.body);
+    assert.equal(importPreviewPayload.created, false);
+    assert.equal(importPreviewPayload.units_total, 1);
+    assert.equal(importPreviewPayload.units[0].validation.passed, true);
+    await assert.rejects(() => readVaultFile(root, importPreviewPayload.units[0].event_path), /ENOENT/);
+
+    const importCreateRoot = await makeTempVault("assisto-workbench-import-route-");
+
+    try {
+      const importCreate = await workbench.handleWorkbenchRoute(importCreateRoot, {
+        method: "POST",
+        url: "/api/import",
+        body: JSON.stringify({
+          text: "Joe is the DBA. We use MySQL.\n---\nJoe is the DBA. We use MySQL.",
+          sourceLabel: "workbench import"
+        })
+      });
+      assert.equal(importCreate.status, 200);
+      const importCreatePayload = JSON.parse(importCreate.body);
+      assert.equal(importCreatePayload.created, true);
+      assert.equal(importCreatePayload.units_imported, 1);
+      assert.equal(importCreatePayload.units_skipped, 1);
+      assert.match(await readVaultFile(importCreateRoot, importCreatePayload.units[0].event_path), /source_hash: [a-f0-9]{64}/);
+      assert.match(await readVaultFile(importCreateRoot, importCreatePayload.units[0].transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(importCreateRoot, "memory/people/joe.md"), /ENOENT/);
+    } finally {
+      await rm(importCreateRoot, { recursive: true, force: true });
     }
 
     const transactionDetail = JSON.parse(

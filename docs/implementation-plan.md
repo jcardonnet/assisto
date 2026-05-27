@@ -123,6 +123,42 @@ pnpm eval:retrieval
 pnpm eval:v4
 ```
 
+## v5 dogfood track
+
+v5 keeps the deterministic safety model and makes the Workbench useful for daily dogfooding.
+
+Current v5 scope:
+
+- Workbench-first capture with CLI parity;
+- optional OpenAI-compatible extraction as candidate-only input with deterministic validation;
+- Today Home for pending transactions, staged reviews, stale NOOP Events, follow-ups, recent activity, and health warnings;
+- curated Markdown/text backfill import that writes one Event plus one pending Transaction per unit and dedupes by optional Event `source_hash`.
+
+Still deferred:
+
+- vector search;
+- graph database;
+- MCP integration;
+- autonomous entity merges;
+- autonomous contradiction resolution;
+- full transcript ingestion;
+- generated explanation persistence.
+
+Validation for v5 capture/import/today behavior changes:
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm eval:mvp
+pnpm eval:v2
+pnpm eval:v3
+pnpm eval:retrieval
+pnpm eval:v4
+pnpm test:browser
+```
+
 ---
 
 ## Principles for using Codex

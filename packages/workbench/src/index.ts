@@ -9,6 +9,7 @@ import {
   buildTodayWorkbenchResult,
   createCaptureNote,
   createHealthReviewTransaction,
+  createImportNotes,
   createOpenAiExtractionProvider,
   createReviewApplyTransaction,
   createReviewStateTransaction,
@@ -24,6 +25,7 @@ import {
   showReviewItem,
   transactionFilePaths,
   previewCaptureNote,
+  previewImportNotes,
   retrieveContextForAnswer,
   validateTransaction,
   type CaptureCreateResult,
@@ -32,6 +34,8 @@ import {
   type ExtractionProvider,
   type FrontmatterValue,
   type IngestNoteResult,
+  type ImportCreateResult,
+  type ImportPreviewResult,
   type HealthReviewTransactionResult,
   type MemoryHealthResult,
   type ParsedTransaction,
@@ -422,6 +426,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createCapturePreview(root, input, true));
     }
 
+    if (pathname === "/api/import/preview") {
+      return jsonRoute(200, await createImportPreview(root, input, false));
+    }
+
+    if (pathname === "/api/import") {
+      return jsonRoute(200, await createImportPreview(root, input, true));
+    }
+
     if (pathname === "/api/review/apply-staged/preview") {
       return jsonRoute(200, await createReviewApplyPreview(root, input, false));
     }
@@ -498,6 +510,29 @@ async function createCapturePreview(
   };
 
   return created ? createCaptureNote(root, note, options) : previewCaptureNote(root, note, options);
+}
+
+async function createImportPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ImportPreviewResult | ImportCreateResult> {
+  const text = optionalStringInput(input, "text");
+  const sourcePath = optionalStringInput(input, "path");
+  const options = {
+    observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
+    source_label: optionalStringInput(input, "sourceLabel", "source_label") ?? undefined,
+    provider: captureProvider(optionalStringInput(input, "provider") ?? "rule"),
+    limit: optionalPositiveIntegerInput(input, "limit")
+  };
+  const importInput = {
+    text,
+    path: sourcePath,
+    glob: optionalStringInput(input, "glob") ?? undefined,
+    cwd: root
+  };
+
+  return created ? createImportNotes(root, importInput, options) : previewImportNotes(root, importInput, options);
 }
 
 function captureProvider(name: string): ExtractionProvider | undefined {
@@ -1100,6 +1135,22 @@ function optionalStringInput(input: Record<string, unknown>, ...keys: string[]):
   return undefined;
 }
 
+function optionalPositiveIntegerInput(input: Record<string, unknown>, key: string): number | undefined {
+  const value = input[key];
+
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${key} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
 function reviewActionStateInput(input: Record<string, unknown>): ReviewActionState {
   const value = requiredStringInput(input, "state");
 
@@ -1163,6 +1214,7 @@ function workbenchHtml(): string {
       <nav class="tabs" aria-label="Workbench">
         <button type="button" data-tab="today" aria-pressed="true">Today</button>
         <button type="button" data-tab="capture" aria-pressed="false">Capture</button>
+        <button type="button" data-tab="import" aria-pressed="false">Import</button>
         <button type="button" data-tab="review" aria-pressed="false">Review</button>
         <button type="button" data-tab="transactions" aria-pressed="false">Transactions</button>
         <button type="button" data-tab="ask" aria-pressed="false">Ask</button>
@@ -1640,6 +1692,11 @@ function render() {
     return;
   }
 
+  if (activeTab === "import") {
+    renderImport();
+    return;
+  }
+
   if (activeTab === "review") {
     renderReview();
     return;
@@ -1994,6 +2051,82 @@ function renderCapture() {
       provider: form.elements.provider.value
     });
   });
+}
+
+function renderImport() {
+  view.innerHTML = \`<article class="item">
+    <h2>Import notes</h2>
+    <form id="import-form" class="capture-form">
+      <label class="field" for="import-text"><span>Batch text</span><textarea id="import-text" name="text" rows="8" placeholder="Paste Markdown or text notes. Put --- on its own line between notes."></textarea></label>
+      <div class="action-row">
+        <label class="field" for="import-path"><span>Path</span><input id="import-path" name="path" placeholder="Optional local file or directory path"></label>
+        <label class="field" for="import-glob"><span>Glob</span><input id="import-glob" name="glob" value="*.md,*.txt"></label>
+      </div>
+      <div class="action-row">
+        <label class="field" for="import-observed-at"><span>Observed at</span><input id="import-observed-at" name="observedAt" placeholder="YYYY-MM-DD"></label>
+        <label class="field" for="import-source-label"><span>Source label</span><input id="import-source-label" name="sourceLabel" placeholder="curated notes, journal, project archive"></label>
+      </div>
+      <div class="action-row">
+        <label class="field" for="import-provider"><span>Provider</span><select id="import-provider" name="provider"><option value="rule">rule</option><option value="openai">openai</option></select></label>
+        <label class="field" for="import-limit"><span>Limit</span><input id="import-limit" name="limit" inputmode="numeric" placeholder="Optional"></label>
+      </div>
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview import</button>
+        <button type="submit" name="mode" value="create">Create pending imports</button>
+      </div>
+    </form>
+  </article>
+  <div id="import-output" class="action-output"></div>\`;
+  document.querySelector("#import-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    const preview = submitter?.value === "preview";
+    const output = document.querySelector("#import-output");
+    output.innerHTML = "<pre>Running</pre>";
+
+    try {
+      const result = await postJson(preview ? "/api/import/preview" : "/api/import", {
+        text: form.elements.text.value,
+        path: form.elements.path.value,
+        glob: form.elements.glob.value,
+        observedAt: form.elements.observedAt.value,
+        sourceLabel: form.elements.sourceLabel.value,
+        provider: form.elements.provider.value,
+        limit: form.elements.limit.value
+      });
+      output.innerHTML = renderImportResult(result);
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+}
+
+function renderImportResult(result) {
+  const units = (result.units ?? []).map((unit) => \`<article class="item">
+    <h3>\${escapeHtml(unit.skipped ? "Skipped duplicate" : unit.event_id)}</h3>
+    <p class="pill">\${escapeHtml(unit.skipped ? unit.skip_reason : unit.transaction_id)}</p>
+    \${detailListHtml([
+      ["Source", unit.source_path ?? unit.source_label ?? "pasted import"],
+      ["Source hash", unit.source_hash],
+      ["Event", unit.event_path ? \`\${unit.event_id} · \${unit.event_path}\` : unit.existing_event_path ?? "none"],
+      ["Transaction", unit.transaction_path ? \`\${unit.transaction_id} · \${unit.transaction_path}\` : "none"],
+      ["Validation", unit.validation ? (unit.validation.passed ? "passed" : "failed") : "not run"]
+    ])}
+    \${plainListHtml("Operations", unit.operations ?? [])}
+    \${plainListHtml("Proposed file writes", (unit.proposed_file_writes ?? []).map((write) => write.path ?? write))}
+  </article>\`).join("");
+
+  return \`<article class="item action-result">
+    <h2>\${result.created ? "Import transactions created" : "Preview import"}</h2>
+    <p class="pill">\${escapeHtml(result.provider_name)}</p>
+    \${detailListHtml([
+      ["Units", String(result.units_total)],
+      ["Imported", String(result.units_imported)],
+      ["Skipped", String(result.units_skipped)]
+    ])}
+  </article>
+  <section><h2>Import units</h2><div class="grid">\${units || '<article class="item"><h3>Empty</h3><p class="meta">No import units.</p></article>'}</div></section>\`;
 }
 
 function renderTransactions() {

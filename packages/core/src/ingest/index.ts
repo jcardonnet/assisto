@@ -25,6 +25,7 @@ export interface IngestNoteOptions {
   observed_at?: string | null;
   source_actor?: string;
   source_label?: string;
+  source_hash?: string;
   context?: string;
   raw_note?: string;
   apply?: boolean;
@@ -75,7 +76,8 @@ export async function ingestNote(
     eventLinkPath: stripMemoryPrefix(eventPath).replace(/\.md$/i, ""),
     transactionId,
     captureContexts: contextsFromOption(options.context),
-    sourceLabel: options.source_label
+    sourceLabel: options.source_label,
+    sourceHash: options.source_hash
   };
 
   const proposals = detectCandidateProposals(context);
@@ -272,6 +274,10 @@ function renderEventMarkdown(
 
   if (context.sourceLabel) {
     frontmatter.source_label = context.sourceLabel;
+  }
+
+  if (context.sourceHash) {
+    frontmatter.source_hash = context.sourceHash;
   }
 
   const body = [
