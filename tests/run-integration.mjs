@@ -13,6 +13,7 @@ import { runCoreLintTests } from "./core-lint.mjs";
 import { runCliIntegrationTests } from "./cli-integration.mjs";
 import { runPiExtensionTests } from "./pi-extension.mjs";
 import { runWorkbenchTests } from "./workbench.mjs";
+import { runScriptHelperTests } from "./script-helpers.mjs";
 
 export async function runIntegrationTests() {
   assertRequiredPaths();
@@ -30,6 +31,7 @@ export async function runIntegrationTests() {
   await runCliIntegrationTests();
   await runPiExtensionTests();
   await runWorkbenchTests();
+  await runScriptHelperTests();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

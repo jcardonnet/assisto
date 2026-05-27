@@ -218,6 +218,14 @@ pnpm eval:mvp
 
 If a command cannot run because the repo is not scaffolded yet, document why and add the missing scaffold as part of the task only if it is in scope.
 
+For WSL/Codex local validation, prefer:
+
+```bash
+pnpm validate:local
+```
+
+This wrapper runs the full local suite with Linux temp/cache paths. Use `pnpm validate:ci-parity` when the exact GitHub Actions command order matters.
+
 ## Required tests for behavior changes
 
 Add or update tests for any change touching:
@@ -254,8 +262,13 @@ For every implementation PR:
 2. Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm eval:mvp`.
 3. Open the PR with a concise summary, validation results, and known limitations.
 4. Request `@codex` review.
-5. Fix P0/P1 findings only unless a human reviewer explicitly asks for broader cleanup.
-6. Merge only after human inspection confirms the transaction, validation, and review invariants still hold.
+5. Wait 3-5 minutes before the first review-thread check so Copilot has time to finish. For large PRs, wait 8-10 minutes.
+6. If Copilot reports a transient review error or no threads are present, wait one more short interval and re-check before classifying it as non-actionable.
+7. Fix P0/P1 findings only unless a human reviewer explicitly asks for broader cleanup.
+8. Merge only after human inspection confirms the transaction, validation, and review invariants still hold.
+
+Use `pnpm pr:review-wait <pr-number-or-url>` to perform the delayed review-thread check. If the helper reports no unresolved threads after the retry window and CI is green, a Copilot review failure may be treated as non-actionable.
+Before merge, run `pnpm check:memory-data` to confirm no accidental changes to `memory/events/**` or `memory/transactions/**`. `pnpm pr:closeout <pr-number-or-url>` can perform the delayed review-thread check plus mergeability/CI inspection, and only merges when explicit merge flags are supplied.
 
 ## Coding style
 

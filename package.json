@@ -20,6 +20,12 @@
     "eval:v4": "node tests/scenarios/run-v4.mjs",
     "eval:v5": "node tests/scenarios/run-v5.mjs",
     "eval:v6": "node tests/scenarios/run-v6.mjs",
+    "validate:local": "node scripts/validate-local.mjs",
+    "validate:ci-parity": "node scripts/validate-local.mjs --ci-parity",
+    "env:doctor": "node scripts/env-doctor.mjs",
+    "check:memory-data": "node scripts/check-memory-data.mjs",
+    "pr:review-wait": "node scripts/wait-for-pr-review.mjs",
+    "pr:closeout": "node scripts/pr-closeout.mjs",
     "mxbai:upload": "scripts/mxbai-upload.sh",
     "mxbai:smoke": "scripts/mxbai-smoke.sh"
   },
