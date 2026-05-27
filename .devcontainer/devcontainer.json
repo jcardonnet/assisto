@@ -1,0 +1,20 @@
+{
+  "name": "Assisto",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+  "remoteEnv": {
+    "COREPACK_HOME": "/tmp/corepack",
+    "LOCALAPPDATA": "/tmp",
+    "XDG_CACHE_HOME": "/tmp",
+    "TMPDIR": "/tmp",
+    "TEMP": "/tmp",
+    "TMP": "/tmp"
+  },
+  "postCreateCommand": "corepack enable && corepack prepare pnpm@9.15.4 --activate && pnpm install && pnpm exec playwright install --with-deps chromium",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

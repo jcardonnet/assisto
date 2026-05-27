@@ -225,6 +225,18 @@ pnpm eval:v6
 pnpm test:browser
 ```
 
+For WSL/Codex local validation, prefer the environment-hardened wrapper:
+
+```bash
+pnpm validate:local
+```
+
+It runs the full suite with `TMPDIR=/tmp`, `COREPACK_HOME=/tmp/corepack`, and related temp/cache variables so Node, pnpm, and Playwright do not fall back to read-only Windows temp paths. To mirror the GitHub Actions order exactly, run:
+
+```bash
+pnpm validate:ci-parity
+```
+
 Useful narrower test commands:
 
 ```bash
@@ -233,6 +245,17 @@ pnpm test:integration
 ```
 
 `pnpm test:browser` runs Chromium-only Playwright tests for Workbench DOM flows.
+
+Useful environment and PR workflow helpers:
+
+```bash
+pnpm env:doctor
+pnpm check:memory-data
+pnpm pr:review-wait <pr-number-or-url>
+pnpm pr:closeout <pr-number-or-url>
+```
+
+`pnpm env:doctor` checks local Node/pnpm/temp/GitHub/Mixedbread/Playwright/localhost readiness. `pnpm check:memory-data` fails if a branch accidentally changes `memory/events/**` or `memory/transactions/**` unless `ASSISTO_ALLOW_MEMORY_DATA_CHANGES=1` or `--allow` is used. `pnpm pr:closeout` performs the delayed review-thread check, inspects mergeability and CI, and can merge/sync/refresh Mixedbread only when called with explicit merge flags.
 
 The current implementation includes deterministic ingestion, a Capture Console for daily note entry, curated Markdown/text backfill import with `source_hash` dedupe and Workbench triage, a Today Home daily loop, a candidate extraction pipeline, optional OpenAI-compatible extraction/drafting that still stays behind deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, People/Topics/Contexts stewardship, Context operating pages, retrieval intent planning, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, Playwright browser coverage, and MVP/v2/v3/retrieval/v4/v5/v6 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 
@@ -331,8 +354,33 @@ Use this PR process for MVP changes:
 2. Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm eval:mvp`.
 3. Open a PR with a concise summary, validation results, and known limitations.
 4. Request `@codex` review.
-5. Fix P0/P1 findings only unless a human reviewer explicitly asks for broader cleanup.
-6. Merge only after human inspection confirms the transaction, validation, and review invariants still hold.
+5. Wait 3-5 minutes before the first review-thread check so Copilot has time to finish. For large PRs, wait 8-10 minutes.
+6. If Copilot reports a transient review error or no threads are present, wait one more short interval and re-check before classifying it as non-actionable.
+7. Fix P0/P1 findings only unless a human reviewer explicitly asks for broader cleanup.
+8. Merge only after human inspection confirms the transaction, validation, and review invariants still hold.
+
+The delayed review check can be run with:
+
+```bash
+pnpm pr:review-wait <pr-number-or-url>
+```
+
+If the helper reports no unresolved review threads after the retry window and CI is green, a Copilot review failure can be treated as non-actionable.
+
+Before merge, run:
+
+```bash
+pnpm check:memory-data
+```
+
+After merge, refresh Mixedbread with compact output:
+
+```bash
+pnpm mxbai:upload
+pnpm mxbai:smoke
+```
+
+Use `MXBAI_SMOKE_VERBOSE=1 pnpm mxbai:smoke` to print full search result tables.
 
 ## Acceptance thresholds
 
