@@ -773,6 +773,9 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /Review lanes/);
     assert.match(client.body, /Suggested action/);
     assert.match(client.body, /renderAnswerBasis/);
+    assert.match(client.body, /renderAnswerDraft/);
+    assert.match(client.body, /\/api\/ask\/draft\/preview/);
+    assert.match(client.body, /Draft answer/);
     assert.match(client.body, /renderAskResult/);
     assert.match(client.body, /retrievalPlanHtml/);
     assert.match(client.body, /copy-derived-text/);
@@ -1156,6 +1159,42 @@ export async function runWorkbenchTests() {
     assert.equal(noMatchAsk.missingInformation.some((item) => item.code === "no_match"), true);
     assert.equal(noMatchAsk.manualActions.some((action) => action.action === "capture_note"), true);
     assert.match(noMatchAsk.warnings.join("\n"), /memory has no match/);
+
+    const oldOpenAiKey = process.env.OPENAI_API_KEY;
+    const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;
+
+    try {
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.ASSISTO_OPENAI_MODEL;
+
+      const draftPreview = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(root, {
+            method: "POST",
+            url: "/api/ask/draft/preview",
+            body: JSON.stringify({ question: "Who is my manager?" })
+          })
+        ).body
+      );
+
+      assert.equal(draftPreview.provider_name, "openai");
+      assert.equal(draftPreview.answer_text, "");
+      assert.equal(draftPreview.basis.answerCandidates.some((candidate) => candidate.claim_id === "clm_jeff_manager"), true);
+      assert.equal(draftPreview.warnings.some((warning) => /OPENAI_API_KEY/.test(warning)), true);
+      assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
+    } finally {
+      if (oldOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = oldOpenAiKey;
+      }
+
+      if (oldOpenAiModel === undefined) {
+        delete process.env.ASSISTO_OPENAI_MODEL;
+      } else {
+        process.env.ASSISTO_OPENAI_MODEL = oldOpenAiModel;
+      }
+    }
 
     const askWithoutQuery = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask" });
     assert.equal(askWithoutQuery.status, 400);

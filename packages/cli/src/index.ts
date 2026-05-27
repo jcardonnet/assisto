@@ -42,7 +42,7 @@ import {
 } from "../../core/src/extraction";
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
-import { retrieveContextForAnswer } from "../../core/src/retrieval";
+import { previewAnswerDraft, retrieveContextForAnswer } from "../../core/src/retrieval";
 import { startWorkbenchServer } from "@assisto/workbench";
 
 export interface CliIo {
@@ -584,15 +584,21 @@ async function commandEvents(root: string, args: string[], io: CliIo): Promise<n
 async function commandAsk(root: string, args: string[], io: CliIo): Promise<number> {
   const packContextQuestion = optionValue(args, "--pack-context");
   const answerBasisQuestion = optionValue(args, "--answer-basis");
+  const draftQuestion = optionValue(args, "--draft");
 
-  if (packContextQuestion && answerBasisQuestion) {
-    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>"');
+  if ([packContextQuestion, answerBasisQuestion, draftQuestion].filter(Boolean).length > 1) {
+    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --draft "<question>"');
   }
 
-  const question = packContextQuestion ?? answerBasisQuestion;
+  const question = packContextQuestion ?? answerBasisQuestion ?? draftQuestion;
 
   if (!question) {
-    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>"');
+    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --draft "<question>"');
+  }
+
+  if (draftQuestion) {
+    io.stdout(`${JSON.stringify(await previewAnswerDraft(root, question), null, 2)}\n`);
+    return 0;
   }
 
   const result = await retrieveContextForAnswer(root, question);
@@ -1009,6 +1015,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
       '  wm [--root <path>] ask --answer-basis "<question>"',
+      '  wm [--root <path>] ask --draft "<question>"',
       "  wm [--root <path>] health check [--stage-review] [--note <text>]",
       "  wm [--root <path>] brief <today|person|context|review|followups|recent> [id|path]",
       "  wm [--root <path>] brief recent [person|context] [id|path]",

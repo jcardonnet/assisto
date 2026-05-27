@@ -61,6 +61,65 @@ export interface ContextPackResult {
 
 export type AnswerBasisResult = ContextPackResult;
 
+export interface AnswerDraftProviderInput {
+  question: string;
+  basis: AnswerBasisResult;
+  now: string;
+}
+
+export interface AnswerDraftProviderOutput {
+  answer_text?: string;
+  citations?: string[];
+  cannot_confirm?: string[];
+  warnings?: string[];
+  provider_model?: string;
+}
+
+export interface AnswerDraftProvider {
+  readonly name: string;
+  draft(input: AnswerDraftProviderInput): Promise<AnswerDraftProviderOutput>;
+}
+
+export interface AnswerDraftOptions {
+  now?: string;
+  provider?: AnswerDraftProvider;
+}
+
+export interface AnswerDraftResult {
+  question: string;
+  generated_at: string;
+  provider_name: string;
+  provider_model?: string;
+  answer_text: string;
+  citations: string[];
+  cannot_confirm: string[];
+  warnings: string[];
+  basis: AnswerBasisResult;
+}
+
+export interface OpenAiAnswerDraftProviderOptions {
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  fetch?: AnswerDraftFetch;
+}
+
+export type AnswerDraftFetch = (
+  url: string,
+  init: {
+    method: "POST";
+    headers: Record<string, string>;
+    body: string;
+  }
+) => Promise<AnswerDraftFetchResponse>;
+
+export interface AnswerDraftFetchResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+  text: () => Promise<string>;
+}
+
 export type RetrievalQueryIntentKind =
   | "person_facts"
   | "manager_reporting"
@@ -299,6 +358,320 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
 
 export async function retrieveAnswerBasis(root: string, query: string): Promise<AnswerBasisResult> {
   return retrieveContextForAnswer(root, query);
+}
+
+export async function previewAnswerDraft(
+  root: string,
+  question: string,
+  options: AnswerDraftOptions = {}
+): Promise<AnswerDraftResult> {
+  const basis = await retrieveAnswerBasis(root, question);
+  const generatedAt = options.now ?? new Date().toISOString();
+  const provider = options.provider ?? createOpenAiAnswerDraftProvider();
+  const output = await provider.draft({ question, basis, now: generatedAt });
+  const normalized = normalizeAnswerDraftProviderOutput(output);
+  const citationNormalization = normalizeDraftCitations(normalized.citations, basis);
+
+  return {
+    question,
+    generated_at: generatedAt,
+    provider_name: provider.name,
+    provider_model: normalized.provider_model,
+    answer_text: normalized.answer_text,
+    citations: citationNormalization.citations,
+    cannot_confirm: uniqueStrings([
+      ...normalized.cannot_confirm,
+      ...basis.missingInformation.map((item) => item.message)
+    ]),
+    warnings: uniqueStrings([...normalized.warnings, ...citationNormalization.warnings]),
+    basis
+  };
+}
+
+export function createOpenAiAnswerDraftProvider(
+  options: OpenAiAnswerDraftProviderOptions = {}
+): AnswerDraftProvider {
+  return new OpenAiAnswerDraftProvider(options);
+}
+
+export class OpenAiAnswerDraftProvider implements AnswerDraftProvider {
+  readonly name = "openai";
+
+  constructor(private readonly options: OpenAiAnswerDraftProviderOptions = {}) {}
+
+  async draft(input: AnswerDraftProviderInput): Promise<AnswerDraftProviderOutput> {
+    const apiKey = this.options.apiKey ?? process.env.OPENAI_API_KEY ?? "";
+    const model = this.options.model ?? process.env.ASSISTO_OPENAI_MODEL ?? "";
+    const fetchImpl = this.options.fetch ?? defaultAnswerDraftFetch();
+
+    if (!apiKey.trim()) {
+      return {
+        answer_text: "",
+        citations: [],
+        cannot_confirm: [],
+        warnings: ["OpenAI answer drafting requires OPENAI_API_KEY."]
+      };
+    }
+
+    if (!model.trim()) {
+      return {
+        answer_text: "",
+        citations: [],
+        cannot_confirm: [],
+        warnings: ["OpenAI answer drafting requires ASSISTO_OPENAI_MODEL; no model default is hard-coded."]
+      };
+    }
+
+    if (!fetchImpl) {
+      return {
+        answer_text: "",
+        citations: [],
+        cannot_confirm: [],
+        warnings: ["OpenAI answer drafting requires a fetch implementation."]
+      };
+    }
+
+    const baseUrl = (this.options.baseUrl ?? process.env.ASSISTO_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
+      /\/+$/,
+      ""
+    );
+
+    try {
+      const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: openAiAnswerDraftSystemPrompt()
+            },
+            {
+              role: "user",
+              content: JSON.stringify(answerDraftPromptInput(input))
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        return {
+          answer_text: "",
+          citations: [],
+          cannot_confirm: [],
+          warnings: [`OpenAI answer draft request failed: ${response.status} ${truncateText(await response.text(), 240)}`]
+        };
+      }
+
+      const payload = await response.json();
+      const content = openAiDraftMessageContent(payload);
+
+      if (!content) {
+        return {
+          answer_text: "",
+          citations: [],
+          cannot_confirm: [],
+          warnings: ["OpenAI answer draft response must include choices[0].message.content."]
+        };
+      }
+
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        return {
+          answer_text: "",
+          citations: [],
+          cannot_confirm: [],
+          warnings: ["OpenAI answer draft response content must be valid JSON."]
+        };
+      }
+
+      return {
+        ...normalizeAnswerDraftProviderOutput(parsed),
+        provider_model: model
+      };
+    } catch (error) {
+      return {
+        answer_text: "",
+        citations: [],
+        cannot_confirm: [],
+        warnings: [error instanceof Error ? error.message : String(error)]
+      };
+    }
+  }
+}
+
+function normalizeAnswerDraftProviderOutput(output: unknown): Required<AnswerDraftProviderOutput> {
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return {
+      answer_text: "",
+      citations: [],
+      cannot_confirm: [],
+      warnings: ["Answer draft provider output must be a JSON object."],
+      provider_model: ""
+    };
+  }
+
+  const record = output as Record<string, unknown>;
+
+  return {
+    answer_text: typeof record.answer_text === "string" ? record.answer_text : "",
+    citations: stringList(record.citations),
+    cannot_confirm: stringList(record.cannot_confirm),
+    warnings: stringList(record.warnings),
+    provider_model: typeof record.provider_model === "string" ? record.provider_model : ""
+  };
+}
+
+function normalizeDraftCitations(
+  citations: string[],
+  basis: AnswerBasisResult
+): { citations: string[]; warnings: string[] } {
+  const allowed = answerDraftCitationSet(basis);
+  const accepted: string[] = [];
+  const warnings: string[] = [];
+
+  for (const citation of uniqueStrings(citations)) {
+    if (allowed.has(citation)) {
+      accepted.push(citation);
+    } else {
+      warnings.push(`Unsupported draft citation omitted: ${citation}`);
+    }
+  }
+
+  return {
+    citations: accepted,
+    warnings
+  };
+}
+
+function answerDraftCitationSet(basis: AnswerBasisResult): Set<string> {
+  const citations = new Set<string>();
+
+  for (const claim of [...basis.answerCandidates, ...basis.supportingClaims, ...basis.uncertainClaims]) {
+    citations.add(claim.claim_id);
+    citations.add(claim.page_path);
+
+    for (const eventId of claim.evidence) {
+      citations.add(eventId);
+    }
+  }
+
+  for (const event of basis.evidenceEvents) {
+    citations.add(event.path);
+
+    if (event.id) {
+      citations.add(event.id);
+    }
+  }
+
+  for (const page of basis.matchedPages) {
+    citations.add(page.path);
+
+    if (page.id) {
+      citations.add(page.id);
+    }
+  }
+
+  for (const item of [...basis.linkedReviewItems, ...basis.linkedFollowUps]) {
+    citations.add(item.path);
+
+    if (item.id) {
+      citations.add(item.id);
+    }
+
+    for (const eventId of item.source_events) {
+      citations.add(eventId);
+    }
+  }
+
+  return citations;
+}
+
+function answerDraftPromptInput(input: AnswerDraftProviderInput): Record<string, unknown> {
+  return {
+    question: input.question,
+    generated_at: input.now,
+    rules: [
+      "Use only this deterministic AnswerBasisResult.",
+      "If the basis cannot confirm something, put it in cannot_confirm.",
+      "Every factual sentence should be supported by citations from allowed_citations.",
+      "Do not invent pages, claims, Events, people, projects, dates, or explanations.",
+      "Return JSON only."
+    ],
+    allowed_citations: [...answerDraftCitationSet(input.basis)].sort(),
+    answer_candidates: input.basis.answerCandidates,
+    supporting_claims: input.basis.supportingClaims,
+    uncertain_claims: input.basis.uncertainClaims,
+    evidence_events: input.basis.evidenceEvents,
+    linked_review_items: input.basis.linkedReviewItems,
+    linked_followups: input.basis.linkedFollowUps,
+    missing_information: input.basis.missingInformation,
+    warnings: input.basis.warnings,
+    context_pack: input.basis.contextPack
+  };
+}
+
+function openAiAnswerDraftSystemPrompt(): string {
+  return [
+    "You draft disposable work-memory answers from a deterministic retrieval basis.",
+    "You must not use outside knowledge or infer facts absent from the basis.",
+    "You never write memory and never claim that generated answer text is canonical.",
+    "Return JSON with exactly these top-level fields:",
+    "{ \"answer_text\": string, \"citations\": string[], \"cannot_confirm\": string[], \"warnings\": string[] }.",
+    "Citations must be claim IDs, Event IDs, or page paths present in allowed_citations."
+  ].join("\n");
+}
+
+function openAiDraftMessageContent(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const choices = (payload as { choices?: unknown }).choices;
+
+  if (!Array.isArray(choices)) {
+    return null;
+  }
+
+  const firstChoice = choices[0];
+
+  if (!firstChoice || typeof firstChoice !== "object") {
+    return null;
+  }
+
+  const message = (firstChoice as { message?: unknown }).message;
+
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const content = (message as { content?: unknown }).content;
+  return typeof content === "string" ? content : null;
+}
+
+function defaultAnswerDraftFetch(): AnswerDraftFetch | undefined {
+  return typeof fetch === "function" ? fetch : undefined;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}...`;
 }
 
 export function planRetrievalQuery(query: string, targets: RetrievalTarget[] = []): RetrievalQueryIntent {

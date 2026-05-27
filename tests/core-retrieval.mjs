@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { loadTsModule } from "./ts-module-loader.mjs";
@@ -365,6 +365,34 @@ export async function runCoreRetrievalTests() {
     assert.equal(managerResult.activeClaims.some((claim) => claim.claim_id === "clm_mike_manager"), true);
     assert.equal(managerResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_002"), true);
     assert.equal(managerResult.answerCandidates.some((candidate) => candidate.claim_id === "clm_mike_manager"), true);
+
+    const drafted = await retrieval.previewAnswerDraft(root, "Who is my manager?", {
+      now: "2026-05-27T15:00:00.000Z",
+      provider: {
+        name: "mock-drafter",
+        async draft(input) {
+          assert.equal(input.question, "Who is my manager?");
+          assert.equal(input.basis.answerCandidates.some((candidate) => candidate.claim_id === "clm_mike_manager"), true);
+          assert.match(input.basis.contextPack, /GPT was not called/);
+
+          return {
+            answer_text: "Jeff is not in the loaded manager claim; Mike is your manager.",
+            citations: ["clm_mike_manager", "ev_2026_05_21_002", "not_a_real_citation"],
+            cannot_confirm: ["Memory does not confirm when Mike became manager."],
+            warnings: ["Mock draft warning."]
+          };
+        }
+      }
+    });
+
+    assert.equal(drafted.provider_name, "mock-drafter");
+    assert.equal(drafted.generated_at, "2026-05-27T15:00:00.000Z");
+    assert.equal(drafted.answer_text, "Jeff is not in the loaded manager claim; Mike is your manager.");
+    assert.deepEqual(drafted.citations, ["clm_mike_manager", "ev_2026_05_21_002"]);
+    assert.equal(drafted.cannot_confirm.some((item) => /when Mike became manager/.test(item)), true);
+    assert.equal(drafted.warnings.some((warning) => /Unsupported draft citation omitted: not_a_real_citation/.test(warning)), true);
+    assert.equal(drafted.basis.answerCandidates.some((candidate) => candidate.claim_id === "clm_mike_manager"), true);
+    await assert.rejects(() => readFile(path.join(root, "memory/topics/draft-output.md"), "utf8"), /ENOENT/);
 
     const reportingResult = await retrieval.retrieveContextForAnswer(root, "Who reports to Jeff?");
     assert.equal(reportingResult.queryIntent.primary, "manager_reporting");
