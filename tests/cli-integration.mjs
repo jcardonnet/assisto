@@ -58,6 +58,7 @@ export async function runCliIntegrationTests() {
   const help = { stdout: helpStdout.join("") };
   assert.equal(helpExitCode, 0);
   assert.match(help.stdout, /wm - local markdown work-memory MVP/);
+  assert.match(help.stdout, /capture/);
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups>/);
 
@@ -94,6 +95,51 @@ export async function runCliIntegrationTests() {
     assert.match(reviewResult.stdout, /rev_unscoped_claims/);
   } finally {
     await rm(txRoot, { recursive: true, force: true });
+  }
+
+  const captureRoot = await makeTempVault();
+
+  try {
+    const dryRun = await runWm(captureRoot, [
+      "capture",
+      "--dry-run",
+      "--observed-at",
+      "2026-05-21",
+      "--source-label",
+      "standup",
+      "--context",
+      "ctx_inventory_project",
+      "Joe is the DBA. We use MySQL."
+    ]);
+    assert.match(dryRun.stdout, /Dry run\. No changes written/);
+    assert.match(dryRun.stdout, /Event: ev_2026_05_20_001/);
+    assert.match(dryRun.stdout, /Validation: passed/);
+    await expectMissing(captureRoot, "memory/events/2026/2026-05/2026-05-20-001.md");
+
+    const created = await runWm(captureRoot, [
+      "capture",
+      "--observed-at",
+      "2026-05-21",
+      "--source-label",
+      "standup",
+      "--context",
+      "ctx_inventory_project",
+      "Joe is the DBA. We use MySQL."
+    ]);
+    assert.match(created.stdout, /Event: ev_2026_05_20_001/);
+    assert.match(created.stdout, /Pending transaction: tx_2026_05_20_001/);
+    assert.match(created.stdout, /Validation: passed/);
+    assert.match(
+      await readVaultFile(captureRoot, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_label: standup/
+    );
+    assert.match(
+      await readVaultFile(captureRoot, "memory/transactions/pending/tx_2026_05_20_001.md"),
+      /transaction_state: pending/
+    );
+    await expectMissing(captureRoot, "memory/people/joe.md");
+  } finally {
+    await rm(captureRoot, { recursive: true, force: true });
   }
 
   const askRoot = await makeTempVault();

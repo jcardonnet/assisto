@@ -6,9 +6,11 @@ import {
   applyTransaction,
   checkMemoryHealth,
   buildSessionBrief,
+  createCaptureNote,
   createHealthReviewTransaction,
   createReviewApplyTransaction,
   createReviewStateTransaction,
+  LlmExtractionProvider,
   listSessionBriefTargets,
   listMarkdownFiles,
   listReviewItems,
@@ -20,8 +22,11 @@ import {
   reprocessEvent,
   showReviewItem,
   transactionFilePaths,
+  previewCaptureNote,
   retrieveContextForAnswer,
   validateTransaction,
+  type CaptureCreateResult,
+  type CapturePreviewResult,
   type ContextPackResult,
   type FrontmatterValue,
   type IngestNoteResult,
@@ -401,6 +406,14 @@ async function handleWorkbenchPostRoute(
   }
 
   try {
+    if (pathname === "/api/capture/preview") {
+      return jsonRoute(200, await createCapturePreview(root, input, false));
+    }
+
+    if (pathname === "/api/capture") {
+      return jsonRoute(200, await createCapturePreview(root, input, true));
+    }
+
     if (pathname === "/api/review/apply-staged/preview") {
       return jsonRoute(200, await createReviewApplyPreview(root, input, false));
     }
@@ -461,6 +474,34 @@ async function handleWorkbenchPostRoute(
   } catch (error) {
     return jsonRoute(400, { error: error instanceof Error ? error.message : String(error) });
   }
+}
+
+async function createCapturePreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<CapturePreviewResult | CaptureCreateResult> {
+  const note = requiredStringInput(input, "note");
+  const options = {
+    observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
+    source_label: optionalStringInput(input, "sourceLabel", "source_label") ?? undefined,
+    context: optionalStringInput(input, "context") ?? undefined,
+    provider: captureProvider(optionalStringInput(input, "provider") ?? "rule")
+  };
+
+  return created ? createCaptureNote(root, note, options) : previewCaptureNote(root, note, options);
+}
+
+function captureProvider(name: string): LlmExtractionProvider | undefined {
+  if (name === "rule") {
+    return undefined;
+  }
+
+  if (name === "openai") {
+    return new LlmExtractionProvider();
+  }
+
+  throw new Error("Capture provider must be rule or openai.");
 }
 
 async function createReviewApplyPreview(
@@ -1112,6 +1153,7 @@ function workbenchHtml(): string {
         <output id="status" class="status">Loading</output>
       </header>
       <nav class="tabs" aria-label="Workbench">
+        <button type="button" data-tab="capture" aria-pressed="false">Capture</button>
         <button type="button" data-tab="review" aria-pressed="true">Review</button>
         <button type="button" data-tab="transactions" aria-pressed="false">Transactions</button>
         <button type="button" data-tab="ask" aria-pressed="false">Ask</button>
@@ -1153,7 +1195,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -1228,13 +1271,35 @@ h1 {
 }
 
 .toolbar input,
+.toolbar textarea,
 .action-row input,
-.action-row select {
+.action-row select,
+.action-row textarea {
   border: 1px solid var(--line);
   border-radius: 6px;
   flex: 1;
   min-height: 38px;
   padding: 8px 10px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.capture-form {
+  display: grid;
+  gap: 10px;
 }
 
 .toolbar button,
@@ -1555,6 +1620,11 @@ function render() {
     return;
   }
 
+  if (activeTab === "capture") {
+    renderCapture();
+    return;
+  }
+
   if (activeTab === "review") {
     renderReview();
     return;
@@ -1600,6 +1670,41 @@ function render() {
   }
 
   renderBriefs();
+}
+
+function renderCapture() {
+  view.innerHTML = \`<article class="item">
+    <h2>Capture note</h2>
+    <form id="capture-form" class="capture-form">
+      <label class="field" for="capture-note"><span>Note</span><textarea id="capture-note" name="note" rows="7" placeholder="Paste a short work note"></textarea></label>
+      <div class="action-row">
+        <label class="field" for="capture-observed-at"><span>Observed at</span><input id="capture-observed-at" name="observedAt" placeholder="YYYY-MM-DD"></label>
+        <label class="field" for="capture-source-label"><span>Source label</span><input id="capture-source-label" name="sourceLabel" placeholder="standup, slack, meeting note"></label>
+      </div>
+      <div class="action-row">
+        <label class="field" for="capture-context"><span>Context</span><input id="capture-context" name="context" placeholder="Context id, path, or name"></label>
+        <label class="field" for="capture-provider"><span>Provider</span><select id="capture-provider" name="provider"><option value="rule">rule</option><option value="openai">openai</option></select></label>
+      </div>
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview capture</button>
+        <button type="submit" name="mode" value="create">Create pending transaction</button>
+      </div>
+    </form>
+  </article>
+  <div id="action-output" class="action-output"></div>\`;
+  document.querySelector("#capture-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    const preview = submitter?.value === "preview";
+    await runAction(preview ? "/api/capture/preview" : "/api/capture", {
+      note: form.elements.note.value,
+      observedAt: form.elements.observedAt.value,
+      sourceLabel: form.elements.sourceLabel.value,
+      context: form.elements.context.value,
+      provider: form.elements.provider.value
+    });
+  });
 }
 
 function renderTransactions() {
@@ -1927,7 +2032,9 @@ async function runAction(path, body) {
   try {
     const result = await postJson(path, body);
     const actionResult = renderActionResult(result);
-    await refreshAfterAction();
+    if (result.created) {
+      await refreshAfterAction();
+    }
     document.querySelector("#action-output").innerHTML = actionResult;
   } catch (error) {
     output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
@@ -1949,6 +2056,9 @@ async function refreshAfterAction() {
 
 function renderActionResult(result) {
   const mode = actionModeLabel(result);
+  const proposedFileWrites = (result.proposed_file_writes ?? []).map((write) =>
+    typeof write === "string" ? write : write.path
+  );
   const summary = [
     ["Action", formatAction(result.action)],
     ["Mode", mode],
@@ -1982,7 +2092,7 @@ function renderActionResult(result) {
     \${plainListHtml("Operations", result.operations)}
     \${plainListHtml("Affected files", result.affected_files)}
     \${plainListHtml("Source Events", result.source_events)}
-    \${plainListHtml("Proposed file writes", result.proposed_file_writes)}
+    \${plainListHtml("Proposed file writes", proposedFileWrites)}
   </article>\`;
 }
 

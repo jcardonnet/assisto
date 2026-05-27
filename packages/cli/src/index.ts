@@ -1,12 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { writeSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
   buildSessionBrief,
   checkMemoryHealth,
+  createCaptureNote,
   createHealthReviewTransaction,
+  previewCaptureNote,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -35,6 +38,7 @@ import { startWorkbenchServer } from "@assisto/workbench";
 export interface CliIo {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
+  stdin?: () => Promise<string>;
 }
 
 interface ParsedArgs {
@@ -72,6 +76,10 @@ export async function main(
 
     if (command === "ingest") {
       return await commandIngest(parsed.root, rest, io);
+    }
+
+    if (command === "capture") {
+      return await commandCapture(parsed.root, rest, io, cwd);
     }
 
     if (command === "review") {
@@ -250,13 +258,57 @@ async function commandIngest(root: string, args: string[], io: CliIo): Promise<n
     provider: providerName === "llm-stub" ? new LlmExtractionProvider() : undefined
   });
   io.stdout(`Event: ${result.event_id} (${result.event_path})\n`);
-  io.stdout(`Pending transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+  io.stdout(
+    `${dryRun ? "Proposed transaction" : "Pending transaction"}: ${result.transaction_id} (${result.transaction_path})\n`
+  );
 
   if (result.staged_review_paths.length > 0) {
     io.stdout(`Staged review proposals: ${result.staged_review_paths.join(", ")}\n`);
   }
 
   return 0;
+}
+
+async function commandCapture(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const dryRun = args.includes("--dry-run");
+  const note = await captureNoteFromArgs(args, io, cwd);
+  const provider = captureProvider(optionValue(args, "--provider") ?? "rule");
+  const options = {
+    observed_at: optionValue(args, "--observed-at") ?? undefined,
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    context: optionValue(args, "--context") ?? undefined,
+    provider
+  };
+  const result = dryRun
+    ? await previewCaptureNote(root, note, options)
+    : await createCaptureNote(root, note, options);
+
+  if (dryRun) {
+    io.stdout(`Dry run. No changes written to ${root}.\n`);
+  }
+
+  io.stdout(`Event: ${result.event_id} (${result.event_path})\n`);
+  io.stdout(`Pending transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+  io.stdout(`Provider: ${result.provider_name}\n`);
+  io.stdout(`Validation: ${result.validation.passed ? "passed" : "failed"}\n`);
+
+  if (result.operations.length > 0) {
+    io.stdout(`Operations: ${result.operations.join(", ")}\n`);
+  }
+
+  if (result.affected_files.length > 0) {
+    io.stdout(`Affected files: ${result.affected_files.join(", ")}\n`);
+  }
+
+  if (result.staged_review_paths.length > 0) {
+    io.stdout(`Staged review proposals: ${result.staged_review_paths.join(", ")}\n`);
+  }
+
+  if (result.proposed_file_writes.length > 0) {
+    io.stdout(`Proposed file writes: ${result.proposed_file_writes.map((write) => write.path).join(", ")}\n`);
+  }
+
+  return result.validation.passed ? 0 : 1;
 }
 
 async function commandReview(root: string, args: string[], io: CliIo): Promise<number> {
@@ -541,6 +593,82 @@ function optionValue(args: string[], name: string): string | null {
   return value && !value.startsWith("--") ? value : null;
 }
 
+async function captureNoteFromArgs(args: string[], io: CliIo, cwd: string): Promise<string> {
+  const fromFile = optionValue(args, "--file");
+  const fromStdin = args.includes("--stdin");
+
+  if (fromFile && fromStdin) {
+    throw new Error("wm capture accepts either --file or --stdin, not both.");
+  }
+
+  if (fromFile) {
+    return readFile(path.resolve(cwd, fromFile), "utf8");
+  }
+
+  if (fromStdin) {
+    return io.stdin ? io.stdin() : readProcessStdin();
+  }
+
+  const note = positionalCaptureArgs(args).join(" ").trim();
+
+  if (!note) {
+    throw new Error(
+      'wm capture requires a note, --stdin, or --file <path>, for example: wm capture "Joe is the DBA"'
+    );
+  }
+
+  return note;
+}
+
+async function readProcessStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function positionalCaptureArgs(args: string[]): string[] {
+  const valueOptions = new Set(["--file", "--observed-at", "--source-label", "--context", "--provider"]);
+  const booleanOptions = new Set(["--stdin", "--dry-run"]);
+  const values: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg) {
+      continue;
+    }
+
+    if (valueOptions.has(arg)) {
+      index += 1;
+      continue;
+    }
+
+    if (booleanOptions.has(arg)) {
+      continue;
+    }
+
+    values.push(arg);
+  }
+
+  return values;
+}
+
+function captureProvider(name: string): LlmExtractionProvider | undefined {
+  if (name === "rule") {
+    return undefined;
+  }
+
+  if (name === "openai") {
+    return new LlmExtractionProvider();
+  }
+
+  throw new Error("Capture provider must be rule or openai.");
+}
+
 function parsePort(value: string): number {
   const parsed = Number.parseInt(value, 10);
 
@@ -615,6 +743,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx apply <id>",
       "  wm [--root <path>] tx reject <id> --reason <text>",
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub] "<note>"',
+      '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",
       "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",

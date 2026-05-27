@@ -13,12 +13,15 @@ export type CandidateEntityKind = "person" | "topic" | "context" | "system";
 export interface IngestPipelineContext {
   root: string;
   note: string;
+  rawNote: string;
   now: string;
   observedAt: string | null;
   eventId: string;
   eventPath: string;
   eventLinkPath: string;
   transactionId: string;
+  captureContexts?: string[];
+  sourceLabel?: string;
 }
 
 export interface CandidateSpan {
