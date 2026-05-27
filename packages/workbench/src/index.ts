@@ -12,6 +12,7 @@ import {
   createFrictionLog,
   createHealthReviewTransaction,
   createImportNotes,
+  createImportTriage,
   createEntityAliasTransaction,
   createEntityContextTransaction,
   createOpenAiExtractionProvider,
@@ -33,6 +34,7 @@ import {
   previewCaptureNote,
   previewFrictionLog,
   previewImportNotes,
+  previewImportTriage,
   previewAnswerDraft,
   retrieveContextForAnswer,
   validateTransaction,
@@ -50,6 +52,9 @@ import {
   type IngestNoteResult,
   type ImportCreateResult,
   type ImportPreviewResult,
+  type ImportTriageCreateResult,
+  type ImportTriagePreviewResult,
+  type ImportTriageUnitInput,
   type HealthReviewTransactionResult,
   type MemoryHealthResult,
   type ParsedTransaction,
@@ -528,6 +533,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createImportPreview(root, input, true));
     }
 
+    if (pathname === "/api/import/triage/preview") {
+      return jsonRoute(200, await createImportTriagePreview(root, input, false));
+    }
+
+    if (pathname === "/api/import/triage") {
+      return jsonRoute(200, await createImportTriagePreview(root, input, true));
+    }
+
     if (pathname === "/api/review/apply-staged/preview") {
       return jsonRoute(200, await createReviewApplyPreview(root, input, false));
     }
@@ -655,6 +668,58 @@ async function createImportPreview(
   };
 
   return created ? createImportNotes(root, importInput, options) : previewImportNotes(root, importInput, options);
+}
+
+async function createImportTriagePreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ImportTriagePreviewResult | ImportTriageCreateResult> {
+  const text = optionalStringInput(input, "text");
+  const sourcePath = optionalStringInput(input, "path");
+  const options = {
+    observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
+    source_label: optionalStringInput(input, "sourceLabel", "source_label") ?? undefined,
+    provider: captureProvider(optionalStringInput(input, "provider") ?? "rule"),
+    limit: optionalPositiveIntegerInput(input, "limit")
+  };
+  const importInput = {
+    text,
+    path: sourcePath,
+    glob: optionalStringInput(input, "glob") ?? undefined,
+    cwd: root,
+    units: importTriageUnitsInput(input)
+  };
+
+  return created ? createImportTriage(root, importInput, options) : previewImportTriage(root, importInput, options);
+}
+
+function importTriageUnitsInput(input: Record<string, unknown>): ImportTriageUnitInput[] | undefined {
+  const units = input.units;
+
+  if (!Array.isArray(units)) {
+    return undefined;
+  }
+
+  return units.map((unit, index) => {
+    if (!unit || typeof unit !== "object" || Array.isArray(unit)) {
+      throw new Error(`Import triage unit ${index + 1} must be an object.`);
+    }
+
+    const record = unit as Record<string, unknown>;
+
+    const action = optionalStringInput(record, "action") === "skip" ? "skip" : "keep";
+
+    return {
+      unit_id: optionalStringInput(record, "unit_id", "unitId") ?? `unit_${index + 1}`,
+      action,
+      raw_text: requiredStringInput(record, "raw_text", "rawText", "text"),
+      source_path: optionalStringInput(record, "source_path", "sourcePath") ?? undefined,
+      source_label: optionalStringInput(record, "source_label", "sourceLabel") ?? undefined,
+      observed_at: optionalStringInput(record, "observed_at", "observedAt") ?? undefined,
+      context: optionalStringInput(record, "context") ?? undefined
+    };
+  });
 }
 
 function captureProvider(name: string): ExtractionProvider | undefined {
@@ -2114,6 +2179,7 @@ let pendingBriefRequest = null;
 let entityKind = "person";
 let entityList = null;
 let entityDetail = null;
+let importTriageUnits = [];
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -2707,20 +2773,23 @@ function renderImport() {
       <div class="action-row">
         <button type="submit" name="mode" value="preview" class="secondary">Preview import</button>
         <button type="submit" name="mode" value="create">Create pending imports</button>
+        <button type="submit" name="mode" value="triage" class="secondary">Prepare triage</button>
       </div>
     </form>
   </article>
+  <section id="import-triage-section"></section>
   <div id="import-output" class="action-output"></div>\`;
   document.querySelector("#import-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const submitter = event.submitter;
+    const mode = submitter?.value ?? "preview";
     const preview = submitter?.value === "preview";
     const output = document.querySelector("#import-output");
     output.innerHTML = "<pre>Running</pre>";
 
     try {
-      const result = await postJson(preview ? "/api/import/preview" : "/api/import", {
+      const body = {
         text: form.elements.text.value,
         path: form.elements.path.value,
         glob: form.elements.glob.value,
@@ -2728,11 +2797,157 @@ function renderImport() {
         sourceLabel: form.elements.sourceLabel.value,
         provider: form.elements.provider.value,
         limit: form.elements.limit.value
-      });
-      output.innerHTML = renderImportResult(result);
+      };
+      const result = await postJson(mode === "triage" ? "/api/import/triage/preview" : preview ? "/api/import/preview" : "/api/import", body);
+
+      if (mode === "triage") {
+        importTriageUnits = triageUnitsFromResult(result);
+        renderImportTriageEditor(result);
+        output.innerHTML = "";
+      } else {
+        output.innerHTML = renderImportResult(result);
+      }
     } catch (error) {
       output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
     }
+  });
+}
+
+function triageUnitsFromResult(result) {
+  return (result.units ?? []).map((unit, index) => ({
+    unit_id: unit.unit_id ?? \`unit_\${index + 1}\`,
+    action: unit.triage_action ?? (unit.skipped ? "skip" : "keep"),
+    raw_text: unit.event_raw_text ?? "",
+    source_path: unit.source_path ?? "",
+    source_label: unit.source_label ?? "",
+    observed_at: unit.observed_at ?? "",
+    context: unit.context ?? ""
+  }));
+}
+
+function renderImportTriageEditor(result = null) {
+  const section = document.querySelector("#import-triage-section");
+
+  if (!section) {
+    return;
+  }
+
+  const cards = importTriageUnits.map((unit, index) => importTriageUnitHtml(unit, index)).join("");
+  section.innerHTML = \`<article class="item">
+    <h2>Import triage</h2>
+    <p class="meta">Edit, split, merge, or skip curated Markdown/text units before creating Event plus pending Transaction records.</p>
+    \${result ? detailListHtml([
+      ["Units", String(result.units_total ?? importTriageUnits.length)],
+      ["Kept", String(result.units_kept ?? result.units_imported ?? 0)],
+      ["Skipped", String(result.units_skipped ?? 0)]
+    ]) : ""}
+    <form id="import-triage-form" class="action-stack">
+      <div id="import-triage-units" class="grid">\${cards || '<article class="item"><h3>Empty</h3><p class="meta">No triage units.</p></article>'}</div>
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview triage</button>
+        <button type="submit" name="mode" value="create">Create triage</button>
+      </div>
+    </form>
+  </article>\`;
+  bindImportTriageActions();
+}
+
+function importTriageUnitHtml(unit, index) {
+  const number = index + 1;
+  const action = unit.action === "skip" ? "skip" : "keep";
+
+  return \`<article class="item import-triage-unit" data-unit-index="\${index}">
+    <h3>Unit \${number}</h3>
+    <label class="field" for="import-triage-text-\${index}"><span>Unit \${number} text</span><textarea id="import-triage-text-\${index}" name="rawText" rows="5">\${escapeHtml(unit.raw_text)}</textarea></label>
+    <div class="action-row">
+      <label class="field" for="import-triage-action-\${index}"><span>Unit \${number} action</span><select id="import-triage-action-\${index}" name="action"><option value="keep"\${action === "keep" ? " selected" : ""}>keep</option><option value="skip"\${action === "skip" ? " selected" : ""}>skip</option></select></label>
+      <label class="field" for="import-triage-source-\${index}"><span>Unit \${number} source label</span><input id="import-triage-source-\${index}" name="sourceLabel" value="\${escapeHtml(unit.source_label)}"></label>
+    </div>
+    <div class="action-row">
+      <label class="field" for="import-triage-observed-\${index}"><span>Unit \${number} observed at</span><input id="import-triage-observed-\${index}" name="observedAt" value="\${escapeHtml(unit.observed_at)}"></label>
+      <label class="field" for="import-triage-context-\${index}"><span>Unit \${number} context</span><input id="import-triage-context-\${index}" name="context" value="\${escapeHtml(unit.context)}"></label>
+    </div>
+    <div class="action-row">
+      <button type="button" class="secondary import-triage-split">Split unit</button>
+      <button type="button" class="secondary import-triage-merge">Merge next</button>
+    </div>
+  </article>\`;
+}
+
+function bindImportTriageActions() {
+  for (const card of document.querySelectorAll(".import-triage-unit")) {
+    card.querySelector(".import-triage-split")?.addEventListener("click", () => {
+      updateImportTriageUnitsFromDom();
+      splitImportTriageUnit(Number(card.dataset.unitIndex));
+      renderImportTriageEditor();
+    });
+    card.querySelector(".import-triage-merge")?.addEventListener("click", () => {
+      updateImportTriageUnitsFromDom();
+      mergeImportTriageUnit(Number(card.dataset.unitIndex));
+      renderImportTriageEditor();
+    });
+  }
+
+  document.querySelector("#import-triage-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    updateImportTriageUnitsFromDom();
+    const preview = event.submitter?.value === "preview";
+    const output = document.querySelector("#import-output");
+    output.innerHTML = "<pre>Running</pre>";
+
+    try {
+      const result = await postJson(preview ? "/api/import/triage/preview" : "/api/import/triage", {
+        units: importTriageUnits
+      });
+      importTriageUnits = triageUnitsFromResult(result);
+      renderImportTriageEditor(result);
+      output.innerHTML = renderImportTriageResult(result);
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+}
+
+function updateImportTriageUnitsFromDom() {
+  importTriageUnits = [...document.querySelectorAll(".import-triage-unit")].map((card, index) => ({
+    unit_id: \`unit_\${index + 1}\`,
+    action: card.querySelector("[name='action']").value,
+    raw_text: card.querySelector("[name='rawText']").value,
+    source_label: card.querySelector("[name='sourceLabel']").value,
+    observed_at: card.querySelector("[name='observedAt']").value,
+    context: card.querySelector("[name='context']").value
+  }));
+}
+
+function splitImportTriageUnit(index) {
+  const unit = importTriageUnits[index];
+
+  if (!unit) {
+    return;
+  }
+
+  const parts = unit.raw_text.split(/\\n\\s*\\n/);
+
+  if (parts.length < 2) {
+    return;
+  }
+
+  const first = parts.shift().trim();
+  const second = parts.join("\\n\\n").trim();
+  importTriageUnits.splice(index, 1, { ...unit, raw_text: first }, { ...unit, raw_text: second });
+}
+
+function mergeImportTriageUnit(index) {
+  const current = importTriageUnits[index];
+  const next = importTriageUnits[index + 1];
+
+  if (!current || !next) {
+    return;
+  }
+
+  importTriageUnits.splice(index, 2, {
+    ...current,
+    raw_text: [current.raw_text, next.raw_text].filter(Boolean).join("\\n\\n")
   });
 }
 
@@ -2761,6 +2976,37 @@ function renderImportResult(result) {
     ])}
   </article>
   <section><h2>Import units</h2><div class="grid">\${units || '<article class="item"><h3>Empty</h3><p class="meta">No import units.</p></article>'}</div></section>\`;
+}
+
+function renderImportTriageResult(result) {
+  const units = (result.units ?? []).map((unit) => \`<article class="item">
+    <h3>\${escapeHtml(unit.skipped ? "Skipped triage unit" : unit.event_id)}</h3>
+    <p class="pill">\${escapeHtml(unit.skipped ? unit.skip_reason : unit.transaction_id)}</p>
+    \${detailListHtml([
+      ["Unit", unit.unit_id],
+      ["Action", unit.triage_action],
+      ["Source", unit.source_path ?? unit.source_label ?? "pasted import"],
+      ["Observed", unit.observed_at ?? "none"],
+      ["Context", unit.context ?? "none"],
+      ["Source hash", unit.source_hash],
+      ["Event", unit.event_path ? \`\${unit.event_id} · \${unit.event_path}\` : unit.existing_event_path ?? "none"],
+      ["Transaction", unit.transaction_path ? \`\${unit.transaction_id} · \${unit.transaction_path}\` : "none"],
+      ["Validation", unit.validation ? (unit.validation.passed ? "passed" : "failed") : "not run"]
+    ])}
+    \${plainListHtml("Operations", unit.operations ?? [])}
+    \${plainListHtml("Proposed file writes", (unit.proposed_file_writes ?? []).map((write) => write.path ?? write))}
+  </article>\`).join("");
+
+  return \`<article class="item action-result">
+    <h2>\${result.created ? "Triage imports created" : "Preview triage"}</h2>
+    <p class="pill">\${escapeHtml(result.provider_name)}</p>
+    \${detailListHtml([
+      ["Units", String(result.units_total)],
+      ["Kept", String(result.units_kept)],
+      ["Skipped", String(result.units_skipped)]
+    ])}
+  </article>
+  <section><h2>Triage units</h2><div class="grid">\${units || '<article class="item"><h3>Empty</h3><p class="meta">No triage units.</p></article>'}</div></section>\`;
 }
 
 async function renderEntities() {
