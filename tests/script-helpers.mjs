@@ -9,6 +9,8 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["check:memory-data"], "node scripts/check-memory-data.mjs");
   assert.equal(packageJson.scripts["pr:review-wait"], "node scripts/wait-for-pr-review.mjs");
   assert.equal(packageJson.scripts["pr:closeout"], "node scripts/pr-closeout.mjs");
+  assert.equal(packageJson.scripts["mxbai:upload"], "bash scripts/mxbai-upload.sh");
+  assert.equal(packageJson.scripts["mxbai:smoke"], "bash scripts/mxbai-smoke.sh");
 
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /Usage: pnpm validate:local/);
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /TMPDIR=\/tmp/);
