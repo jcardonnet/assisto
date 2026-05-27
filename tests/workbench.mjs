@@ -576,6 +576,10 @@ export async function runWorkbenchTests() {
     const shell = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/" });
     assert.equal(shell.status, 200);
     assert.match(shell.body, /data-tab="today"/);
+    assert.match(shell.body, /quick-capture-open/);
+    assert.match(shell.body, /quick-capture-dialog/);
+    assert.match(shell.body, /Preview quick capture/);
+    assert.match(shell.body, /Source label preset/);
     assert.match(shell.body, /data-tab="today" aria-pressed="true"/);
     assert.match(shell.body, /data-tab="capture"/);
     assert.match(shell.body, /data-tab="import"/);
@@ -596,6 +600,8 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /today-open-review/);
     assert.match(client.body, /Read warnings/);
     assert.match(client.body, /capture-form/);
+    assert.match(client.body, /quick-capture-form/);
+    assert.match(client.body, /quick-capture-context-options/);
     assert.match(client.body, /\/api\/capture\/preview/);
     assert.match(client.body, /\/api\/capture/);
     assert.match(client.body, /import-form/);
