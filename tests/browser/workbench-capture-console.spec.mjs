@@ -13,11 +13,11 @@ test("capture tab previews and creates pending transactions without canonical pa
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 
     await page.goto(server.url);
-    await page.getByRole("button", { name: "Capture" }).click();
-    await page.getByLabel("Note").fill("Joe is the DBA. We use MySQL.");
-    await page.getByLabel("Observed at").fill("2026-05-21");
-    await page.getByLabel("Source label").fill("browser capture");
-    await page.getByLabel("Context").fill("ctx_inventory_project");
+    await page.getByRole("button", { name: "Capture", exact: true }).click();
+    await page.getByLabel("Note", { exact: true }).fill("Joe is the DBA. We use MySQL.");
+    await page.getByLabel("Observed at", { exact: true }).fill("2026-05-21");
+    await page.getByLabel("Source label", { exact: true }).fill("browser capture");
+    await page.getByLabel("Context", { exact: true }).fill("ctx_inventory_project");
 
     await page.getByRole("button", { name: "Preview capture" }).click();
     await expect(page.getByRole("heading", { name: "Preview only" })).toBeVisible();
@@ -29,6 +29,42 @@ test("capture tab previews and creates pending transactions without canonical pa
     assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /source_label: browser capture/);
     assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"), /transaction_state: pending/);
     await assert.rejects(() => readVaultFile(root, "memory/people/joe.md"), /ENOENT/);
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("quick capture is available from any Workbench tab and stays transaction backed", async ({ page }) => {
+  const root = await makeTempVault("assisto-browser-quick-capture-");
+  const workbench = await loadTsModule("packages/workbench/src/index.ts");
+  let server;
+
+  try {
+    server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
+
+    await page.goto(server.url);
+    await page.locator('[data-tab="ask"]').click();
+    await expect(page.locator("#ask-input")).toBeVisible();
+
+    await page.getByRole("button", { name: "Quick capture" }).click();
+    await expect(page.getByRole("heading", { name: "Quick capture" })).toBeVisible();
+    await page.getByLabel("Quick capture note").fill("Joe is the DBA. We use MySQL.");
+    await page.getByLabel("Quick observed at").fill("2026-05-22");
+    await page.getByLabel("Source label preset").selectOption("meeting note");
+    await page.getByLabel("Quick context").fill("ctx_inventory_project");
+
+    await page.getByRole("button", { name: "Preview quick capture" }).click();
+    await expect(page.locator("#quick-capture-output").getByRole("heading", { name: "Preview only" })).toBeVisible();
+    await expect(page.locator("#quick-capture-output")).toContainText("memory/people/joe.md");
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ENOENT/);
+
+    await page.getByRole("button", { name: "Create quick capture" }).click();
+    await expect(page.locator("#quick-capture-output").getByRole("heading", { name: "Pending transaction created" })).toBeVisible();
+    assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /source_label: meeting note/);
+    assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"), /transaction_state: pending/);
+    await assert.rejects(() => readVaultFile(root, "memory/people/joe.md"), /ENOENT/);
+    await expect(page.locator('[data-tab="ask"]')).toHaveAttribute("aria-pressed", "true");
   } finally {
     await server?.close();
     await rm(root, { recursive: true, force: true });

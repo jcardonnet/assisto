@@ -1330,7 +1330,10 @@ function workbenchHtml(): string {
           <p class="eyebrow">Assisto</p>
           <h1>Memory Workbench</h1>
         </div>
-        <output id="status" class="status">Loading</output>
+        <div class="topbar-actions">
+          <button type="button" id="quick-capture-open" class="quick-capture-open">Quick capture</button>
+          <output id="status" class="status">Loading</output>
+        </div>
       </header>
       <nav class="tabs" aria-label="Workbench">
         <button type="button" data-tab="today" aria-pressed="true">Today</button>
@@ -1344,6 +1347,41 @@ function workbenchHtml(): string {
         <button type="button" data-tab="briefs" aria-pressed="false">Briefs</button>
       </nav>
       <section id="view" class="view" aria-live="polite"></section>
+      <dialog id="quick-capture-dialog" class="quick-capture-dialog" aria-labelledby="quick-capture-title">
+        <article class="quick-capture-panel">
+          <header class="dialog-header">
+            <div>
+              <p class="eyebrow">Capture</p>
+              <h2 id="quick-capture-title">Quick capture</h2>
+            </div>
+            <button type="button" id="quick-capture-close" class="secondary">Close</button>
+          </header>
+          <form id="quick-capture-form" class="capture-form">
+            <label class="field" for="quick-capture-note"><span>Quick capture note</span><textarea id="quick-capture-note" name="note" rows="6" placeholder="Capture a short work note"></textarea></label>
+            <div class="action-row">
+              <label class="field" for="quick-capture-observed-at"><span>Quick observed at</span><input id="quick-capture-observed-at" name="observedAt" placeholder="YYYY-MM-DD"></label>
+              <label class="field" for="quick-capture-source-preset"><span>Source label preset</span><select id="quick-capture-source-preset" name="sourcePreset">
+                <option value="daily note">daily note</option>
+                <option value="meeting note">meeting note</option>
+                <option value="correction">correction</option>
+                <option value="follow-up note">follow-up note</option>
+                <option value="import note">import note</option>
+              </select></label>
+            </div>
+            <div class="action-row">
+              <label class="field" for="quick-capture-custom-source"><span>Custom source label</span><input id="quick-capture-custom-source" name="customSourceLabel" placeholder="Optional override"></label>
+              <label class="field" for="quick-capture-context"><span>Quick context</span><input id="quick-capture-context" name="context" list="quick-capture-context-options" placeholder="Context id, path, or name"></label>
+              <datalist id="quick-capture-context-options"></datalist>
+            </div>
+            <div class="action-row">
+              <label class="field" for="quick-capture-provider"><span>Quick provider</span><select id="quick-capture-provider" name="provider"><option value="rule">rule</option><option value="openai">openai</option></select></label>
+              <button type="submit" name="mode" value="preview" class="secondary">Preview quick capture</button>
+              <button type="submit" name="mode" value="create">Create quick capture</button>
+            </div>
+          </form>
+          <div id="quick-capture-output" class="action-output"></div>
+        </article>
+      </dialog>
     </main>
     <script type="module" src="/assets/workbench.js"></script>
   </body>
@@ -1396,6 +1434,22 @@ textarea {
   gap: 16px;
   justify-content: space-between;
   padding-bottom: 16px;
+}
+
+.topbar-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.quick-capture-open {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  min-height: 38px;
+  padding: 8px 14px;
 }
 
 .eyebrow {
@@ -1499,6 +1553,41 @@ textarea {
 .action-row button.secondary {
   background: transparent;
   color: var(--accent);
+}
+
+.quick-capture-dialog {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgb(29 36 40 / 22%);
+  color: var(--ink);
+  max-width: min(760px, calc(100vw - 32px));
+  padding: 0;
+  width: 100%;
+}
+
+.quick-capture-dialog::backdrop {
+  background: rgb(29 36 40 / 36%);
+}
+
+.quick-capture-panel {
+  background: var(--panel);
+  padding: 18px;
+}
+
+.dialog-header {
+  align-items: start;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+}
+
+.dialog-header h2 {
+  font-size: 20px;
+  line-height: 1.2;
+  margin: 0;
 }
 
 .action-stack {
@@ -1737,6 +1826,12 @@ pre {
     flex-direction: column;
   }
 
+  .topbar-actions,
+  .dialog-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .transaction-layout {
     grid-template-columns: 1fr;
   }
@@ -1747,6 +1842,10 @@ pre {
 function workbenchClientJs(): string {
   return `const view = document.querySelector("#view");
 const status = document.querySelector("#status");
+const quickCaptureDialog = document.querySelector("#quick-capture-dialog");
+const quickCaptureOpen = document.querySelector("#quick-capture-open");
+const quickCaptureClose = document.querySelector("#quick-capture-close");
+const quickCaptureForm = document.querySelector("#quick-capture-form");
 let snapshot = null;
 let health = null;
 let dogfoodHome = null;
@@ -1765,6 +1864,100 @@ for (const button of document.querySelectorAll("[data-tab]")) {
     selectWorkbenchTab(button.dataset.tab);
     render();
   });
+}
+
+quickCaptureOpen?.addEventListener("click", () => {
+  void openQuickCapture();
+});
+
+quickCaptureClose?.addEventListener("click", () => {
+  closeQuickCapture();
+});
+
+quickCaptureForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const preview = event.submitter?.value === "preview";
+  await runQuickCapture(preview ? "/api/capture/preview" : "/api/capture", {
+    note: form.elements.note.value,
+    observedAt: form.elements.observedAt.value,
+    sourceLabel: quickCaptureSourceLabel(form),
+    context: form.elements.context.value,
+    provider: form.elements.provider.value
+  });
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() !== "c" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    return;
+  }
+
+  const active = document.activeElement;
+  if (active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)) {
+    return;
+  }
+
+  event.preventDefault();
+  void openQuickCapture();
+});
+
+async function openQuickCapture() {
+  await loadQuickCaptureContextOptions();
+  document.querySelector("#quick-capture-output").innerHTML = "";
+
+  if (typeof quickCaptureDialog.showModal === "function") {
+    quickCaptureDialog.showModal();
+  } else {
+    quickCaptureDialog.setAttribute("open", "");
+  }
+
+  document.querySelector("#quick-capture-note")?.focus();
+}
+
+function closeQuickCapture() {
+  if (typeof quickCaptureDialog.close === "function") {
+    quickCaptureDialog.close();
+  } else {
+    quickCaptureDialog.removeAttribute("open");
+  }
+}
+
+async function loadQuickCaptureContextOptions() {
+  const datalist = document.querySelector("#quick-capture-context-options");
+
+  if (!datalist || datalist.dataset.loaded === "true") {
+    return;
+  }
+
+  try {
+    const result = await fetchJson("/api/brief/targets?kind=context");
+    datalist.innerHTML = result.targets.map((target) => \`<option value="\${escapeHtml(target.id ?? target.path)}">\${escapeHtml(target.name)} · \${escapeHtml(target.path)}</option>\`).join("");
+    datalist.dataset.loaded = "true";
+  } catch {
+    datalist.dataset.loaded = "true";
+  }
+}
+
+function quickCaptureSourceLabel(form) {
+  const custom = form.elements.customSourceLabel.value.trim();
+  return custom || form.elements.sourcePreset.value;
+}
+
+async function runQuickCapture(path, body) {
+  const output = document.querySelector("#quick-capture-output");
+  output.innerHTML = "<pre>Running</pre>";
+
+  try {
+    const result = await postJson(path, body);
+    if (result.created) {
+      snapshot = await fetchJson("/api/snapshot");
+      health = null;
+      dogfoodHome = null;
+    }
+    output.innerHTML = renderActionResult(result);
+  } catch (error) {
+    output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+  }
 }
 
 function selectWorkbenchTab(tabName) {
