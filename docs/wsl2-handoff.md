@@ -237,7 +237,7 @@ Important behavior:
 
 - Detectors emit candidate data only; they do not write markdown.
 - Provider-ready LLM extraction in `packages/core/src/extraction/index.ts` converts provider output into the same candidate pipeline.
-- `LlmExtractionProvider` remains provider-ready/stubbed unless a caller supplies a client; do not add live network/API-key behavior without a separate plan.
+- `LlmExtractionProvider` remains provider-ready/stubbed unless a caller supplies a client; `OpenAiExtractionProvider` is the planned env-backed candidate provider and requires `OPENAI_API_KEY` plus `ASSISTO_OPENAI_MODEL`.
 - Provider hints can only increase caution; deterministic resolver/policy remains authoritative.
 - Existing Context exact/alias matches can scope claims; new, near-match, ambiguous, or unknown contexts stage ReviewItems.
 - Review item state changes are transaction-backed through `packages/core/src/review/index.ts`, CLI review commands, and Pi review tools.

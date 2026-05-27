@@ -38,6 +38,121 @@ export async function runCoreExtractionTests() {
   const extraction = await loadTsModule("packages/core/src/extraction/index.ts");
   const transactions = await loadTsModule("packages/core/src/transactions/index.ts");
 
+  const missingKey = await new extraction.OpenAiExtractionProvider({
+    apiKey: "",
+    model: "gpt-test"
+  }).extract({ note: "Alice is the PM.", now: "2026-05-21T12:00:00-03:00" });
+  assert.match(missingKey.malformed_reason, /OPENAI_API_KEY/);
+
+  const missingModel = await new extraction.OpenAiExtractionProvider({
+    apiKey: "test-key",
+    model: ""
+  }).extract({ note: "Alice is the PM.", now: "2026-05-21T12:00:00-03:00" });
+  assert.match(missingModel.malformed_reason, /ASSISTO_OPENAI_MODEL/);
+
+  let openAiRequest = null;
+  const openAiOutput = await new extraction.OpenAiExtractionProvider({
+    apiKey: "test-key",
+    model: "gpt-test",
+    baseUrl: "https://api.example.test/v1",
+    fetch: async (url, init) => {
+      openAiRequest = { url, init };
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  claims: [
+                    {
+                      entity_kind: "person",
+                      entity_name: "Alice",
+                      statement: "Alice is the PM.",
+                      claim_kind: "fact",
+                      evidence_strength: "explicit",
+                      scope: "current-work-context",
+                      scope_state: "partial",
+                      entity_resolution: "new_entity"
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        }),
+        text: async () => ""
+      };
+    }
+  }).extract({ note: "Alice is the PM.", now: "2026-05-21T12:00:00-03:00" });
+  assert.equal(openAiOutput.claims[0].entity_name, "Alice");
+  assert.equal(openAiRequest.url, "https://api.example.test/v1/chat/completions");
+  assert.equal(openAiRequest.init.headers.authorization, "Bearer test-key");
+  const openAiRequestBody = JSON.parse(openAiRequest.init.body);
+  assert.equal(openAiRequestBody.model, "gpt-test");
+  assert.match(openAiRequestBody.messages[0].content, /candidate-only/);
+
+  const openAiMalformed = await new extraction.OpenAiExtractionProvider({
+    apiKey: "test-key",
+    model: "gpt-test",
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{ message: { content: "not json" } }]
+      }),
+      text: async () => ""
+    })
+  }).extract({ note: "Alice is the PM.", now: "2026-05-21T12:00:00-03:00" });
+  assert.match(openAiMalformed.malformed_reason, /valid JSON/);
+
+  const openAiRoot = await makeTempVault();
+
+  try {
+    const result = await extraction.ingestWithExtractionProvider(openAiRoot, "Alice is the PM.", {
+      now: "2026-05-21T12:00:00-03:00",
+      provider: new extraction.OpenAiExtractionProvider({
+        apiKey: "test-key",
+        model: "gpt-test",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    claims: [
+                      {
+                        entity_kind: "person",
+                        entity_name: "Alice",
+                        statement: "Alice is the PM.",
+                        scope: "current-work-context",
+                        scope_state: "partial",
+                        entity_resolution: "new_entity"
+                      }
+                    ]
+                  })
+                }
+              }
+            ]
+          }),
+          text: async () => ""
+        })
+      })
+    });
+    const tx = transactions.parseTransactionMarkdown(await readVaultFile(openAiRoot, result.transaction_path));
+
+    assert.equal(result.provider_name, "openai");
+    assert.equal(proposedWrites(tx).some((write) => write.path === "memory/people/alice.md"), true);
+    assert.match(await readVaultFile(openAiRoot, result.event_path), /Alice is the PM/);
+    await expectMissing(openAiRoot, "memory/people/alice.md");
+  } finally {
+    await rm(openAiRoot, { recursive: true, force: true });
+  }
+
   const followupRoot = await makeTempVault();
 
   try {

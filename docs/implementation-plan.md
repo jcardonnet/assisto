@@ -17,11 +17,11 @@ AGENTS.md
 → CLI
 → eval harness
 → Pi extension
-→ optional GPT extraction
+→ optional OpenAI-compatible extraction
 → optional search/indexes later
 ```
 
-The dangerous part of the project is not calling GPT-5.5. The dangerous part is letting any agent mutate durable work memory without provenance, scope, staging, validation, and rollback.
+The dangerous part of the project is not calling a model. The dangerous part is letting any agent mutate durable work memory without provenance, scope, staging, validation, and rollback.
 
 ## v2 implementation track
 
@@ -805,15 +805,17 @@ Tests:
 
 ---
 
-## Phase 7 — Optional GPT extraction
+## Phase 7 — Optional OpenAI-compatible extraction
 
 ### Goal
 
-Allow GPT-5.5 to propose candidate claims without becoming the authority.
+Allow an env-configured OpenAI-compatible provider to propose candidate claims without becoming the authority.
 
 ### Rule
 
 LLM output is candidate data only. Deterministic validators and staging policies remain authoritative.
+
+The live provider requires `OPENAI_API_KEY` and `ASSISTO_OPENAI_MODEL`; no model default is hard-coded. `ASSISTO_OPENAI_BASE_URL` may point at an OpenAI-compatible endpoint.
 
 ### Codex prompt
 
@@ -833,6 +835,8 @@ Add tests with mocked LLM outputs:
 - unscoped system claim is staged
 - ambiguous entity is staged
 - generated explanation is not persisted without explicit save
+- missing OpenAI environment returns staged review/fallback output
+- malformed OpenAI responses are never persisted as canonical claims
 ```
 
 ### Success criteria

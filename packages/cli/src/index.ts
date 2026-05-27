@@ -29,7 +29,12 @@ import {
   type ValidationDocument,
   type ValidationResult
 } from "@assisto/core";
-import { ingestWithExtractionProvider, LlmExtractionProvider } from "../../core/src/extraction";
+import {
+  createOpenAiExtractionProvider,
+  ingestWithExtractionProvider,
+  LlmExtractionProvider,
+  type ExtractionProvider
+} from "../../core/src/extraction";
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
 import { retrieveContextForAnswer } from "../../core/src/retrieval";
@@ -240,7 +245,10 @@ async function commandIngest(root: string, args: string[], io: CliIo): Promise<n
 
     try {
       const result = await ingestWithExtractionProvider(tempRoot, note, {
-        provider: providerName === "llm-stub" ? new LlmExtractionProvider() : undefined
+        provider: extractionProviderFromName(providerName, {
+          allowLlmStub: true,
+          command: "wm ingest"
+        })
       });
       const transaction = await readMarkdownPage(tempRoot, result.transaction_path);
       io.stdout(`Dry run. No changes written to ${root}.\n`);
@@ -255,7 +263,10 @@ async function commandIngest(root: string, args: string[], io: CliIo): Promise<n
   }
 
   const result = await ingestWithExtractionProvider(root, note, {
-    provider: providerName === "llm-stub" ? new LlmExtractionProvider() : undefined
+    provider: extractionProviderFromName(providerName, {
+      allowLlmStub: true,
+      command: "wm ingest"
+    })
   });
   io.stdout(`Event: ${result.event_id} (${result.event_path})\n`);
   io.stdout(
@@ -657,16 +668,32 @@ function positionalCaptureArgs(args: string[]): string[] {
   return values;
 }
 
-function captureProvider(name: string): LlmExtractionProvider | undefined {
+function captureProvider(name: string): ExtractionProvider | undefined {
+  return extractionProviderFromName(name, {
+    allowLlmStub: false,
+    command: "wm capture"
+  });
+}
+
+function extractionProviderFromName(
+  name: string,
+  options: { allowLlmStub: boolean; command: string }
+): ExtractionProvider | undefined {
   if (name === "rule") {
     return undefined;
   }
 
   if (name === "openai") {
+    return createOpenAiExtractionProvider();
+  }
+
+  if (options.allowLlmStub && name === "llm-stub") {
     return new LlmExtractionProvider();
   }
 
-  throw new Error("Capture provider must be rule or openai.");
+  throw new Error(
+    `${options.command} provider must be ${options.allowLlmStub ? "rule, llm-stub, or openai" : "rule or openai"}.`
+  );
 }
 
 function parsePort(value: string): number {
@@ -742,7 +769,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx show <id>",
       "  wm [--root <path>] tx apply <id>",
       "  wm [--root <path>] tx reject <id> --reason <text>",
-      '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub] "<note>"',
+      '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",

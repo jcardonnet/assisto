@@ -83,6 +83,29 @@ export interface LlmExtractionClient {
   extract(input: ExtractionProviderInput): Promise<unknown>;
 }
 
+export interface OpenAiExtractionProviderOptions {
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  fetch?: OpenAiFetch;
+}
+
+export type OpenAiFetch = (
+  url: string,
+  init: {
+    method: "POST";
+    headers: Record<string, string>;
+    body: string;
+  }
+) => Promise<OpenAiFetchResponse>;
+
+export interface OpenAiFetchResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+  text: () => Promise<string>;
+}
+
 export interface ExtractionRunOptions extends IngestNoteOptions {
   provider?: ExtractionProvider;
 }
@@ -116,9 +139,7 @@ export class RuleBasedExtractionProvider implements ExtractionProvider {
 }
 
 export class LlmExtractionProvider implements ExtractionProvider {
-  readonly name = "llm";
-
-  constructor(private readonly client?: LlmExtractionClient) {}
+  constructor(private readonly client?: LlmExtractionClient, readonly name = "llm") {}
 
   async extract(input: ExtractionProviderInput): Promise<ExtractionProviderOutput> {
     if (!this.client) {
@@ -135,6 +156,106 @@ export class LlmExtractionProvider implements ExtractionProvider {
       };
     }
   }
+}
+
+export class OpenAiExtractionProvider implements ExtractionProvider {
+  readonly name = "openai";
+
+  constructor(private readonly options: OpenAiExtractionProviderOptions = {}) {}
+
+  async extract(input: ExtractionProviderInput): Promise<ExtractionProviderOutput> {
+    const apiKey = this.options.apiKey ?? process.env.OPENAI_API_KEY ?? "";
+    const model = this.options.model ?? process.env.ASSISTO_OPENAI_MODEL ?? "";
+    const fetchImpl = this.options.fetch ?? defaultOpenAiFetch();
+
+    if (!apiKey.trim()) {
+      return {
+        malformed_reason: "OpenAI extraction requires OPENAI_API_KEY."
+      };
+    }
+
+    if (!model.trim()) {
+      return {
+        malformed_reason: "OpenAI extraction requires ASSISTO_OPENAI_MODEL; no model default is hard-coded."
+      };
+    }
+
+    if (!fetchImpl) {
+      return {
+        malformed_reason: "OpenAI extraction requires a fetch implementation."
+      };
+    }
+
+    const baseUrl = (this.options.baseUrl ?? process.env.ASSISTO_OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
+      /\/+$/,
+      ""
+    );
+
+    try {
+      const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: openAiExtractionSystemPrompt()
+            },
+            {
+              role: "user",
+              content: JSON.stringify({
+                now: input.now,
+                note: input.note
+              })
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        return {
+          malformed_reason: `OpenAI extraction request failed: ${response.status} ${truncate(await response.text(), 240)}`
+        };
+      }
+
+      const payload = await response.json();
+      const content = openAiMessageContent(payload);
+
+      if (!content) {
+        return {
+          malformed_reason: "OpenAI extraction response must include choices[0].message.content."
+        };
+      }
+
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        return {
+          malformed_reason: "OpenAI extraction response content must be valid JSON."
+        };
+      }
+
+      return normalizeProviderOutput(parsed);
+    } catch (error) {
+      return {
+        malformed_reason: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+}
+
+export function createOpenAiExtractionProvider(
+  options: OpenAiExtractionProviderOptions = {}
+): OpenAiExtractionProvider {
+  return new OpenAiExtractionProvider(options);
 }
 
 export async function ingestWithExtractionProvider(
@@ -704,4 +825,43 @@ function optionalEnumString<T extends string>(value: unknown, allowed: readonly 
   }
 
   return value as T;
+}
+
+function openAiExtractionSystemPrompt(): string {
+  return [
+    "You propose candidate-only work-memory extraction JSON for Assisto.",
+    "The deterministic markdown pipeline is authoritative; do not claim that anything has been saved or applied.",
+    "Return only a JSON object with optional arrays: claims, followups, entities, explanations.",
+    "claims items: entity_kind person|topic|context|system, entity_name, statement, optional claim_kind fact|inference|assumption|preference|commitment, optional evidence_strength explicit|inferred|weak, optional scope string|null, optional scope_state complete|partial|unknown, optional entity_resolution exact_match|alias_match|near_match|new_entity|ambiguous.",
+    "followups items require action and followup_state candidate|committed; committed followups require explicit trigger text in the source note.",
+    "entities items require kind, name, resolution_state, and optional candidates.",
+    "Do not invent source facts, scopes, dates, aliases, or explanations.",
+    "Do not emit generated explanations unless the note explicitly asks to save one.",
+    "For ambiguous entities, near matches, unscoped system/project facts, contradictions, role changes, and reporting changes, mark candidate fields so deterministic review can stage them."
+  ].join("\n");
+}
+
+function openAiMessageContent(value: unknown): string | null {
+  if (!isRecord(value) || !Array.isArray(value.choices)) {
+    return null;
+  }
+
+  const firstChoice = value.choices[0];
+
+  if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
+    return null;
+  }
+
+  const content = firstChoice.message.content;
+  return typeof content === "string" && content.trim() ? content : null;
+}
+
+function defaultOpenAiFetch(): OpenAiFetch | undefined {
+  const fetchImpl = (globalThis as typeof globalThis & { fetch?: OpenAiFetch }).fetch;
+  return typeof fetchImpl === "function" ? fetchImpl.bind(globalThis) : undefined;
+}
+
+function truncate(value: string, maxLength: number): string {
+  const normalized = normalizeWhitespace(value);
+  return normalized.length <= maxLength ? normalized : `${normalized.slice(0, maxLength - 3)}...`;
 }

@@ -59,6 +59,7 @@ export async function runCliIntegrationTests() {
   assert.equal(helpExitCode, 0);
   assert.match(help.stdout, /wm - local markdown work-memory MVP/);
   assert.match(help.stdout, /capture/);
+  assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups>/);
 
@@ -138,6 +139,16 @@ export async function runCliIntegrationTests() {
       /transaction_state: pending/
     );
     await expectMissing(captureRoot, "memory/people/joe.md");
+
+    const openAiDryRun = await runWm(captureRoot, [
+      "capture",
+      "--dry-run",
+      "--provider",
+      "openai",
+      "Alice is the PM."
+    ]);
+    assert.match(openAiDryRun.stdout, /Provider: openai/);
+    assert.match(openAiDryRun.stdout, /Staged review proposals:/);
   } finally {
     await rm(captureRoot, { recursive: true, force: true });
   }

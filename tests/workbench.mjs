@@ -663,6 +663,21 @@ export async function runWorkbenchTests() {
     assert.equal(previewPayload.proposed_file_writes.some((write) => write.path === "memory/people/joe.md"), true);
     await assert.rejects(() => readVaultFile(root, previewPayload.event_path), /ENOENT/);
 
+    const openAiPreview = await workbench.handleWorkbenchRoute(root, {
+      method: "POST",
+      url: "/api/capture/preview",
+      body: JSON.stringify({
+        note: "Alice is the PM.",
+        provider: "openai"
+      })
+    });
+    assert.equal(openAiPreview.status, 200);
+    const openAiPreviewPayload = JSON.parse(openAiPreview.body);
+    assert.equal(openAiPreviewPayload.created, false);
+    assert.equal(openAiPreviewPayload.provider_name, "openai");
+    assert.equal(openAiPreviewPayload.staged_review_paths.length, 1);
+    await assert.rejects(() => readVaultFile(root, openAiPreviewPayload.event_path), /ENOENT/);
+
     const captureCreateRoot = await makeTempVault("assisto-workbench-capture-route-");
 
     try {
