@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   applyTransaction,
   buildSessionBrief,
+  buildTodayWorkbenchResult,
   checkMemoryHealth,
   createCaptureNote,
   createHealthReviewTransaction,
@@ -85,6 +86,10 @@ export async function main(
 
     if (command === "capture") {
       return await commandCapture(parsed.root, rest, io, cwd);
+    }
+
+    if (command === "today") {
+      return await commandToday(parsed.root, rest, io);
     }
 
     if (command === "review") {
@@ -320,6 +325,60 @@ async function commandCapture(root: string, args: string[], io: CliIo, cwd: stri
   }
 
   return result.validation.passed ? 0 : 1;
+}
+
+async function commandToday(root: string, args: string[], io: CliIo): Promise<number> {
+  const today = await buildTodayWorkbenchResult(root);
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(today, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Today (${today.generated_at})\n`);
+  io.stdout(`Daily review: ${today.daily_review_complete ? "complete" : "needs attention"}\n\n`);
+  io.stdout("Counts\n");
+
+  for (const [key, value] of Object.entries(today.counts)) {
+    io.stdout(`${key}\t${value}\n`);
+  }
+
+  if (today.pending_transactions.length > 0) {
+    io.stdout("\nPending transactions\n");
+    for (const transaction of today.pending_transactions) {
+      io.stdout(`- ${transaction.id} [${transaction.operations.join(",") || "NOOP"}] ${transaction.path}\n`);
+    }
+  }
+
+  if (today.staged_review_groups.length > 0) {
+    io.stdout("\nStaged reviews\n");
+    for (const group of today.staged_review_groups) {
+      io.stdout(`- ${group.review_reason}: ${group.count} (${group.suggested_action})\n`);
+    }
+  }
+
+  if (today.stale_noop_events.length > 0) {
+    io.stdout("\nStale NOOP Events\n");
+    for (const event of today.stale_noop_events) {
+      io.stdout(`- ${event.event_id}${event.transaction_id ? ` via ${event.transaction_id}` : ""}\n`);
+    }
+  }
+
+  if (today.open_followups.length > 0) {
+    io.stdout("\nOpen follow-ups\n");
+    for (const followup of today.open_followups) {
+      io.stdout(`- ${followup.id}${followup.due_at ? ` due ${followup.due_at}` : ""} ${followup.path}\n`);
+    }
+  }
+
+  if (today.suggested_manual_actions.length > 0) {
+    io.stdout("\nSuggested manual actions\n");
+    for (const action of today.suggested_manual_actions) {
+      io.stdout(`- ${action}\n`);
+    }
+  }
+
+  return 0;
 }
 
 async function commandReview(root: string, args: string[], io: CliIo): Promise<number> {
@@ -771,6 +830,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx reject <id> --reason <text>",
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
+      "  wm [--root <path>] today [--json]",
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",
       "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",

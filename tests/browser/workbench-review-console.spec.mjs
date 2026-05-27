@@ -53,6 +53,7 @@ affected_files:
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 
     await page.goto(server.url);
+    await page.getByRole("button", { name: "Review" }).click();
     await expect(page.getByRole("heading", { name: "Review summary" })).toBeVisible();
     await expect(page.locator('[data-review-reason="all"]')).toContainText("2 items");
 

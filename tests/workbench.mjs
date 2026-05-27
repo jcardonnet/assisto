@@ -575,14 +575,22 @@ export async function runWorkbenchTests() {
 
     const shell = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/" });
     assert.equal(shell.status, 200);
+    assert.match(shell.body, /data-tab="today"/);
+    assert.match(shell.body, /data-tab="today" aria-pressed="true"/);
     assert.match(shell.body, /data-tab="capture"/);
-    assert.match(shell.body, /data-tab="review"/);
+    assert.match(shell.body, /data-tab="review" aria-pressed="false"/);
     assert.match(shell.body, /data-tab="transactions"/);
     assert.match(shell.body, /data-tab="ask"/);
     assert.match(shell.body, /data-tab="health"/);
     assert.match(shell.body, /data-tab="briefs"/);
 
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
+    assert.match(client.body, /renderTodayHome/);
+    assert.match(client.body, /\/api\/today/);
+    assert.match(client.body, /daily review complete/);
+    assert.match(client.body, /today-stale-reprocess-form/);
+    assert.match(client.body, /today-transaction-apply-form/);
+    assert.match(client.body, /today-open-review/);
     assert.match(client.body, /capture-form/);
     assert.match(client.body, /\/api\/capture\/preview/);
     assert.match(client.body, /\/api\/capture/);
@@ -645,6 +653,19 @@ export async function runWorkbenchTests() {
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/snapshot" })).body
     );
     assert.equal(routeSnapshot.health, null);
+
+    const today = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/today" })).body);
+    assert.equal(today.daily_review_complete, false);
+    assert.equal(today.counts.pending_transactions, 4);
+    assert.equal(today.counts.staged_review_items, 1);
+    assert.equal(today.counts.stale_noop_events, 1);
+    assert.equal(today.counts.open_followups, 1);
+    assert.equal(today.pending_transactions.some((transaction) => transaction.id === "tx_2026_05_21_apply"), true);
+    assert.equal(today.staged_review_groups[0].review_reason, "unscoped_claim");
+    assert.equal(today.stale_noop_events[0].event_id, "ev_2026_05_21_003");
+    assert.equal(today.open_followups[0].id, "fu_ask_jeff");
+    assert.equal(today.recent_events[0].id, "ev_2026_05_21_003");
+    assert.match(today.suggested_manual_actions.join("\n"), /Review pending Transactions/);
 
     const capturePreview = await workbench.handleWorkbenchRoute(root, {
       method: "POST",
