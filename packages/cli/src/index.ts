@@ -258,7 +258,9 @@ async function commandIngest(root: string, args: string[], io: CliIo): Promise<n
     provider: providerName === "llm-stub" ? new LlmExtractionProvider() : undefined
   });
   io.stdout(`Event: ${result.event_id} (${result.event_path})\n`);
-  io.stdout(`Pending transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+  io.stdout(
+    `${dryRun ? "Proposed transaction" : "Pending transaction"}: ${result.transaction_id} (${result.transaction_path})\n`
+  );
 
   if (result.staged_review_paths.length > 0) {
     io.stdout(`Staged review proposals: ${result.staged_review_paths.join(", ")}\n`);
@@ -604,7 +606,7 @@ async function captureNoteFromArgs(args: string[], io: CliIo, cwd: string): Prom
   }
 
   if (fromStdin) {
-    return io.stdin ? io.stdin() : readFile("/dev/stdin", "utf8");
+    return io.stdin ? io.stdin() : readProcessStdin();
   }
 
   const note = positionalCaptureArgs(args).join(" ").trim();
@@ -616,6 +618,16 @@ async function captureNoteFromArgs(args: string[], io: CliIo, cwd: string): Prom
   }
 
   return note;
+}
+
+async function readProcessStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function positionalCaptureArgs(args: string[]): string[] {

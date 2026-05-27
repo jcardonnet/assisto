@@ -18,6 +18,7 @@ import { detectCandidateProposals } from "./detectors";
 import { resolveDetectorProposals } from "./entity-resolution";
 import { buildIngestExtractionDraft } from "./transaction-builder";
 import { mergeProposedWritesWithExistingPages } from "./page-upsert";
+import { contextsFromOption } from "./metadata";
 
 export interface IngestNoteOptions {
   now?: string;
@@ -288,11 +289,6 @@ function renderEventMarkdown(
   ].join("\n");
 
   return serializeMarkdownFile(frontmatter, body);
-}
-
-function contextsFromOption(context: string | undefined): string[] {
-  const value = context?.trim();
-  return value ? [value] : [];
 }
 
 function nextSequence(dateIdPart: string, index: VaultIndex): string {

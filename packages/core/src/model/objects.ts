@@ -24,7 +24,7 @@ export interface Event extends MemoryObjectBase {
   derived_claims: string[];
   participants?: PersonId[];
   topics?: TopicId[];
-  contexts?: Array<ContextId | string>;
+  contexts?: string[];
   context?: ContextId | null;
   transaction_ids?: TransactionId[];
 }

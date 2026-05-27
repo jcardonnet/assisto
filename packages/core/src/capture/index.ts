@@ -2,6 +2,7 @@ import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ingestWithExtractionProvider, type ExtractionProvider, type ExtractionRunResult } from "../extraction";
+import { contextsFromOption } from "../ingest/metadata";
 import { validateTransaction, type ParsedTransaction, type TransactionFileWrite } from "../transactions";
 import type { ValidationResult } from "../validators";
 
@@ -82,7 +83,7 @@ async function runCapture(
   return captureResultFromIngest(ingest, {
     created,
     validation,
-    contexts: contextList(options.context),
+    contexts: contextsFromOption(options.context),
     sourceLabel: options.source_label,
     rawNote
   });
@@ -147,9 +148,4 @@ async function copyMemoryTree(root: string, previewRoot: string): Promise<void> 
 
     throw error;
   }
-}
-
-function contextList(context: string | undefined): string[] {
-  const value = context?.trim();
-  return value ? [value] : [];
 }

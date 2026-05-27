@@ -27,6 +27,7 @@ import {
 } from "../ingest/candidates";
 import { resolveDetectorProposals } from "../ingest/entity-resolution";
 import { buildIngestExtractionDraft } from "../ingest/transaction-builder";
+import { contextsFromOption } from "../ingest/metadata";
 
 export type CandidateEntityResolution = "exact_match" | "alias_match" | "near_match" | "new_entity" | "ambiguous";
 
@@ -485,11 +486,6 @@ function createPipelineContext(
     captureContexts: contextsFromOption(options.context),
     sourceLabel: options.source_label
   };
-}
-
-function contextsFromOption(context: string | undefined): string[] {
-  const value = context?.trim();
-  return value ? [value] : [];
 }
 
 function withOperations(writes: Array<{ path: string; content: string }>): ProposedWrite[] {
