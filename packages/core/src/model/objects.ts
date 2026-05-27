@@ -19,10 +19,12 @@ export interface Event extends MemoryObjectBase {
   observed_at?: IsoDateTime | IsoDate | null;
   source_type: string;
   source_actor?: string;
+  source_label?: string;
   raw_text: string;
   derived_claims: string[];
   participants?: PersonId[];
   topics?: TopicId[];
+  contexts?: Array<ContextId | string>;
   context?: ContextId | null;
   transaction_ids?: TransactionId[];
 }

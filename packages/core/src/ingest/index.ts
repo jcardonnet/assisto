@@ -23,6 +23,9 @@ export interface IngestNoteOptions {
   now?: string;
   observed_at?: string | null;
   source_actor?: string;
+  source_label?: string;
+  context?: string;
+  raw_note?: string;
   apply?: boolean;
 }
 
@@ -63,12 +66,15 @@ export async function ingestNote(
   const context: IngestPipelineContext = {
     root,
     note: normalizedNote,
+    rawNote: options.raw_note ?? note,
     now,
     observedAt,
     eventId,
     eventPath,
     eventLinkPath: stripMemoryPrefix(eventPath).replace(/\.md$/i, ""),
-    transactionId
+    transactionId,
+    captureContexts: contextsFromOption(options.context),
+    sourceLabel: options.source_label
   };
 
   const proposals = detectCandidateProposals(context);
@@ -149,6 +155,7 @@ export async function reprocessEvent(
   const context: IngestPipelineContext = {
     root,
     note: normalizedNote,
+    rawNote: rawText,
     now,
     observedAt,
     eventId: found.id,
@@ -257,16 +264,21 @@ function renderEventMarkdown(
     source_actor: input.sourceActor,
     participants: input.participants,
     topics: input.topics,
-    contexts: [],
+    contexts: context.captureContexts ?? [],
     derived_claims: input.derivedClaimIds,
     transactions: [context.transactionId]
   };
+
+  if (context.sourceLabel) {
+    frontmatter.source_label = context.sourceLabel;
+  }
+
   const body = [
     `# Event ${context.eventId}`,
     "",
     "## Raw text",
     "",
-    context.note,
+    context.rawNote,
     "",
     "## Candidate extraction",
     "",
@@ -276,6 +288,11 @@ function renderEventMarkdown(
   ].join("\n");
 
   return serializeMarkdownFile(frontmatter, body);
+}
+
+function contextsFromOption(context: string | undefined): string[] {
+  const value = context?.trim();
+  return value ? [value] : [];
 }
 
 function nextSequence(dateIdPart: string, index: VaultIndex): string {

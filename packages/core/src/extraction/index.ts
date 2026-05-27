@@ -154,9 +154,10 @@ export async function ingestWithExtractionProvider(
   }
 
   const now = options.now ?? defaultNow;
+  const rawNote = note;
   const normalizedNote = normalizeWhitespace(note);
   const index = await loadIndexOrEmpty(root);
-  const context = createPipelineContext(root, normalizedNote, now, index, options);
+  const context = createPipelineContext(root, normalizedNote, now, index, { ...options, raw_note: rawNote });
   const providerOutput = await provider.extract({ note: context.note, now });
   const providerCandidates = providerOutputToCandidates(context, providerOutput);
   const resolved = resolveDetectorProposals(providerCandidates.proposals, index);
@@ -431,16 +432,21 @@ function renderEventMarkdown(
     source_actor: input.sourceActor,
     participants: input.participants,
     topics: input.topics,
-    contexts: [],
+    contexts: context.captureContexts ?? [],
     derived_claims: input.derivedClaimIds,
     transactions: [context.transactionId]
   };
+
+  if (context.sourceLabel) {
+    frontmatter.source_label = context.sourceLabel;
+  }
+
   const body = [
     `# Event ${context.eventId}`,
     "",
     "## Raw text",
     "",
-    context.note,
+    context.rawNote,
     "",
     "## Candidate extraction",
     "",
@@ -469,13 +475,21 @@ function createPipelineContext(
   return {
     root,
     note,
+    rawNote: options.raw_note ?? note,
     now,
     observedAt: options.observed_at ?? inferObservedAt(note, datePart),
     eventId,
     eventPath,
     eventLinkPath: stripMemoryPrefix(eventPath).replace(/\.md$/i, ""),
-    transactionId
+    transactionId,
+    captureContexts: contextsFromOption(options.context),
+    sourceLabel: options.source_label
   };
+}
+
+function contextsFromOption(context: string | undefined): string[] {
+  const value = context?.trim();
+  return value ? [value] : [];
 }
 
 function withOperations(writes: Array<{ path: string; content: string }>): ProposedWrite[] {

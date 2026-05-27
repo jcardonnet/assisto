@@ -575,6 +575,7 @@ export async function runWorkbenchTests() {
 
     const shell = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/" });
     assert.equal(shell.status, 200);
+    assert.match(shell.body, /data-tab="capture"/);
     assert.match(shell.body, /data-tab="review"/);
     assert.match(shell.body, /data-tab="transactions"/);
     assert.match(shell.body, /data-tab="ask"/);
@@ -582,6 +583,9 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /data-tab="briefs"/);
 
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
+    assert.match(client.body, /capture-form/);
+    assert.match(client.body, /\/api\/capture\/preview/);
+    assert.match(client.body, /\/api\/capture/);
     assert.match(client.body, /review-apply-form/);
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /reviewSummaryHtml/);
@@ -641,6 +645,47 @@ export async function runWorkbenchTests() {
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/snapshot" })).body
     );
     assert.equal(routeSnapshot.health, null);
+
+    const capturePreview = await workbench.handleWorkbenchRoute(root, {
+      method: "POST",
+      url: "/api/capture/preview",
+      body: JSON.stringify({
+        note: "Joe is the DBA. We use MySQL.",
+        observedAt: "2026-05-21",
+        sourceLabel: "workbench capture",
+        context: "ctx_inventory_project"
+      })
+    });
+    assert.equal(capturePreview.status, 200);
+    const previewPayload = JSON.parse(capturePreview.body);
+    assert.equal(previewPayload.created, false);
+    assert.equal(previewPayload.validation.passed, true);
+    assert.equal(previewPayload.proposed_file_writes.some((write) => write.path === "memory/people/joe.md"), true);
+    await assert.rejects(() => readVaultFile(root, previewPayload.event_path), /ENOENT/);
+
+    const captureCreateRoot = await makeTempVault("assisto-workbench-capture-route-");
+
+    try {
+      const captureCreate = await workbench.handleWorkbenchRoute(captureCreateRoot, {
+        method: "POST",
+        url: "/api/capture",
+        body: JSON.stringify({
+          note: "Joe is the DBA. We use MySQL.",
+          observedAt: "2026-05-21",
+          sourceLabel: "workbench capture",
+          context: "ctx_inventory_project"
+        })
+      });
+      assert.equal(captureCreate.status, 200);
+      const createPayload = JSON.parse(captureCreate.body);
+      assert.equal(createPayload.created, true);
+      assert.equal(createPayload.validation.passed, true);
+      assert.match(await readVaultFile(captureCreateRoot, createPayload.event_path), /source_label: workbench capture/);
+      assert.match(await readVaultFile(captureCreateRoot, createPayload.transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(captureCreateRoot, "memory/people/joe.md"), /ENOENT/);
+    } finally {
+      await rm(captureCreateRoot, { recursive: true, force: true });
+    }
 
     const transactionDetail = JSON.parse(
       (

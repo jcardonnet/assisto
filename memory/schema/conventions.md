@@ -25,7 +25,9 @@ All ingestion follows this loop:
 Raw input -> Event -> Candidate claims -> Transaction -> Validated mutation or staged review -> Current pages
 ```
 
-Ingestion logic may write Events and pending Transactions. It must not directly write canonical People, Contexts, Topics, FollowUps, or ReviewItems outside proposed transaction writes.
+Ingestion and capture logic may write Events and pending Transactions. It must not directly write canonical People, Contexts, Topics, FollowUps, or ReviewItems outside proposed transaction writes.
+
+Events may include optional capture metadata such as `source_label` and `contexts`. These fields describe the human capture surface and must not by themselves promote unscoped claims into active truth.
 
 ## Claims
 
