@@ -62,6 +62,62 @@ test("entities tab shows evidence and stages stewardship transactions without ca
   }
 });
 
+test("entities tab renders context operating pages and stages context notes", async ({ page }) => {
+  const root = await makeTempVault("assisto-browser-context-operating-");
+  const workbench = await loadTsModule("packages/workbench/src/index.ts");
+  let server;
+
+  try {
+    await writeWorkbenchFixture(root);
+    const beforeContextPage = await readVaultFile(root, "memory/contexts/inventory-project.md");
+    const beforePendingTransactions = await pendingTransactionFiles(root);
+    const beforeEvents = await eventFiles(root);
+    server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
+
+    await page.goto(server.url);
+    await page.getByRole("button", { name: "People/Topics/Contexts" }).click();
+    await page.locator('[data-entity-kind="context"]').click();
+
+    const contextCard = page.locator("article.item").filter({ hasText: "ctx_inventory_project" }).first();
+    await expect(contextCard.getByRole("heading", { name: "Inventory Project" })).toBeVisible();
+    await contextCard.getByRole("button", { name: "Open detail" }).click();
+
+    const detailPanel = page.locator("#entity-detail");
+    await expect(detailPanel.getByRole("heading", { name: "Inventory Project" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Context operating page" })).toBeVisible();
+    await expect(detailPanel.locator("li").filter({ hasText: "clm_jeff_manager" }).first()).toBeVisible();
+    await expect(detailPanel.locator("li").filter({ hasText: "per_jeff · person" }).first()).toBeVisible();
+
+    const noteForm = detailPanel.locator(".entity-context-note-form");
+    await noteForm.getByLabel("Context note or correction").fill("Inventory Project uses PostgreSQL for reporting.");
+    await noteForm.getByLabel("Note type").selectOption("correction");
+    await noteForm.getByRole("button", { name: "Preview context note" }).click();
+
+    await expect(page.getByRole("heading", { name: "Preview only" })).toBeVisible();
+    await expect(page.locator("#entity-action-output .pill", { hasText: "stage context note" })).toBeVisible();
+    assert.deepEqual(await pendingTransactionFiles(root), beforePendingTransactions);
+    assert.deepEqual(await eventFiles(root), beforeEvents);
+    assert.equal(await readVaultFile(root, "memory/contexts/inventory-project.md"), beforeContextPage);
+
+    await noteForm.getByLabel("Context note or correction").fill("Inventory Project uses PostgreSQL for reporting.");
+    await noteForm.getByLabel("Note type").selectOption("correction");
+    await noteForm.getByRole("button", { name: "Stage context note" }).click();
+
+    await expect(page.getByRole("heading", { name: "Pending transaction created" })).toBeVisible();
+    await expect(page.locator("#entity-action-output .pill", { hasText: "stage context note" })).toBeVisible();
+    assert.notDeepEqual(await pendingTransactionFiles(root), beforePendingTransactions);
+    assert.notDeepEqual(await eventFiles(root), beforeEvents);
+    assert.equal(await readVaultFile(root, "memory/contexts/inventory-project.md"), beforeContextPage);
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 async function pendingTransactionFiles(root) {
   return (await readdir(path.join(root, "memory/transactions/pending"))).sort((left, right) => left.localeCompare(right));
+}
+
+async function eventFiles(root) {
+  return (await readdir(path.join(root, "memory/events/2026/2026-05"))).sort((left, right) => left.localeCompare(right));
 }

@@ -13,6 +13,7 @@ import {
   createHealthReviewTransaction,
   createImportNotes,
   createImportTriage,
+  createContextNoteTransaction,
   createEntityAliasTransaction,
   createEntityContextTransaction,
   createOpenAiExtractionProvider,
@@ -42,6 +43,7 @@ import {
   type CaptureCreateResult,
   type CapturePreviewResult,
   type ContextPackResult,
+  type ContextNoteResult,
   type DogfoodHomeResult,
   type ExtractionProvider,
   type EntityKind,
@@ -593,6 +595,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createEntityContextPreview(root, input, true));
     }
 
+    if (pathname === "/api/entities/context-note/preview") {
+      return jsonRoute(200, await createContextNotePreview(root, input, false));
+    }
+
+    if (pathname === "/api/entities/context-note/stage") {
+      return jsonRoute(200, await createContextNotePreview(root, input, true));
+    }
+
     if (pathname === "/api/health/stage-review/preview") {
       return jsonRoute(200, await createHealthStagePreview(root, input, false));
     }
@@ -835,6 +845,24 @@ async function createEntityContextPreview(
   const result = created
     ? await createEntityContextTransaction(root, id, context, { note })
     : await withPreviewRoot(root, (previewRoot) => createEntityContextTransaction(previewRoot, id, context, { note }));
+
+  return {
+    ...result,
+    created
+  };
+}
+
+async function createContextNotePreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<ContextNoteResult> {
+  const id = requiredStringInput(input, "id", "entityId", "entity_id");
+  const note = requiredStringInput(input, "note");
+  const noteType = optionalContextNoteType(input);
+  const result = created
+    ? await createContextNoteTransaction(root, id, note, { noteType })
+    : await withPreviewRoot(root, (previewRoot) => createContextNoteTransaction(previewRoot, id, note, { noteType }));
 
   return {
     ...result,
@@ -1568,6 +1596,16 @@ function optionalPositiveIntegerInput(input: Record<string, unknown>, key: strin
   }
 
   return parsed;
+}
+
+function optionalContextNoteType(input: Record<string, unknown>): "note" | "correction" {
+  const value = optionalStringInput(input, "noteType", "note_type") ?? "note";
+
+  if (value === "note" || value === "correction") {
+    return value;
+  }
+
+  throw new Error("Context note type must be note or correction.");
 }
 
 function reviewActionStateInput(input: Record<string, unknown>): ReviewActionState {
@@ -3077,8 +3115,10 @@ function entityDetailHtml(detail) {
           <button type="submit" name="mode" value="stage">Stage context</button>
         </div>
       </form>
+      \${entityContextNoteFormHtml(detail)}
     </div>
   </article>
+  \${contextOperatingPageHtml(detail.contextOperatingPage)}
   \${entityClaimSectionHtml("Active claims", detail.activeClaims)}
   \${entityClaimSectionHtml("Staged claims", detail.stagedClaims)}
   \${entityClaimSectionHtml("Superseded claims", detail.supersededClaims)}
@@ -3086,6 +3126,21 @@ function entityDetailHtml(detail) {
   \${entityListSectionHtml("Linked ReviewItems", detail.linkedReviewItems, (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
   \${entityListSectionHtml("Linked FollowUps", detail.linkedFollowUps, (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
   \${entityListSectionHtml("Related pages", detail.relatedPages, (item) => \`\${item.id ?? item.path} · \${item.type ?? "page"} · \${item.path}\`)}\`;
+}
+
+function entityContextNoteFormHtml(detail) {
+  if (detail.type !== "context") {
+    return "";
+  }
+
+  return \`<form class="entity-context-note-form" data-entity-id="\${escapeHtml(detail.id ?? detail.path)}">
+    <label class="field"><span>Context note or correction</span><textarea name="note" rows="4" placeholder="Capture a project note, correction, decision, or open question"></textarea></label>
+    <label class="field"><span>Note type</span><select name="noteType"><option value="note">note</option><option value="correction">correction</option></select></label>
+    <div class="action-row">
+      <button type="submit" name="mode" value="preview" class="secondary">Preview context note</button>
+      <button type="submit" name="mode" value="stage">Stage context note</button>
+    </div>
+  </form>\`;
 }
 
 function entityBriefLinksHtml(detail) {
@@ -3100,6 +3155,33 @@ function entityBriefLinksHtml(detail) {
     \${briefLinkButtonHtml(detail.type, detail.type, target, label)}
     \${briefLinkButtonHtml("recent", detail.type, target, "Recent changes")}
   </div>\`;
+}
+
+function contextOperatingPageHtml(page) {
+  if (!page) {
+    return "";
+  }
+
+  return \`<article class="item">
+    <h3>Context operating page</h3>
+    \${detailListHtml([
+      ["Context", page.context_id ?? page.context_path],
+      ["Active facts", String(page.activeFacts?.length ?? 0)],
+      ["Open follow-ups", String(page.openFollowUps?.length ?? 0)]
+    ])}
+    \${plainListHtml("Suggested manual actions", page.suggestedActions ?? [])}
+  </article>
+  \${entityClaimSectionHtml("Context active facts", page.activeFacts ?? [])}
+  \${entityClaimSectionHtml("Decisions as claims", page.decisionClaims ?? [])}
+  \${entityClaimSectionHtml("Open questions as claims", page.openQuestionClaims ?? [])}
+  \${entityClaimSectionHtml("Owner claims", page.ownerClaims ?? [])}
+  \${entityClaimSectionHtml("Role claims", page.roleClaims ?? [])}
+  \${entityClaimSectionHtml("Recent context changes", page.recentChanges ?? [])}
+  \${entityListSectionHtml("Related people", page.relatedPeople ?? [], (item) => \`\${item.id ?? item.path} · \${item.type ?? "page"} · \${item.path}\`)}
+  \${entityListSectionHtml("Related topics", page.relatedTopics ?? [], (item) => \`\${item.id ?? item.path} · \${item.type ?? "page"} · \${item.path}\`)}
+  \${entityListSectionHtml("Open FollowUps", page.openFollowUps ?? [], (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
+  \${entityListSectionHtml("Context ReviewItems", page.linkedReviewItems ?? [], (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
+  \${entityListSectionHtml("Context source Events", page.evidenceEvents ?? [], (event) => \`\${event.id} · \${event.path}\`)}\`;
 }
 
 function entityClaimSectionHtml(label, claims) {
@@ -3157,6 +3239,18 @@ function bindEntityActions() {
       await runEntityAction(preview ? "/api/entities/context/preview" : "/api/entities/context/stage", {
         id: form.dataset.entityId,
         context: form.elements.context.value
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".entity-context-note-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const preview = event.submitter?.value === "preview";
+      await runEntityAction(preview ? "/api/entities/context-note/preview" : "/api/entities/context-note/stage", {
+        id: form.dataset.entityId,
+        note: form.elements.note.value,
+        noteType: form.elements.noteType.value
       });
     });
   }

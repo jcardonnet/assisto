@@ -17,6 +17,7 @@ import {
 } from "../transactions";
 import { loadVaultIndex, type VaultIndex, type VaultIndexEntry } from "../vault";
 import { slugify, stripMemoryPrefix } from "../ingest/candidates";
+import { createCaptureNote, type CaptureNoteOptions, type CaptureResult } from "../capture";
 
 export type EntityKind = "person" | "topic" | "context";
 
@@ -42,6 +43,10 @@ export interface EntityClaimSummary {
   scope: string | null;
   scope_state: string;
   evidence: string[];
+  recorded_at: string | null;
+  observed_at: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
 }
 
 export interface EntityEvidenceEvent {
@@ -77,6 +82,23 @@ export interface EntityRelatedPage {
   name: string;
 }
 
+export interface ContextOperatingPage {
+  context_id?: string;
+  context_path: string;
+  activeFacts: EntityClaimSummary[];
+  decisionClaims: EntityClaimSummary[];
+  openQuestionClaims: EntityClaimSummary[];
+  ownerClaims: EntityClaimSummary[];
+  roleClaims: EntityClaimSummary[];
+  recentChanges: EntityClaimSummary[];
+  relatedPeople: EntityRelatedPage[];
+  relatedTopics: EntityRelatedPage[];
+  openFollowUps: EntityLinkedFollowUp[];
+  linkedReviewItems: EntityLinkedReviewItem[];
+  evidenceEvents: EntityEvidenceEvent[];
+  suggestedActions: string[];
+}
+
 export interface EntityDetailResult extends EntitySummary {
   source_events: string[];
   related: string[];
@@ -87,6 +109,7 @@ export interface EntityDetailResult extends EntitySummary {
   linkedReviewItems: EntityLinkedReviewItem[];
   linkedFollowUps: EntityLinkedFollowUp[];
   relatedPages: EntityRelatedPage[];
+  contextOperatingPage?: ContextOperatingPage;
   warnings: string[];
 }
 
@@ -110,6 +133,19 @@ export interface EntityStewardshipPreview {
   proposed_file_writes: TransactionFileWrite[];
   transaction: ParsedTransaction;
 }
+
+export type ContextNoteType = "note" | "correction";
+
+export interface ContextNoteOptions extends CaptureNoteOptions {
+  noteType?: ContextNoteType;
+}
+
+export type ContextNoteResult = Omit<CaptureResult, "action"> & {
+  action: "stage_context_note";
+  context_id?: string;
+  context_path: string;
+  note_type: ContextNoteType;
+};
 
 interface LoadedEntityPage {
   path: string;
@@ -162,11 +198,14 @@ export async function getEntityDetail(root: string, idOrPath: string): Promise<E
   const supersededClaims = claimsByState(page, "superseded");
   const reviewItems = await linkedReviewItems(root, page);
   const followUps = await linkedFollowUps(root, page);
+  const contextOperatingPage = type === "context" ? await buildContextOperatingPage(root, index, page, reviewItems, followUps) : undefined;
   const eventIds = new Set([
     ...sourceEvents,
     ...activeClaims.flatMap((claim) => claim.evidence),
     ...stagedClaims.flatMap((claim) => claim.evidence),
     ...supersededClaims.flatMap((claim) => claim.evidence),
+    ...(contextOperatingPage?.activeFacts.flatMap((claim) => claim.evidence) ?? []),
+    ...(contextOperatingPage?.recentChanges.flatMap((claim) => claim.evidence) ?? []),
     ...reviewItems.flatMap((item) => item.source_events),
     ...followUps.flatMap((item) => item.source_events)
   ]);
@@ -182,6 +221,7 @@ export async function getEntityDetail(root: string, idOrPath: string): Promise<E
     linkedReviewItems: reviewItems,
     linkedFollowUps: followUps,
     relatedPages: relatedPages(index, related),
+    contextOperatingPage,
     warnings: ["Entity detail is derived from markdown; no canonical memory files were written."]
   };
 }
@@ -253,6 +293,38 @@ export async function createEntityContextTransaction(
       : `Stage unresolved Context review for ${entitySummary(page).name}.`,
     risk: context && context.path !== page.path ? "low" : "medium"
   });
+}
+
+export async function createContextNoteTransaction(
+  root: string,
+  idOrPath: string,
+  note: string,
+  options: ContextNoteOptions = {}
+): Promise<ContextNoteResult> {
+  const index = await loadIndexOrEmpty(root);
+  const page = await loadResolvedEntity(root, index, idOrPath);
+
+  if (stringValue(page.frontmatter.type) !== "context") {
+    throw new Error("Context note actions require a Context entity.");
+  }
+
+  const noteType = normalizeContextNoteType(options.noteType);
+  const contextId = stringValue(page.frontmatter.id);
+  const contextRef = contextId ?? page.path;
+  const sourceLabel = options.source_label ?? `context_${noteType}:${contextRef}`;
+  const capture = await createCaptureNote(root, note, {
+    ...options,
+    context: contextRef,
+    source_label: sourceLabel
+  });
+
+  return {
+    ...capture,
+    action: "stage_context_note",
+    context_id: contextId,
+    context_path: page.path,
+    note_type: noteType
+  };
 }
 
 async function writeStewardshipTransaction(
@@ -408,16 +480,130 @@ function entitySummary(page: LoadedEntityPage): EntitySummary {
 function claimsByState(page: LoadedEntityPage, state: string): EntityClaimSummary[] {
   return page.claims
     .filter((claim) => claim.fields.claim_state === state)
-    .map((claim) => ({
-      page_path: page.path,
-      claim_id: stringValue(claim.fields.claim_id) ?? "unknown",
-      statement: stringValue(claim.fields.statement) ?? "",
-      claim_kind: stringValue(claim.fields.claim_kind) ?? "fact",
-      claim_state: stringValue(claim.fields.claim_state) ?? "active",
-      scope: nullableStringValue(claim.fields.scope),
-      scope_state: stringValue(claim.fields.scope_state) ?? "unknown",
-      evidence: stringArrayValue(claim.fields.evidence)
-    }));
+    .map((claim) => claimSummary(page, claim));
+}
+
+function claimSummary(page: LoadedEntityPage, claim: ParsedClaimBlockRecord): EntityClaimSummary {
+  return {
+    page_path: page.path,
+    claim_id: stringValue(claim.fields.claim_id) ?? "unknown",
+    statement: stringValue(claim.fields.statement) ?? "",
+    claim_kind: stringValue(claim.fields.claim_kind) ?? "fact",
+    claim_state: stringValue(claim.fields.claim_state) ?? "active",
+    scope: nullableStringValue(claim.fields.scope),
+    scope_state: stringValue(claim.fields.scope_state) ?? "unknown",
+    evidence: stringArrayValue(claim.fields.evidence),
+    recorded_at: nullableStringValue(claim.fields.recorded_at),
+    observed_at: nullableStringValue(claim.fields.observed_at),
+    valid_from: nullableStringValue(claim.fields.valid_from),
+    valid_to: nullableStringValue(claim.fields.valid_to)
+  };
+}
+
+async function buildContextOperatingPage(
+  root: string,
+  index: VaultIndex,
+  contextPage: LoadedEntityPage,
+  reviewItems: EntityLinkedReviewItem[],
+  followUps: EntityLinkedFollowUp[]
+): Promise<ContextOperatingPage> {
+  const scopedClaims = await claimsScopedToContext(root, contextPage);
+  const activeFacts = scopedClaims.filter((claim) => claim.claim_state === "active");
+  const recentChanges = [...scopedClaims]
+    .sort((left, right) => claimTime(right).localeCompare(claimTime(left)) || left.claim_id.localeCompare(right.claim_id))
+    .slice(0, 8);
+  const related = uniqueSorted([
+    ...stringArrayValue(contextPage.frontmatter.related),
+    ...scopedClaims
+      .map((claim) => claim.page_path)
+      .filter((path) => path !== contextPage.path)
+  ]);
+  const pages = relatedPages(index, related);
+  const eventIds = new Set([
+    ...scopedClaims.flatMap((claim) => claim.evidence),
+    ...reviewItems.flatMap((item) => item.source_events),
+    ...followUps.flatMap((item) => item.source_events)
+  ]);
+
+  return {
+    context_id: stringValue(contextPage.frontmatter.id),
+    context_path: contextPage.path,
+    activeFacts,
+    decisionClaims: activeFacts.filter((claim) => matchesDecisionIntent(claim.statement)),
+    openQuestionClaims: activeFacts.filter((claim) => matchesOpenQuestionIntent(claim.statement)),
+    ownerClaims: activeFacts.filter((claim) => matchesOwnerIntent(claim.statement)),
+    roleClaims: activeFacts.filter((claim) => matchesRoleIntent(claim.statement)),
+    recentChanges,
+    relatedPeople: pages.filter((page) => page.type === "person"),
+    relatedTopics: pages.filter((page) => page.type === "topic"),
+    openFollowUps: followUps.filter((followup) => followup.followup_state === "open"),
+    linkedReviewItems: reviewItems,
+    evidenceEvents: await evidenceEvents(root, eventIds),
+    suggestedActions: [
+      "Review open questions before relying on the Context as complete.",
+      "Stage corrections through pending Transactions; do not edit Context pages directly."
+    ]
+  };
+}
+
+async function claimsScopedToContext(root: string, contextPage: LoadedEntityPage): Promise<EntityClaimSummary[]> {
+  const files = uniqueSorted([
+    ...(await listEntityFiles(root, "person")),
+    ...(await listEntityFiles(root, "topic")),
+    ...(await listEntityFiles(root, "context"))
+  ]);
+  const claims: EntityClaimSummary[] = [];
+
+  for (const file of files) {
+    let page: LoadedEntityPage;
+
+    try {
+      page = await loadEntityPage(root, file);
+    } catch {
+      continue;
+    }
+
+    for (const claim of page.claims) {
+      const summary = claimSummary(page, claim);
+
+      if (page.path === contextPage.path || scopeMatchesContext(summary.scope, contextPage)) {
+        claims.push(summary);
+      }
+    }
+  }
+
+  return claims.sort((left, right) => left.page_path.localeCompare(right.page_path) || left.claim_id.localeCompare(right.claim_id));
+}
+
+function scopeMatchesContext(scope: string | null, contextPage: LoadedEntityPage): boolean {
+  if (!scope) {
+    return false;
+  }
+
+  const contextId = stringValue(contextPage.frontmatter.id);
+  const allowed = new Set([contextPage.path, stripMemoryPrefix(contextPage.path), ...(contextId ? [contextId] : [])]);
+
+  return allowed.has(scope);
+}
+
+function claimTime(claim: EntityClaimSummary): string {
+  return claim.observed_at ?? claim.recorded_at ?? claim.valid_from ?? "";
+}
+
+function matchesDecisionIntent(statement: string): boolean {
+  return /\b(decision|decided|agreed|chose|chosen|selected|will keep|will use|standardized|standardised)\b/i.test(statement);
+}
+
+function matchesOpenQuestionIntent(statement: string): boolean {
+  return /\b(open question|unknown|unclear|need to confirm|needs to confirm|needs to understand|whether)\b/i.test(statement) || statement.includes("?");
+}
+
+function matchesOwnerIntent(statement: string): boolean {
+  return /\b(owner|owns|responsible|responsibility|dri|accountable)\b/i.test(statement);
+}
+
+function matchesRoleIntent(statement: string): boolean {
+  return /\b(role|manager|reports to|owner|owns|lead|cto|dba|responsible)\b/i.test(statement);
 }
 
 async function loadResolvedEntity(root: string, index: VaultIndex, idOrPath: string): Promise<LoadedEntityPage> {
@@ -708,6 +894,18 @@ function normalizeLabel(value: string, label: string): string {
   }
 
   return normalized;
+}
+
+function normalizeContextNoteType(value: ContextNoteType | undefined): ContextNoteType {
+  if (!value || value === "note") {
+    return "note";
+  }
+
+  if (value === "correction") {
+    return "correction";
+  }
+
+  throw new Error("Context note type must be note or correction.");
 }
 
 function stableHash(value: string): string {
