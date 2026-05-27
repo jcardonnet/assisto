@@ -274,10 +274,10 @@ pnpm eval:mvp
 pnpm eval:v2
 ```
 
-In this WSL2 shell, commands may need temp/cache environment variables if Corepack tries to use Windows paths:
+In this WSL2 shell, commands may need Linux temp variables if tools try to use Windows paths:
 
 ```bash
-env COREPACK_HOME=/tmp/corepack LOCALAPPDATA=/tmp XDG_CACHE_HOME=/tmp TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm <script>
+env TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm <script>
 ```
 
 The preferred local wrapper is:

@@ -231,7 +231,7 @@ For WSL/Codex local validation, prefer the environment-hardened wrapper:
 pnpm validate:local
 ```
 
-It runs the full suite with `TMPDIR=/tmp`, `COREPACK_HOME=/tmp/corepack`, and related temp/cache variables so Node, pnpm, and Playwright do not fall back to read-only Windows temp paths. To mirror the GitHub Actions order exactly, run:
+It runs the full suite with Linux temp variables (`TMPDIR=/tmp`, `TEMP=/tmp`, and `TMP=/tmp`) so Node and test vaults do not fall back to read-only Windows temp paths. To mirror the GitHub Actions order exactly, run:
 
 ```bash
 pnpm validate:ci-parity
