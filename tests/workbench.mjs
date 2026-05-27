@@ -539,6 +539,154 @@ summary_generated_from:
   );
 }
 
+async function writeReviewTurboFixture(root) {
+  await writeVaultFile(
+    root,
+    "memory/review/alias-ambiguous.md",
+    `---
+id: rev_alias_ambiguous
+type: review_item
+object_state: active
+review_state: staged
+review_reason: ambiguous_entity
+created_at: 2026-05-21T10:20:00-03:00
+source_events:
+  - ev_2026_05_21_001
+affected_files:
+  - people/jeff.md
+---
+
+# Review: Ambiguous Jeff
+
+## Staged claims
+
+- claim_id: clm_ambiguous_jeff_alias
+  statement: Jeff may be the same person as Jeffrey.
+  claim_kind: inference
+  claim_state: staged
+  evidence_strength: weak
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:20:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/review/jeff-role.md",
+    `---
+id: rev_jeff_role
+type: review_item
+object_state: active
+review_state: staged
+review_reason: role_change
+created_at: 2026-05-21T10:15:00-03:00
+source_events:
+  - ev_2026_05_21_001
+affected_files:
+  - people/jeff.md
+---
+
+# Review: Jeff role
+
+## Staged claims
+
+- claim_id: clm_jeff_role_change
+  statement: Jeff changed roles.
+  claim_kind: fact
+  claim_state: staged
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:15:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/review/other.md",
+    `---
+id: rev_other
+type: review_item
+object_state: active
+review_state: staged
+review_reason: manual_review
+created_at: 2026-05-21T10:35:00-03:00
+source_events:
+  - ev_2026_05_21_001
+affected_files:
+  - topics/manual.md
+---
+
+# Review: Manual check
+
+Human judgment is needed before choosing a memory action.
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/review/safe-apply.md",
+    `---
+id: rev_safe_apply
+type: review_item
+object_state: active
+review_state: staged
+review_reason: scoped_claim
+created_at: 2026-05-21T10:25:00-03:00
+source_events:
+  - ev_2026_05_21_002
+affected_files:
+  - topics/mysql.md
+---
+
+# Review: Safe apply
+
+## Staged claims
+
+- claim_id: clm_mysql_ready_to_apply
+  statement: MySQL is used for inventory work.
+  claim_kind: fact
+  claim_state: staged
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_002]
+  recorded_at: 2026-05-21T10:25:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/review/stale-noop.md",
+    `---
+id: rev_stale_noop
+type: review_item
+object_state: active
+review_state: staged
+review_reason: stale_noop_event
+created_at: 2026-05-21T10:30:00-03:00
+source_events:
+  - ev_2026_05_21_003
+affected_files:
+  - events/2026/2026-05/2026-05-21-003.md
+linked_transaction: tx_2026_05_21_002
+---
+
+# Review: Stale NOOP
+
+Reprocess the source Event with stage-only semantics.
+`
+  );
+}
+
 export async function runWorkbenchTests() {
   const workbench = await loadTsModule("packages/workbench/src/index.ts");
   const cliSource = await readFile("packages/cli/src/index.ts", "utf8");
@@ -618,6 +766,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /event-reprocess-form/);
     assert.match(client.body, /reviewSummaryHtml/);
     assert.match(client.body, /data-review-reason/);
+    assert.match(client.body, /\/api\/review\/turbo/);
+    assert.match(client.body, /renderReviewTurbo/);
+    assert.match(client.body, /data-review-lane/);
+    assert.match(client.body, /claim-diff-card/);
+    assert.match(client.body, /Review lanes/);
     assert.match(client.body, /Suggested action/);
     assert.match(client.body, /renderAnswerBasis/);
     assert.match(client.body, /renderAskResult/);
@@ -675,6 +828,53 @@ export async function runWorkbenchTests() {
         suggested_action: review.items[0].suggested_action
       }
     ]);
+
+    const reviewTurbo = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/review/turbo" })).body);
+    assert.equal(reviewTurbo.lanes.find((lane) => lane.lane_id === "needs_context").count, 1);
+    assert.equal(reviewTurbo.items[0].lane_id, "needs_context");
+    assert.equal(reviewTurbo.items[0].staged_claims[0].claim_id, "clm_mysql_used_unknown_scope");
+    assert.equal(reviewTurbo.items[0].staged_claims[0].scope_state, "unknown");
+    assert.equal(reviewTurbo.items[0].source_events.includes("ev_2026_05_21_002"), true);
+    assert.equal(reviewTurbo.items[0].affected_files.includes("topics/mysql.md"), true);
+
+    const turboRoot = await makeTempVault("assisto-workbench-review-turbo-");
+
+    try {
+      await writeWorkbenchFixture(turboRoot);
+      await writeReviewTurboFixture(turboRoot);
+
+      const turbo = JSON.parse((await workbench.handleWorkbenchRoute(turboRoot, { method: "GET", url: "/api/review/turbo" })).body);
+      const laneCounts = Object.fromEntries(turbo.lanes.map((lane) => [lane.lane_id, lane.count]));
+
+      assert.deepEqual(laneCounts, {
+        safe_apply: 1,
+        needs_context: 1,
+        identity_ambiguity: 1,
+        conflict_or_change: 1,
+        stale_noop: 1,
+        other: 1
+      });
+
+      assert.deepEqual(
+        turbo.lanes.find((lane) => lane.lane_id === "conflict_or_change").item_ids,
+        ["rev_jeff_role"]
+      );
+      assert.equal(turbo.items.find((item) => item.id === "rev_safe_apply").lane_id, "safe_apply");
+      assert.equal(turbo.items.find((item) => item.id === "rev_alias_ambiguous").lane_id, "identity_ambiguity");
+      assert.equal(turbo.items.find((item) => item.id === "rev_stale_noop").lane_id, "stale_noop");
+      assert.equal(turbo.items.find((item) => item.id === "rev_other").lane_id, "other");
+      assert.equal(
+        turbo.items.find((item) => item.id === "rev_jeff_role").staged_claims[0].statement,
+        "Jeff changed roles."
+      );
+      assert.match(turbo.items.find((item) => item.id === "rev_safe_apply").suggested_action, /Preview apply one item/);
+
+      const turboReadOnly = await workbench.handleWorkbenchRoute(turboRoot, { method: "POST", url: "/api/review/turbo" });
+      assert.equal(turboReadOnly.status, 405);
+      await assert.rejects(() => readVaultFile(turboRoot, "memory/topics/mysql.md"), /ENOENT/);
+    } finally {
+      await rm(turboRoot, { recursive: true, force: true });
+    }
 
     const routeSnapshot = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/snapshot" })).body

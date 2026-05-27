@@ -92,6 +92,45 @@ export interface WorkbenchReviewItem extends ReviewItemSummary {
   suggested_action: string;
 }
 
+export type WorkbenchReviewLaneId =
+  | "safe_apply"
+  | "needs_context"
+  | "identity_ambiguity"
+  | "conflict_or_change"
+  | "stale_noop"
+  | "other";
+
+export interface WorkbenchReviewTurbo {
+  generated_at: string;
+  lanes: WorkbenchReviewLane[];
+  items: WorkbenchReviewTurboItem[];
+}
+
+export interface WorkbenchReviewLane {
+  lane_id: WorkbenchReviewLaneId;
+  label: string;
+  count: number;
+  item_ids: string[];
+  suggested_action: string;
+}
+
+export interface WorkbenchReviewTurboItem extends WorkbenchReviewItem {
+  lane_id: WorkbenchReviewLaneId;
+  lane_label: string;
+  staged_claims: WorkbenchReviewStagedClaim[];
+}
+
+export interface WorkbenchReviewStagedClaim {
+  claim_id: string;
+  statement: string;
+  claim_kind?: string;
+  claim_state?: string;
+  evidence_strength?: string;
+  scope?: string | null;
+  scope_state?: string;
+  evidence: string[];
+}
+
 export interface WorkbenchTransactionList {
   items: WorkbenchTransactionSummary[];
 }
@@ -351,6 +390,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/review") {
     return jsonRoute(200, await collectReviewInbox(root));
+  }
+
+  if (requestUrl.pathname === "/api/review/turbo") {
+    return jsonRoute(200, await collectReviewTurbo(root));
   }
 
   if (requestUrl.pathname === "/api/transactions") {
@@ -914,18 +957,33 @@ async function collectReviewInbox(root: string): Promise<WorkbenchReviewInbox> {
   };
 }
 
+async function collectReviewTurbo(root: string): Promise<WorkbenchReviewTurbo> {
+  const summaries = await listReviewItems(root);
+  const items: WorkbenchReviewTurboItem[] = [];
+
+  for (const summary of summaries) {
+    const item = await enrichReviewTurboItem(root, summary);
+    items.push(item);
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    lanes: reviewTurboLanes(items),
+    items
+  };
+}
+
 async function enrichReviewItem(root: string, summary: ReviewItemSummary): Promise<WorkbenchReviewItem> {
   try {
     const detail = await showReviewItem(root, summary.id);
+    const stagedClaims = stagedClaimSummaries(detail.parsed.body);
 
     return {
       ...summary,
       source_events: stringArrayValue(detail.parsed.frontmatter.source_events),
       affected_files: stringArrayValue(detail.parsed.frontmatter.affected_files),
       linked_transaction: stringValue(detail.parsed.frontmatter.linked_transaction),
-      staged_claim_ids: parseClaimBlockRecords(detail.parsed.body)
-        .map((claim) => stringValue(claim.fields.claim_id))
-        .filter((claimId): claimId is string => Boolean(claimId)),
+      staged_claim_ids: stagedClaims.map((claim) => claim.claim_id),
       suggested_action: suggestedReviewAction(summary.review_reason)
     };
   } catch {
@@ -937,6 +995,42 @@ async function enrichReviewItem(root: string, summary: ReviewItemSummary): Promi
       suggested_action: suggestedReviewAction(summary.review_reason)
     };
   }
+}
+
+async function enrichReviewTurboItem(root: string, summary: ReviewItemSummary): Promise<WorkbenchReviewTurboItem> {
+  let base: WorkbenchReviewItem;
+  let stagedClaims: WorkbenchReviewStagedClaim[] = [];
+
+  try {
+    const detail = await showReviewItem(root, summary.id);
+    stagedClaims = stagedClaimSummaries(detail.parsed.body);
+    base = {
+      ...summary,
+      source_events: stringArrayValue(detail.parsed.frontmatter.source_events),
+      affected_files: stringArrayValue(detail.parsed.frontmatter.affected_files),
+      linked_transaction: stringValue(detail.parsed.frontmatter.linked_transaction),
+      staged_claim_ids: stagedClaims.map((claim) => claim.claim_id),
+      suggested_action: suggestedReviewAction(summary.review_reason)
+    };
+  } catch {
+    base = {
+      ...summary,
+      source_events: [],
+      affected_files: [],
+      staged_claim_ids: [],
+      suggested_action: suggestedReviewAction(summary.review_reason)
+    };
+  }
+
+  const lane = reviewTurboLaneFor(base, stagedClaims);
+
+  return {
+    ...base,
+    lane_id: lane.lane_id,
+    lane_label: lane.label,
+    staged_claims: stagedClaims,
+    suggested_action: lane.suggested_action
+  };
 }
 
 async function collectTransactions(root: string): Promise<WorkbenchTransactionList> {
@@ -1107,6 +1201,108 @@ function groupReviewReasons(items: WorkbenchReviewItem[]): WorkbenchReviewReason
   }
 
   return [...groups.values()].sort((left, right) => left.review_reason.localeCompare(right.review_reason));
+}
+
+const reviewLaneDefinitions: Array<Omit<WorkbenchReviewLane, "count" | "item_ids">> = [
+  {
+    lane_id: "safe_apply",
+    label: "Safe apply",
+    suggested_action: "Preview apply one item, then create the pending Transaction only if validation passes."
+  },
+  {
+    lane_id: "needs_context",
+    label: "Needs context",
+    suggested_action: "Select an existing Context or create a Context through review before applying."
+  },
+  {
+    lane_id: "identity_ambiguity",
+    label: "Identity ambiguity",
+    suggested_action: "Inspect matching entities; stage aliases or context only after human confirmation."
+  },
+  {
+    lane_id: "conflict_or_change",
+    label: "Conflict/change",
+    suggested_action: "Compare current and staged claims; supersede only when explicitly confirmed."
+  },
+  {
+    lane_id: "stale_noop",
+    label: "Stale NOOP",
+    suggested_action: "Reprocess the source Event with stage-only semantics."
+  },
+  {
+    lane_id: "other",
+    label: "Other",
+    suggested_action: "Inspect the ReviewItem, then apply staged, mark, or leave staged."
+  }
+];
+
+function reviewTurboLanes(items: WorkbenchReviewTurboItem[]): WorkbenchReviewLane[] {
+  return reviewLaneDefinitions.map((definition) => {
+    const laneItems = items.filter((item) => item.lane_id === definition.lane_id);
+
+    return {
+      ...definition,
+      count: laneItems.length,
+      item_ids: laneItems.map((item) => item.id)
+    };
+  });
+}
+
+function reviewTurboLaneFor(
+  item: WorkbenchReviewItem,
+  stagedClaims: WorkbenchReviewStagedClaim[]
+): Omit<WorkbenchReviewLane, "count" | "item_ids"> {
+  const reason = item.review_reason.toLowerCase();
+
+  if (reason === "stale_noop_event" || reason.includes("stale_noop")) {
+    return reviewLaneDefinition("stale_noop");
+  }
+
+  if (reason === "unscoped_claim" || stagedClaims.some((claim) => claim.scope_state === "unknown")) {
+    return reviewLaneDefinition("needs_context");
+  }
+
+  if (reason.includes("ambiguous") || reason.includes("near_match") || reason.includes("identity")) {
+    return reviewLaneDefinition("identity_ambiguity");
+  }
+
+  if (reason === "role_change" || reason === "reporting_change" || reason === "claim_id_conflict" || reason.includes("change") || reason.includes("conflict")) {
+    return reviewLaneDefinition("conflict_or_change");
+  }
+
+  if (
+    stagedClaims.length > 0 &&
+    stagedClaims.every((claim) => claim.claim_state === "staged" && claim.scope_state === "complete")
+  ) {
+    return reviewLaneDefinition("safe_apply");
+  }
+
+  return reviewLaneDefinition("other");
+}
+
+function reviewLaneDefinition(laneId: WorkbenchReviewLaneId): Omit<WorkbenchReviewLane, "count" | "item_ids"> {
+  const lane = reviewLaneDefinitions.find((definition) => definition.lane_id === laneId);
+
+  if (!lane) {
+    return reviewLaneDefinitions[reviewLaneDefinitions.length - 1]!;
+  }
+
+  return lane;
+}
+
+function stagedClaimSummaries(body: string): WorkbenchReviewStagedClaim[] {
+  return parseClaimBlockRecords(body)
+    .map((claim) => ({
+      claim_id: stringValue(claim.fields.claim_id) ?? `line_${claim.line}`,
+      statement: stringValue(claim.fields.statement) ?? "",
+      claim_kind: stringValue(claim.fields.claim_kind),
+      claim_state: stringValue(claim.fields.claim_state),
+      evidence_strength: stringValue(claim.fields.evidence_strength),
+      scope: stringValue(claim.fields.scope) ?? null,
+      scope_state: stringValue(claim.fields.scope_state),
+      evidence: stringArrayValue(claim.fields.evidence)
+    }))
+    .filter((claim) => claim.claim_state === "staged" || claim.claim_id);
 }
 
 function suggestedReviewAction(reviewReason: string): string {
@@ -1598,6 +1794,26 @@ textarea {
   padding-top: 12px;
 }
 
+.claim-diff-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.claim-diff-card {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.claim-diff-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .ask-result {
   display: grid;
   gap: 14px;
@@ -1851,6 +2067,8 @@ let health = null;
 let dogfoodHome = null;
 let activeTab = "today";
 let reviewReasonFilter = "all";
+let reviewLaneFilter = "all";
+let reviewTurbo = null;
 let transactionStateFilter = "pending";
 let transactionDetail = null;
 let briefTargets = { person: null, context: null };
@@ -1953,6 +2171,7 @@ async function runQuickCapture(path, body) {
       snapshot = await fetchJson("/api/snapshot");
       health = null;
       dogfoodHome = null;
+      reviewTurbo = null;
     }
     output.innerHTML = renderActionResult(result);
   } catch (error) {
@@ -2026,7 +2245,7 @@ function render() {
   }
 
   if (activeTab === "review") {
-    renderReview();
+    void renderReview();
     return;
   }
 
@@ -2353,6 +2572,7 @@ async function refreshTodayAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
   dogfoodHome = await fetchJson("/api/dogfood/home");
+  reviewTurbo = null;
 
   if (activeTab === "today") {
     renderDogfoodHome(dogfoodHome);
@@ -2641,6 +2861,7 @@ async function runEntityAction(path, body) {
       snapshot = await fetchJson("/api/snapshot");
       dogfoodHome = null;
       health = null;
+      reviewTurbo = null;
     }
     output.innerHTML = renderActionResult(result);
   } catch (error) {
@@ -2816,6 +3037,7 @@ async function runTransactionAction(path, body) {
     snapshot = await fetchJson("/api/snapshot");
     health = null;
     dogfoodHome = null;
+    reviewTurbo = null;
     transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(result.transaction_id)}\`).catch(() => null);
     renderTransactions();
     document.querySelector("#transaction-action-output").innerHTML = renderActionResult(result);
@@ -2824,15 +3046,30 @@ async function runTransactionAction(path, body) {
   }
 }
 
-function renderReview() {
-  const items = reviewReasonFilter === "all"
-    ? snapshot.review.items
-    : snapshot.review.items.filter((item) => item.review_reason === reviewReasonFilter);
+async function renderReview() {
+  if (!reviewTurbo) {
+    view.innerHTML = '<article class="item"><h2>Loading review lanes</h2><p class="meta">Reading staged ReviewItems.</p></article>';
+    reviewTurbo = await fetchJson("/api/review/turbo");
+
+    if (activeTab !== "review") {
+      return;
+    }
+  }
+
+  renderReviewTurbo(reviewTurbo);
+}
+
+function renderReviewTurbo(turbo) {
+  const items = turbo.items.filter((item) =>
+    (reviewReasonFilter === "all" || item.review_reason === reviewReasonFilter) &&
+    (reviewLaneFilter === "all" || item.lane_id === reviewLaneFilter)
+  );
   const cards = items.length
     ? items.map((item) => reviewCardHtml(item)).join("")
     : '<article class="item"><h2>Empty</h2><p class="meta">No matching memory objects.</p></article>';
 
-  view.innerHTML = \`\${reviewSummaryHtml(snapshot.review)}
+  view.innerHTML = \`\${reviewLaneSummaryHtml(turbo)}
+  \${reviewSummaryHtml(snapshot.review)}
   <article class="item">
     <h2>Event reprocess</h2>
     <form id="event-reprocess-form" class="action-row">
@@ -2845,6 +3082,27 @@ function renderReview() {
   <div id="action-output" class="action-output"></div>\`;
   bindReviewFilters();
   bindReviewActions();
+}
+
+function reviewLaneSummaryHtml(turbo) {
+  const total = turbo.items.length;
+  const laneButtons = turbo.lanes.map((lane) => \`<button type="button" class="reason-filter" data-review-lane="\${escapeHtml(lane.lane_id)}" aria-pressed="\${String(reviewLaneFilter === lane.lane_id)}">
+    <strong>\${escapeHtml(lane.label)}</strong>
+    <span>\${escapeHtml(String(lane.count))} item\${lane.count === 1 ? "" : "s"}</span>
+    <span>\${escapeHtml(lane.suggested_action)}</span>
+  </button>\`).join("");
+
+  return \`<section>
+    <h2>Review lanes</h2>
+    <div class="summary-strip">
+      <button type="button" class="reason-filter" data-review-lane="all" aria-pressed="\${String(reviewLaneFilter === "all")}">
+        <strong>All lanes</strong>
+        <span>\${escapeHtml(String(total))} item\${total === 1 ? "" : "s"}</span>
+        <span>Review one staged memory decision at a time.</span>
+      </button>
+      \${laneButtons}
+    </div>
+  </section>\`;
 }
 
 function reviewSummaryHtml(review) {
@@ -2870,10 +3128,17 @@ function reviewSummaryHtml(review) {
 }
 
 function bindReviewFilters() {
+  for (const button of document.querySelectorAll("[data-review-lane]")) {
+    button.addEventListener("click", () => {
+      reviewLaneFilter = button.dataset.reviewLane ?? "all";
+      renderReviewTurbo(reviewTurbo);
+    });
+  }
+
   for (const button of document.querySelectorAll("[data-review-reason]")) {
     button.addEventListener("click", () => {
       reviewReasonFilter = button.dataset.reviewReason ?? "all";
-      renderReview();
+      renderReviewTurbo(reviewTurbo);
     });
   }
 }
@@ -2891,8 +3156,9 @@ function reviewCardHtml(item) {
 
   return \`<article class="item">
     <h2>\${escapeHtml(item.id)}</h2>
-    <p class="pill">\${escapeHtml(item.review_reason)} · \${escapeHtml(item.review_state)}</p>
+    <p class="pill">\${escapeHtml(item.lane_label ? \`\${item.lane_label} · \` : "")}\${escapeHtml(item.review_reason)} · \${escapeHtml(item.review_state)}</p>
     \${detailListHtml(details)}
+    \${reviewClaimDiffCardsHtml(item.staged_claims ?? [])}
     <div class="action-stack">
       <form class="review-apply-form" data-review-id="\${escapeHtml(item.id)}">
         <div class="action-row">
@@ -2923,6 +3189,22 @@ function reviewCardHtml(item) {
       </form>
     </div>
   </article>\`;
+}
+
+function reviewClaimDiffCardsHtml(claims) {
+  if (!claims.length) {
+    return '<p class="meta">No staged claim block found. Mark, contest, archive, or inspect the source ReviewItem manually.</p>';
+  }
+
+  return \`<section class="claim-diff-list">
+    <h3>Staged claim summary</h3>
+    \${claims.map((claim) => \`<div class="claim-diff-card">
+      <p><strong>\${escapeHtml(claim.claim_id)}</strong></p>
+      <p>\${escapeHtml(claim.statement || "No statement text.")}</p>
+      <p class="meta">claim_kind: \${escapeHtml(claim.claim_kind ?? "unknown")} · claim_state: \${escapeHtml(claim.claim_state ?? "unknown")} · evidence_strength: \${escapeHtml(claim.evidence_strength ?? "unknown")}</p>
+      <p class="meta">scope: \${escapeHtml(claim.scope ?? "none")} · scope_state: \${escapeHtml(claim.scope_state ?? "unknown")} · evidence: \${escapeHtml(claim.evidence.join(", ") || "none")}</p>
+    </div>\`).join("")}
+  </section>\`;
 }
 
 function bindReviewActions() {
@@ -2987,6 +3269,7 @@ async function refreshAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
   dogfoodHome = null;
+  reviewTurbo = null;
 
   if (activeTab === "health") {
     health = await fetchJson("/api/health");
