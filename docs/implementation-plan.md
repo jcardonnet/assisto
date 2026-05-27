@@ -132,7 +132,8 @@ Current v5 scope:
 - Workbench-first capture with CLI parity;
 - optional OpenAI-compatible extraction as candidate-only input with deterministic validation;
 - Today Home for pending transactions, staged reviews, stale NOOP Events, follow-ups, recent activity, and health warnings;
-- curated Markdown/text backfill import that writes one Event plus one pending Transaction per unit and dedupes by optional Event `source_hash`.
+- curated Markdown/text backfill import that writes one Event plus one pending Transaction per unit and dedupes by optional Event `source_hash`;
+- People/Topics/Contexts explorer and stewardship actions that stage alias or Context metadata changes as pending Transactions, with ambiguous links surfaced as ReviewItems.
 
 Still deferred:
 

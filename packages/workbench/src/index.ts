@@ -10,10 +10,13 @@ import {
   createCaptureNote,
   createHealthReviewTransaction,
   createImportNotes,
+  createEntityAliasTransaction,
+  createEntityContextTransaction,
   createOpenAiExtractionProvider,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listSessionBriefTargets,
+  listEntities,
   listMarkdownFiles,
   listReviewItems,
   parseClaimBlockRecords,
@@ -23,6 +26,7 @@ import {
   rejectTransaction,
   reprocessEvent,
   showReviewItem,
+  getEntityDetail,
   transactionFilePaths,
   previewCaptureNote,
   previewImportNotes,
@@ -32,6 +36,8 @@ import {
   type CapturePreviewResult,
   type ContextPackResult,
   type ExtractionProvider,
+  type EntityKind,
+  type EntityStewardshipPreview,
   type FrontmatterValue,
   type IngestNoteResult,
   type ImportCreateResult,
@@ -371,6 +377,32 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await collectFollowups(root));
   }
 
+  if (requestUrl.pathname === "/api/entities") {
+    const kind = optionalEntityKind(requestUrl);
+
+    if (!kind) {
+      return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
+    }
+
+    return jsonRoute(200, { kind, items: await listEntities(root, kind) });
+  }
+
+  if (requestUrl.pathname === "/api/entities/detail") {
+    const target = optionalTarget(requestUrl);
+
+    if (!target) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    try {
+      return jsonRoute(200, await getEntityDetail(root, target));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = /^Entity not found:/.test(message) ? 404 : 400;
+      return jsonRoute(status, { error: message });
+    }
+  }
+
   if (requestUrl.pathname === "/api/health") {
     return jsonRoute(200, await checkMemoryHealth(root));
   }
@@ -456,6 +488,22 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/events/reprocess") {
       return jsonRoute(200, await createEventReprocessPreview(root, input, true));
+    }
+
+    if (pathname === "/api/entities/alias/preview") {
+      return jsonRoute(200, await createEntityAliasPreview(root, input, false));
+    }
+
+    if (pathname === "/api/entities/alias/stage") {
+      return jsonRoute(200, await createEntityAliasPreview(root, input, true));
+    }
+
+    if (pathname === "/api/entities/context/preview") {
+      return jsonRoute(200, await createEntityContextPreview(root, input, false));
+    }
+
+    if (pathname === "/api/entities/context/stage") {
+      return jsonRoute(200, await createEntityContextPreview(root, input, true));
     }
 
     if (pathname === "/api/health/stage-review/preview") {
@@ -598,6 +646,42 @@ async function createEventReprocessPreview(
     : await withPreviewRoot(root, (previewRoot) => reprocessEvent(previewRoot, eventId));
 
   return ingestTransactionPreview("reprocess_event", result, created);
+}
+
+async function createEntityAliasPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<EntityStewardshipPreview> {
+  const id = requiredStringInput(input, "id", "entityId", "entity_id");
+  const alias = requiredStringInput(input, "alias");
+  const note = optionalStringInput(input, "note");
+  const result = created
+    ? await createEntityAliasTransaction(root, id, alias, { note })
+    : await withPreviewRoot(root, (previewRoot) => createEntityAliasTransaction(previewRoot, id, alias, { note }));
+
+  return {
+    ...result,
+    created
+  };
+}
+
+async function createEntityContextPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<EntityStewardshipPreview> {
+  const id = requiredStringInput(input, "id", "entityId", "entity_id");
+  const context = requiredStringInput(input, "context");
+  const note = optionalStringInput(input, "note");
+  const result = created
+    ? await createEntityContextTransaction(root, id, context, { note })
+    : await withPreviewRoot(root, (previewRoot) => createEntityContextTransaction(previewRoot, id, context, { note }));
+
+  return {
+    ...result,
+    created
+  };
 }
 
 async function createHealthStagePreview(
@@ -1067,6 +1151,16 @@ function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
   return undefined;
 }
 
+function optionalEntityKind(requestUrl: URL): EntityKind | undefined {
+  const kind = requestUrl.searchParams.get("kind")?.trim();
+
+  if (kind === "person" || kind === "topic" || kind === "context") {
+    return kind;
+  }
+
+  return undefined;
+}
+
 function parseBriefTargetKind(requestUrl: URL): { kind: SessionBriefTargetKind; error?: never } | { kind?: never; error: string } {
   const kind = requestUrl.searchParams.get("kind")?.trim();
 
@@ -1215,6 +1309,7 @@ function workbenchHtml(): string {
         <button type="button" data-tab="today" aria-pressed="true">Today</button>
         <button type="button" data-tab="capture" aria-pressed="false">Capture</button>
         <button type="button" data-tab="import" aria-pressed="false">Import</button>
+        <button type="button" data-tab="entities" aria-pressed="false">People/Topics/Contexts</button>
         <button type="button" data-tab="review" aria-pressed="false">Review</button>
         <button type="button" data-tab="transactions" aria-pressed="false">Transactions</button>
         <button type="button" data-tab="ask" aria-pressed="false">Ask</button>
@@ -1633,6 +1728,9 @@ let reviewReasonFilter = "all";
 let transactionStateFilter = "pending";
 let transactionDetail = null;
 let briefTargets = { person: null, context: null };
+let entityKind = "person";
+let entityList = null;
+let entityDetail = null;
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -1694,6 +1792,11 @@ function render() {
 
   if (activeTab === "import") {
     renderImport();
+    return;
+  }
+
+  if (activeTab === "entities") {
+    void renderEntities();
     return;
   }
 
@@ -2127,6 +2230,160 @@ function renderImportResult(result) {
     ])}
   </article>
   <section><h2>Import units</h2><div class="grid">\${units || '<article class="item"><h3>Empty</h3><p class="meta">No import units.</p></article>'}</div></section>\`;
+}
+
+async function renderEntities() {
+  const requestedKind = entityKind;
+  view.innerHTML = '<article class="item"><h2>Loading entities</h2><p class="meta">Reading People, Topics, and Contexts.</p></article>';
+  const loadedEntities = await fetchJson(\`/api/entities?kind=\${encodeURIComponent(requestedKind)}\`);
+
+  if (activeTab !== "entities" || requestedKind !== entityKind) {
+    return;
+  }
+
+  entityList = loadedEntities;
+  renderEntityExplorer();
+}
+
+function renderEntityExplorer() {
+  const filters = ["person", "topic", "context"].map((kind) => \`<button type="button" class="reason-filter" data-entity-kind="\${kind}" aria-pressed="\${String(entityKind === kind)}">
+    <strong>\${kind === "person" ? "People" : kind === "topic" ? "Topics" : "Contexts"}</strong>
+    <span>Inspect evidence, reviews, follow-ups, and stage stewardship changes.</span>
+  </button>\`).join("");
+  const cards = (entityList?.items ?? []).map((item) => \`<article class="item">
+    <h3>\${escapeHtml(item.name)}</h3>
+    <p class="pill">\${escapeHtml(item.id ?? item.path)}</p>
+    \${detailListHtml([
+      ["Path", item.path],
+      ["Aliases", item.aliases.join(", ") || "none"],
+      ["Claims", \`active \${item.active_claims}, staged \${item.staged_claims}, superseded \${item.superseded_claims}\`]
+    ])}
+    <div class="action-row"><button type="button" class="secondary entity-detail-load" data-entity-id="\${escapeHtml(item.id ?? item.path)}">Open detail</button></div>
+  </article>\`).join("");
+
+  view.innerHTML = \`<section>
+    <h2>People, Topics, Contexts</h2>
+    <div class="summary-strip">\${filters}</div>
+  </section>
+  <section class="transaction-layout">
+    <div class="grid">\${cards || '<article class="item"><h2>Empty</h2><p class="meta">No matching entities.</p></article>'}</div>
+    <div id="entity-detail" class="detail-panel">\${entityDetail ? entityDetailHtml(entityDetail) : '<article class="item"><h2>Entity detail</h2><p class="meta">Select a Person, Topic, or Context to inspect claims and evidence.</p></article>'}</div>
+  </section>
+  <div id="entity-action-output" class="action-output"></div>\`;
+  bindEntityActions();
+}
+
+function entityDetailHtml(detail) {
+  return \`<article class="item">
+    <h2>\${escapeHtml(detail.name)}</h2>
+    <p class="pill">\${escapeHtml(detail.type)} · \${escapeHtml(detail.id ?? detail.path)}</p>
+    \${detailListHtml([
+      ["Path", detail.path],
+      ["Aliases", detail.aliases.join(", ") || "none"],
+      ["Source Events", detail.source_events.join(", ") || "none"],
+      ["Related", detail.related.join(", ") || "none"]
+    ])}
+    <div class="action-stack">
+      <form class="entity-alias-form" data-entity-id="\${escapeHtml(detail.id ?? detail.path)}">
+        <label class="field"><span>Alias</span><input name="alias" placeholder="New alias"></label>
+        <div class="action-row">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview alias</button>
+          <button type="submit" name="mode" value="stage">Stage alias</button>
+        </div>
+      </form>
+      <form class="entity-context-form" data-entity-id="\${escapeHtml(detail.id ?? detail.path)}">
+        <label class="field"><span>Context</span><input name="context" placeholder="Context id, path, name, or alias"></label>
+        <div class="action-row">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview context</button>
+          <button type="submit" name="mode" value="stage">Stage context</button>
+        </div>
+      </form>
+    </div>
+  </article>
+  \${entityClaimSectionHtml("Active claims", detail.activeClaims)}
+  \${entityClaimSectionHtml("Staged claims", detail.stagedClaims)}
+  \${entityClaimSectionHtml("Superseded claims", detail.supersededClaims)}
+  \${entityListSectionHtml("Evidence Events", detail.evidenceEvents, (event) => \`\${event.id} · \${event.path}\`)}
+  \${entityListSectionHtml("Linked ReviewItems", detail.linkedReviewItems, (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
+  \${entityListSectionHtml("Linked FollowUps", detail.linkedFollowUps, (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
+  \${entityListSectionHtml("Related pages", detail.relatedPages, (item) => \`\${item.id ?? item.path} · \${item.type ?? "page"} · \${item.path}\`)}\`;
+}
+
+function entityClaimSectionHtml(label, claims) {
+  return entityListSectionHtml(label, claims, (claim) => \`\${claim.claim_id}: \${claim.statement} [events: \${claim.evidence.join(", ") || "none"}]\`);
+}
+
+function entityListSectionHtml(label, items, renderItem) {
+  const body = items.length
+    ? \`<ul class="plain-list">\${items.map((item) => \`<li>\${escapeHtml(renderItem(item))}</li>\`).join("")}</ul>\`
+    : '<p class="meta">None.</p>';
+
+  return \`<article class="item"><h3>\${escapeHtml(label)}</h3>\${body}</article>\`;
+}
+
+function bindEntityActions() {
+  for (const button of document.querySelectorAll("[data-entity-kind]")) {
+    button.addEventListener("click", () => {
+      entityKind = button.dataset.entityKind;
+      entityList = null;
+      entityDetail = null;
+      void renderEntities();
+    });
+  }
+
+  for (const button of document.querySelectorAll(".entity-detail-load")) {
+    button.addEventListener("click", async () => {
+      const requestedId = button.dataset.entityId;
+      const requestedKind = entityKind;
+      const loadedDetail = await fetchJson(\`/api/entities/detail?id=\${encodeURIComponent(requestedId)}\`);
+
+      if (activeTab !== "entities" || requestedKind !== entityKind || requestedId !== button.dataset.entityId) {
+        return;
+      }
+
+      entityDetail = loadedDetail;
+      renderEntityExplorer();
+    });
+  }
+
+  for (const form of document.querySelectorAll(".entity-alias-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const preview = event.submitter?.value === "preview";
+      await runEntityAction(preview ? "/api/entities/alias/preview" : "/api/entities/alias/stage", {
+        id: form.dataset.entityId,
+        alias: form.elements.alias.value
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".entity-context-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const preview = event.submitter?.value === "preview";
+      await runEntityAction(preview ? "/api/entities/context/preview" : "/api/entities/context/stage", {
+        id: form.dataset.entityId,
+        context: form.elements.context.value
+      });
+    });
+  }
+}
+
+async function runEntityAction(path, body) {
+  const output = document.querySelector("#entity-action-output");
+  output.innerHTML = "<pre>Running</pre>";
+
+  try {
+    const result = await postJson(path, body);
+    if (result.created) {
+      snapshot = await fetchJson("/api/snapshot");
+      today = null;
+      health = null;
+    }
+    output.innerHTML = renderActionResult(result);
+  } catch (error) {
+    output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+  }
 }
 
 function renderTransactions() {
