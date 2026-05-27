@@ -37,6 +37,8 @@ export interface LoadEventsOptions {
 
 export interface ContextPackResult {
   query: string;
+  queryIntent: RetrievalQueryIntent;
+  plannedLookups: RetrievalPlannedLookup[];
   targets: RetrievalTarget[];
   pages: LoadedRetrievalPage[];
   reviewItems: LoadedRetrievalPage[];
@@ -52,10 +54,54 @@ export interface ContextPackResult {
   linkedFollowUps: PackedLinkedItem[];
   evidenceEvents: PackedEvidenceEvent[];
   missingInformation: PackedMissingInformation[];
+  suggestedNextQuestions: string[];
+  manualActions: RetrievalManualAction[];
   warnings: string[];
 }
 
 export type AnswerBasisResult = ContextPackResult;
+
+export type RetrievalQueryIntentKind =
+  | "person_facts"
+  | "manager_reporting"
+  | "role_ownership"
+  | "project_context"
+  | "source_evidence"
+  | "follow_up"
+  | "review_risk"
+  | "recent_changes"
+  | "general"
+  | "no_match";
+
+export interface RetrievalQueryIntent {
+  primary: RetrievalQueryIntentKind;
+  intents: RetrievalQueryIntentKind[];
+  matched_terms: string[];
+  summary: string;
+}
+
+export interface RetrievalPlannedLookup {
+  kind:
+    | "named_targets"
+    | "relation_claims"
+    | "source_events"
+    | "linked_review_items"
+    | "linked_followups"
+    | "recent_events"
+    | "no_match_probe";
+  reason: string;
+  terms: string[];
+  result_state: "found" | "not_found" | "skipped";
+  result_count: number;
+  target_paths: string[];
+}
+
+export interface RetrievalManualAction {
+  action: "capture_note" | "inspect_entity" | "review_item" | "open_followups" | "open_today" | "run_health_check";
+  label: string;
+  reason: string;
+  target?: string;
+}
 
 export interface PackedPageSummary {
   path: string;
@@ -146,6 +192,7 @@ const stopWords = new Set([
 ]);
 
 const temporalTerms = new Set(["today", "yesterday", "recent", "recently", "latest", "current", "when"]);
+const recentChangeTerms = new Set(["change", "changed", "changes", "recent", "recently", "latest", "today", "history"]);
 const highImpactTerms = new Set([
   "role",
   "owner",
@@ -158,7 +205,10 @@ const highImpactTerms = new Set([
   "reports"
 ]);
 const evidenceTerms = new Set(["event", "events", "evidence", "source", "sources", "support", "supports", "cites"]);
-const reviewLookupTerms = new Set(["review", "reviews", "reviewed", "followup", "followups", "follow-up", "follow-ups", "open"]);
+const followUpLookupTerms = new Set(["followup", "followups", "follow-up", "follow-ups", "open"]);
+const reviewRiskLookupTerms = new Set(["review", "reviews", "reviewed", "risk", "risks", "staged", "contested", "uncertain"]);
+const reviewLookupTerms = new Set([...followUpLookupTerms, ...reviewRiskLookupTerms]);
+const projectContextTerms = new Set(["project", "context", "system", "service", "team", "client", "environment", "status"]);
 const relationIntentTerms = new Set([
   "manager",
   "manages",
@@ -180,21 +230,32 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     ...identifyNamedTargets(query, vaultIndex),
     ...(await identifyRelationTargets(root, query, vaultIndex))
   ]).sort(sortTargets);
+  const queryIntent = planRetrievalQuery(query, targets);
   const pages = await loadExactPages(root, targets);
   const reviewItems = await loadLinkedReviewAndFollowupItems(root, pages, { query });
-  const events = await loadLatestRelevantEvents(root, pages, { query });
+  const events = await loadEventsForIntent(root, pages, queryIntent, { query });
   const matchedPages = summarizeMatchedPages(pages, targets);
   const activeClaims = collectPackedClaims(pages, "active");
   const uncertainClaims = collectPackedClaims(pages, "uncertain");
   const linkedItems = summarizeLinkedItems(reviewItems, query);
   const linkedReviewItems = linkedItems.filter((item) => item.type === "review_item");
   const linkedFollowUps = linkedItems.filter((item) => item.type === "followup");
-  const evidenceEvents = summarizeEvidenceEvents(events);
+  const evidenceEvents = summarizeEvidenceEvents(
+    events,
+    queryIntent.primary === "recent_changes" && pages.length === 0
+      ? "recent Event loaded for recent-changes intent"
+      : "cited by retrieved claim evidence"
+  );
   const warnings = retrievalWarnings(query, pages, uncertainClaims, events);
   const supportingClaims = activeClaims;
   const answerCandidates = buildAnswerCandidates(supportingClaims);
   const missingInformation = summarizeMissingInformation(query, pages, supportingClaims, events);
+  const plannedLookups = buildPlannedLookups(query, queryIntent, targets, pages, reviewItems, events);
+  const manualActions = buildManualActions(queryIntent, matchedPages, linkedReviewItems, linkedFollowUps, uncertainClaims, missingInformation, evidenceEvents);
+  const suggestedNextQuestions = buildSuggestedNextQuestions(queryIntent, matchedPages, answerCandidates, linkedReviewItems, linkedFollowUps, missingInformation);
   const contextPack = packContextForAnswer(query, pages, reviewItems, events, {
+    queryIntent,
+    plannedLookups,
     targets,
     matchedPages,
     answerCandidates,
@@ -206,11 +267,15 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     linkedFollowUps,
     evidenceEvents,
     missingInformation,
+    suggestedNextQuestions,
+    manualActions,
     warnings
   });
 
   return {
     query,
+    queryIntent,
+    plannedLookups,
     targets,
     pages,
     reviewItems,
@@ -226,12 +291,130 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     linkedFollowUps,
     evidenceEvents,
     missingInformation,
+    suggestedNextQuestions,
+    manualActions,
     warnings
   };
 }
 
 export async function retrieveAnswerBasis(root: string, query: string): Promise<AnswerBasisResult> {
   return retrieveContextForAnswer(root, query);
+}
+
+export function planRetrievalQuery(query: string, targets: RetrievalTarget[] = []): RetrievalQueryIntent {
+  const terms = queryTerms(query);
+  const intents = new Set<RetrievalQueryIntentKind>();
+  const matchedTerms = new Set<string>();
+
+  for (const target of targets) {
+    if (target.kind === "person") {
+      intents.add("person_facts");
+    }
+
+    if (target.kind === "context") {
+      intents.add("project_context");
+    }
+  }
+
+  if (terms.some((term) => evidenceTerms.has(term))) {
+    intents.add("source_evidence");
+    addMatchingTerms(matchedTerms, terms, evidenceTerms);
+  }
+
+  if (relationTermsInQuery(query).some((term) => term === "manager" || term === "report" || term === "reports" || term === "reporting" || term === "manages")) {
+    intents.add("manager_reporting");
+    addMatchingTerms(matchedTerms, terms, relationIntentTerms);
+  }
+
+  if (relationTermsInQuery(query).some((term) => term === "owner" || term === "owns" || term === "owned" || term === "role" || term === "title" || term === "cto" || term === "dba")) {
+    intents.add("role_ownership");
+    addMatchingTerms(matchedTerms, terms, relationIntentTerms);
+  }
+
+  if (terms.some((term) => followUpLookupTerms.has(term))) {
+    intents.add("follow_up");
+    addMatchingTerms(matchedTerms, terms, followUpLookupTerms);
+  }
+
+  if (terms.some((term) => reviewRiskLookupTerms.has(term))) {
+    intents.add("review_risk");
+    addMatchingTerms(matchedTerms, terms, reviewRiskLookupTerms);
+  }
+
+  if (terms.some((term) => recentChangeTerms.has(term))) {
+    intents.add("recent_changes");
+    addMatchingTerms(matchedTerms, terms, recentChangeTerms);
+  }
+
+  if (terms.some((term) => projectContextTerms.has(term)) || targets.some((target) => target.kind === "context")) {
+    intents.add("project_context");
+    addMatchingTerms(matchedTerms, terms, projectContextTerms);
+  }
+
+  if (intents.size === 0) {
+    intents.add(targets.length === 0 ? "general" : targets.some((target) => target.kind === "person") ? "person_facts" : "project_context");
+  }
+
+  const orderedIntents = orderIntentKinds([...intents]);
+  const primary = orderedIntents[0] ?? "general";
+
+  return {
+    primary,
+    intents: orderedIntents,
+    matched_terms: [...matchedTerms].sort(),
+    summary: intentSummary(primary, orderedIntents)
+  };
+}
+
+function addMatchingTerms(target: Set<string>, terms: string[], lookup: Set<string>): void {
+  for (const term of terms) {
+    if (lookup.has(term)) {
+      target.add(term);
+    }
+  }
+}
+
+function orderIntentKinds(intents: RetrievalQueryIntentKind[]): RetrievalQueryIntentKind[] {
+  const priority: RetrievalQueryIntentKind[] = [
+    "source_evidence",
+    "review_risk",
+    "follow_up",
+    "manager_reporting",
+    "role_ownership",
+    "recent_changes",
+    "project_context",
+    "person_facts",
+    "general",
+    "no_match"
+  ];
+  const set = new Set(intents);
+
+  return priority.filter((intent) => set.has(intent));
+}
+
+function intentSummary(primary: RetrievalQueryIntentKind, intents: RetrievalQueryIntentKind[]): string {
+  switch (primary) {
+    case "source_evidence":
+      return "Find claims and cited Event evidence that support a specific memory question.";
+    case "review_risk":
+      return "Surface staged or contested ReviewItems and related uncertain memory.";
+    case "follow_up":
+      return "Find open or candidate FollowUps linked to retrieved memory.";
+    case "manager_reporting":
+      return "Resolve manager and reports-to relationship claims from deterministic claim text.";
+    case "role_ownership":
+      return "Resolve role, title, owner, or ownership claims from deterministic claim text.";
+    case "recent_changes":
+      return "Load recent Events and any matched pages without treating generated summaries as memory.";
+    case "project_context":
+      return "Retrieve Context/project pages and their linked claims or actions.";
+    case "person_facts":
+      return "Retrieve Person facts and cited evidence.";
+    case "no_match":
+      return "No deterministic lookup matched the question.";
+    default:
+      return `General deterministic lookup (${intents.join(", ")}).`;
+  }
 }
 
 export function identifyNamedTargets(query: string, vaultIndex: VaultIndex): RetrievalTarget[] {
@@ -412,12 +595,278 @@ export async function loadLatestRelevantEvents(
     .slice(0, options.limit ?? 3);
 }
 
+async function loadEventsForIntent(
+  root: string,
+  pages: LoadedRetrievalPage[],
+  queryIntent: RetrievalQueryIntent,
+  options: LoadEventsOptions = {}
+): Promise<LoadedRetrievalPage[]> {
+  if (pages.length === 0 && queryIntent.intents.includes("recent_changes")) {
+    return loadRecentEvents(root, options.limit ?? 5);
+  }
+
+  return loadLatestRelevantEvents(root, pages, options);
+}
+
+async function loadRecentEvents(root: string, limit: number): Promise<LoadedRetrievalPage[]> {
+  const eventFiles = await listFilesOrEmpty(root, "memory/events/**/*.md");
+  const events: LoadedRetrievalPage[] = [];
+
+  for (const file of eventFiles) {
+    try {
+      events.push(await loadPage(root, file));
+    } catch {
+      // Health checks surface malformed Events; retrieval skips unreadable derived context.
+    }
+  }
+
+  return events
+    .sort((left, right) => timestampForSort(right).localeCompare(timestampForSort(left)) || left.path.localeCompare(right.path))
+    .slice(0, limit);
+}
+
+function buildPlannedLookups(
+  query: string,
+  queryIntent: RetrievalQueryIntent,
+  targets: RetrievalTarget[],
+  pages: LoadedRetrievalPage[],
+  reviewItems: LoadedRetrievalPage[],
+  events: LoadedRetrievalPage[]
+): RetrievalPlannedLookup[] {
+  const terms = queryTerms(query);
+  const lookups: RetrievalPlannedLookup[] = [
+    lookupResult("named_targets", "Exact names, aliases, ids, and claim ids.", terms, targets.length, targets.map((target) => target.path))
+  ];
+
+  if (queryIntent.intents.some((intent) => intent === "manager_reporting" || intent === "role_ownership")) {
+    lookups.push(
+      lookupResult(
+        "relation_claims",
+        "Manager/reporting/role/ownership intent matched deterministic claim text and claim ids.",
+        relationTermsInQuery(query),
+        pages.length,
+        pages.map((page) => page.path)
+      )
+    );
+  }
+
+  if (queryIntent.intents.includes("source_evidence")) {
+    lookups.push(
+      lookupResult(
+        "source_events",
+        "Evidence/source intent loads cited Event pages only.",
+        terms.filter((term) => evidenceTerms.has(term)),
+        events.length,
+        events.map((event) => event.path)
+      )
+    );
+  }
+
+  if (queryIntent.intents.includes("review_risk")) {
+    const reviewItemsOnly = reviewItems.filter((item) => item.frontmatter.type === "review_item");
+    lookups.push(
+      lookupResult(
+        "linked_review_items",
+        "Review-risk intent scans linked or directly matched ReviewItems.",
+        terms.filter((term) => reviewRiskLookupTerms.has(term)),
+        reviewItemsOnly.length,
+        reviewItemsOnly.map((item) => item.path)
+      )
+    );
+  }
+
+  if (queryIntent.intents.includes("follow_up")) {
+    const followUpsOnly = reviewItems.filter((item) => item.frontmatter.type === "followup");
+    lookups.push(
+      lookupResult(
+        "linked_followups",
+        "Follow-up intent scans linked or directly matched FollowUps.",
+        terms.filter((term) => followUpLookupTerms.has(term)),
+        followUpsOnly.length,
+        followUpsOnly.map((item) => item.path)
+      )
+    );
+  }
+
+  if (queryIntent.intents.includes("recent_changes")) {
+    lookups.push(
+      lookupResult(
+        "recent_events",
+        "Recent-change intent loads recent cited Events, or recent Events directly when no page matched.",
+        terms.filter((term) => recentChangeTerms.has(term)),
+        events.length,
+        events.map((event) => event.path)
+      )
+    );
+  }
+
+  if (pages.length === 0 && events.length === 0) {
+    lookups.push(lookupResult("no_match_probe", "No deterministic page, claim, relation, or recent Event lookup matched.", terms, 0, []));
+  }
+
+  return lookups;
+}
+
+function lookupResult(
+  kind: RetrievalPlannedLookup["kind"],
+  reason: string,
+  terms: string[],
+  count: number,
+  targetPaths: string[]
+): RetrievalPlannedLookup {
+  return {
+    kind,
+    reason,
+    terms: uniqueSorted(terms),
+    result_state: count > 0 ? "found" : "not_found",
+    result_count: count,
+    target_paths: uniqueSorted(targetPaths)
+  };
+}
+
+function buildManualActions(
+  queryIntent: RetrievalQueryIntent,
+  matchedPages: PackedPageSummary[],
+  linkedReviewItems: PackedLinkedItem[],
+  linkedFollowUps: PackedLinkedItem[],
+  uncertainClaims: PackedClaim[],
+  missingInformation: PackedMissingInformation[],
+  evidenceEvents: PackedEvidenceEvent[]
+): RetrievalManualAction[] {
+  const actions: RetrievalManualAction[] = [];
+
+  if (matchedPages.length > 0) {
+    actions.push({
+      action: "inspect_entity",
+      label: "Inspect matched memory pages",
+      reason: "Matched pages may contain adjacent claims, aliases, and related links.",
+      target: matchedPages.map((page) => page.path).slice(0, 3).join(", ")
+    });
+  }
+
+  for (const item of linkedReviewItems.slice(0, 3)) {
+    actions.push({
+      action: "review_item",
+      label: `Review ${item.id ?? item.path}`,
+      reason: item.review_reason ?? "linked staged review",
+      target: item.path
+    });
+  }
+
+  for (const item of linkedFollowUps.slice(0, 3)) {
+    actions.push({
+      action: "open_followups",
+      label: `Check follow-up ${item.id ?? item.path}`,
+      reason: item.followup_state ?? "linked follow-up",
+      target: item.path
+    });
+  }
+
+  if (uncertainClaims.length > 0 && linkedReviewItems.length === 0) {
+    actions.push({
+      action: "review_item",
+      label: "Review uncertain claims",
+      reason: "Retrieved claims include staged, superseded, rejected, partial, unknown-scope, or contested memory.",
+      target: uncertainClaims.map((claim) => claim.claim_id).slice(0, 3).join(", ")
+    });
+  }
+
+  if (queryIntent.intents.includes("recent_changes") && evidenceEvents.length > 0) {
+    actions.push({
+      action: "open_today",
+      label: "Review recent Events in Today",
+      reason: "Recent-change intent loaded Event evidence rather than generating a durable summary."
+    });
+  }
+
+  if (missingInformation.some((item) => item.code === "no_match")) {
+    actions.push({
+      action: "capture_note",
+      label: "Capture a note if this should become memory",
+      reason: "No deterministic memory match was found."
+    });
+  }
+
+  if (missingInformation.some((item) => item.code === "missing_evidence_events")) {
+    actions.push({
+      action: "run_health_check",
+      label: "Run memory health for missing evidence",
+      reason: "The question asked for evidence, but no cited Event page was loaded."
+    });
+  }
+
+  return dedupeManualActions(actions);
+}
+
+function dedupeManualActions(actions: RetrievalManualAction[]): RetrievalManualAction[] {
+  const seen = new Set<string>();
+  const deduped: RetrievalManualAction[] = [];
+
+  for (const action of actions) {
+    const key = `${action.action}:${action.target ?? action.label}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(action);
+  }
+
+  return deduped;
+}
+
+function buildSuggestedNextQuestions(
+  queryIntent: RetrievalQueryIntent,
+  matchedPages: PackedPageSummary[],
+  answerCandidates: PackedAnswerCandidate[],
+  linkedReviewItems: PackedLinkedItem[],
+  linkedFollowUps: PackedLinkedItem[],
+  missingInformation: PackedMissingInformation[]
+): string[] {
+  const questions: string[] = [];
+  const firstClaim = answerCandidates[0]?.claim_id;
+  const firstPage = matchedPages[0]?.id ?? matchedPages[0]?.name;
+
+  if (firstClaim) {
+    questions.push(`What source Event supports ${firstClaim}?`);
+  }
+
+  if (queryIntent.intents.includes("manager_reporting")) {
+    questions.push("Who reports to this person?");
+  }
+
+  if (queryIntent.intents.includes("role_ownership")) {
+    questions.push(firstPage ? `What changed recently about ${firstPage}?` : "What changed recently about this role or ownership?");
+  }
+
+  if (queryIntent.intents.includes("project_context")) {
+    questions.push(firstPage ? `What open follow-ups are linked to ${firstPage}?` : "What open follow-ups are linked to this context?");
+  }
+
+  if (linkedReviewItems.length > 0) {
+    questions.push("What needs review before this memory can be applied?");
+  }
+
+  if (linkedFollowUps.length > 0) {
+    questions.push("Which source Event created this follow-up?");
+  }
+
+  if (missingInformation.some((item) => item.code === "no_match")) {
+    questions.push("What note should I capture about this?");
+  }
+
+  return uniqueSorted(questions).slice(0, 5);
+}
+
 export function packContextForAnswer(
   query: string,
   pages: LoadedRetrievalPage[],
   reviewItems: LoadedRetrievalPage[],
   events: LoadedRetrievalPage[],
   options: {
+    queryIntent?: RetrievalQueryIntent;
+    plannedLookups?: RetrievalPlannedLookup[];
     targets?: RetrievalTarget[];
     matchedPages?: PackedPageSummary[];
     answerCandidates?: PackedAnswerCandidate[];
@@ -429,10 +878,13 @@ export function packContextForAnswer(
     linkedFollowUps?: PackedLinkedItem[];
     evidenceEvents?: PackedEvidenceEvent[];
     missingInformation?: PackedMissingInformation[];
+    suggestedNextQuestions?: string[];
+    manualActions?: RetrievalManualAction[];
     warnings?: string[];
   } = {}
 ): string {
   const targetByPath = new Map((options.targets ?? []).map((target) => [target.path, target]));
+  const queryIntent = options.queryIntent ?? planRetrievalQuery(query, options.targets ?? []);
   const activeClaims = options.activeClaims ?? collectPackedClaims(pages, "active");
   const uncertainClaims = options.uncertainClaims ?? collectPackedClaims(pages, "uncertain");
   const supportingClaims = options.supportingClaims ?? activeClaims;
@@ -440,6 +892,29 @@ export function packContextForAnswer(
   const missingInformation =
     options.missingInformation ?? summarizeMissingInformation(query, pages, supportingClaims, events);
   const evidenceEvents = options.evidenceEvents ?? summarizeEvidenceEvents(events);
+  const plannedLookups =
+    options.plannedLookups ?? buildPlannedLookups(query, queryIntent, options.targets ?? [], pages, reviewItems, events);
+  const manualActions =
+    options.manualActions ??
+    buildManualActions(
+      queryIntent,
+      options.matchedPages ?? summarizeMatchedPages(pages, options.targets ?? []),
+      options.linkedReviewItems ?? [],
+      options.linkedFollowUps ?? [],
+      uncertainClaims,
+      missingInformation,
+      evidenceEvents
+    );
+  const suggestedNextQuestions =
+    options.suggestedNextQuestions ??
+    buildSuggestedNextQuestions(
+      queryIntent,
+      options.matchedPages ?? summarizeMatchedPages(pages, options.targets ?? []),
+      answerCandidates,
+      options.linkedReviewItems ?? [],
+      options.linkedFollowUps ?? [],
+      missingInformation
+    );
   const lines = [
     "# Context pack",
     "",
@@ -453,6 +928,14 @@ export function packContextForAnswer(
     "- Relation intents use deterministic claim text and claim IDs only.",
     "- GPT was not called.",
     "- Generated explanations were not saved.",
+    "",
+    "## Retrieval plan",
+    "",
+    `- query_intent: ${queryIntent.primary}`,
+    `- intent_summary: ${queryIntent.summary}`,
+    `- matched_intent_terms: ${queryIntent.matched_terms.join(", ") || "none"}`,
+    "",
+    ...renderPlannedLookups(plannedLookups),
     "",
     "## Exact pages",
     ""
@@ -471,6 +954,8 @@ export function packContextForAnswer(
   lines.push(`- active_claims: ${activeClaims.length}`);
   lines.push(`- uncertain_or_staged_claims: ${uncertainClaims.length}`);
   lines.push(`- evidence_events: ${evidenceEvents.length}`);
+  lines.push(`- manual_actions: ${manualActions.length}`);
+  lines.push(`- suggested_next_questions: ${suggestedNextQuestions.length}`);
   lines.push("");
 
   lines.push("## Answer basis", "");
@@ -533,6 +1018,30 @@ export function packContextForAnswer(
   } else {
     for (const warning of options.warnings ?? []) {
       lines.push(`- ${warning}`);
+    }
+
+    lines.push("");
+  }
+
+  lines.push("## Suggested manual actions", "");
+
+  if (manualActions.length === 0) {
+    lines.push("- None.", "");
+  } else {
+    for (const action of manualActions) {
+      lines.push(`- ${action.label} (${action.action}; target: ${action.target ?? "none"}; reason: ${action.reason})`);
+    }
+
+    lines.push("");
+  }
+
+  lines.push("## Suggested next questions", "");
+
+  if (suggestedNextQuestions.length === 0) {
+    lines.push("- None.", "");
+  } else {
+    for (const question of suggestedNextQuestions) {
+      lines.push(`- ${question}`);
     }
 
     lines.push("");
@@ -883,10 +1392,18 @@ function summarizeMissingInformation(
   const missing: PackedMissingInformation[] = [];
 
   if (pages.length === 0) {
-    missing.push({
-      code: "no_match",
-      message: "No deterministic memory page, claim ID, or relation claim matched the question."
-    });
+    if (events.length > 0) {
+      missing.push({
+        code: "no_active_claims",
+        message: "No current Person, Topic, or Context page matched, but relevant Event evidence was loaded."
+      });
+    } else {
+      missing.push({
+        code: "no_match",
+        message: "No deterministic memory page, claim ID, or relation claim matched the question."
+      });
+    }
+
     return missing;
   }
 
@@ -931,13 +1448,16 @@ function summarizeLinkedItem(page: LoadedRetrievalPage, query: string): PackedLi
   };
 }
 
-function summarizeEvidenceEvents(events: LoadedRetrievalPage[]): PackedEvidenceEvent[] {
+function summarizeEvidenceEvents(
+  events: LoadedRetrievalPage[],
+  whyIncluded = "cited by retrieved claim evidence"
+): PackedEvidenceEvent[] {
   return events.map((event) => ({
     path: event.path,
     id: stringValue(event.frontmatter.id),
     recorded_at: stringValue(event.frontmatter.recorded_at),
     observed_at: stringValue(event.frontmatter.observed_at),
-    why_included: "cited by retrieved claim evidence"
+    why_included: whyIncluded
   }));
 }
 
@@ -949,10 +1469,14 @@ function retrievalWarnings(
 ): string[] {
   const warnings: string[] = [];
 
-  if (pages.length === 0) {
+  if (pages.length === 0 && events.length === 0) {
     warnings.push(
       "No named people, topics, contexts, claim IDs, or deterministic relation claims matched; answer should say memory has no match."
     );
+  }
+
+  if (pages.length === 0 && events.length > 0) {
+    warnings.push("No current page matched; recent Event evidence was loaded for manual review.");
   }
 
   if (uncertainClaims.length > 0) {
@@ -964,6 +1488,17 @@ function retrievalWarnings(
   }
 
   return warnings;
+}
+
+function renderPlannedLookups(lookups: RetrievalPlannedLookup[]): string[] {
+  if (lookups.length === 0) {
+    return ["- planned_lookup: none"];
+  }
+
+  return lookups.map(
+    (lookup) =>
+      `- planned_lookup: ${lookup.kind}; result_state: ${lookup.result_state}; result_count: ${lookup.result_count}; terms: ${lookup.terms.join(", ") || "none"}; reason: ${lookup.reason}`
+  );
 }
 
 function renderPackedPage(page: LoadedRetrievalPage, target?: RetrievalTarget): string[] {
@@ -1169,6 +1704,10 @@ function normalizePath(path: string): string {
 
 function stringArrayValue(value: FrontmatterValue | undefined): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : [];
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right));
 }
 
 function stringValue(value: FrontmatterValue | undefined): string | undefined {

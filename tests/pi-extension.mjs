@@ -305,6 +305,8 @@ linked_transaction: tx_2026_05_20_010
 
     const context = await tools.get("wm_pack_context").run({ question: "What should I know about Joe?" });
     assert.match(context.contextPack, /memory\/people\/joe\.md/);
+    assert.equal(context.queryIntent.primary, "person_facts");
+    assert.equal(context.plannedLookups.some((lookup) => lookup.kind === "named_targets"), true);
     assert.equal(context.answerCandidates.some((candidate) => candidate.claim_id === "clm_joe_role_dba"), true);
 
     const lintResult = await tools.get("wm_lint").run();
@@ -317,6 +319,7 @@ linked_transaction: tx_2026_05_20_010
       .find((command) => command.name === "/wm-ask")
       .run("What should I know about Joe?");
     assert.match(commandResult.contextPack, /memory\/people\/joe\.md/);
+    assert.equal(commandResult.queryIntent.primary, "person_facts");
     assert.equal(commandResult.supportingClaims.some((claim) => claim.claim_id === "clm_joe_role_dba"), true);
 
     await writeVaultFile(root, "memory/review/oracle-scope.md", `---

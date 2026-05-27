@@ -2828,6 +2828,7 @@ function renderAskResult(result) {
     }))
   ];
   const sections = [
+    retrievalPlanHtml(result),
     askSectionHtml("Answer candidates", result.answerCandidates ?? [], answerCandidateHtml, "No active answer candidates found."),
     askSectionHtml("Supporting claims", result.supportingClaims ?? [], claimHtml, "No active supporting claims were loaded."),
     askSectionHtml("What memory cannot confirm", cannotConfirm, missingInfoHtml, "No missing information detected for loaded active claims."),
@@ -2835,12 +2836,47 @@ function renderAskResult(result) {
     askSectionHtml("Evidence Events", result.evidenceEvents ?? [], eventHtml, "No cited Event pages were loaded."),
     askSectionHtml("Linked ReviewItems", result.linkedReviewItems ?? [], linkedItemHtml, "No linked ReviewItems."),
     askSectionHtml("Linked FollowUps", result.linkedFollowUps ?? [], linkedItemHtml, "No linked FollowUps."),
+    askSectionHtml("Suggested manual actions", result.manualActions ?? [], manualActionHtml, "No suggested manual actions."),
+    askSectionHtml("Suggested next questions", (result.suggestedNextQuestions ?? []).map((question) => ({ question })), nextQuestionHtml, "No suggested next questions."),
     askSectionHtml("Matched pages", result.matchedPages ?? [], pageSummaryHtml, "No matched people, topics, or contexts."),
     contextPackHtml(result.contextPack)
   ];
 
   document.querySelector("#ask-result").innerHTML = sections.join("");
   bindCopyControls();
+}
+
+function retrievalPlanHtml(result) {
+  const intent = result.queryIntent ?? { primary: "general", intents: ["general"], matched_terms: [], summary: "General deterministic lookup." };
+  const lookups = result.plannedLookups ?? [];
+  const lookupBody = lookups.length
+    ? \`<div class="grid">\${lookups.map(plannedLookupHtml).join("")}</div>\`
+    : '<article class="item"><h3>Empty</h3><p class="meta">No planned lookups.</p></article>';
+
+  return \`<section data-ask-section="retrieval-plan">
+    <h2>Retrieval plan</h2>
+    <article class="item ask-card">
+      <h3>\${escapeHtml(intent.primary)}</h3>
+      <p>\${escapeHtml(intent.summary)}</p>
+      \${detailListHtml([
+        ["Intents", (intent.intents ?? []).join(", ") || "none"],
+        ["Matched terms", (intent.matched_terms ?? []).join(", ") || "none"]
+      ])}
+    </article>
+    \${lookupBody}
+  </section>\`;
+}
+
+function plannedLookupHtml(lookup) {
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(lookup.kind)}</h3>
+    <p class="pill">\${escapeHtml(lookup.result_state)} · \${escapeHtml(lookup.result_count ?? 0)} result\${lookup.result_count === 1 ? "" : "s"}</p>
+    \${detailListHtml([
+      ["Reason", lookup.reason],
+      ["Terms", (lookup.terms ?? []).join(", ") || "none"],
+      ["Targets", (lookup.target_paths ?? []).join(", ") || "none"]
+    ])}
+  </article>\`;
 }
 
 function askSectionHtml(label, items, renderItem, emptyText) {
@@ -2945,6 +2981,24 @@ function missingInfoHtml(item) {
     <h3>\${escapeHtml(item.title)}</h3>
     <p class="pill">\${escapeHtml(item.badge)}</p>
     <p>\${escapeHtml(item.body)}</p>
+  </article>\`;
+}
+
+function manualActionHtml(action) {
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(action.label)}</h3>
+    <p class="pill">\${escapeHtml(action.action)}</p>
+    \${detailListHtml([
+      ["Reason", action.reason],
+      ["Target", action.target ?? "none"]
+    ])}
+  </article>\`;
+}
+
+function nextQuestionHtml(item) {
+  return \`<article class="item ask-card">
+    <h3>Suggested question</h3>
+    <p>\${escapeHtml(item.question)}</p>
   </article>\`;
 }
 

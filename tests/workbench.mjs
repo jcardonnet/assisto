@@ -614,9 +614,13 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /Suggested action/);
     assert.match(client.body, /renderAnswerBasis/);
     assert.match(client.body, /renderAskResult/);
+    assert.match(client.body, /retrievalPlanHtml/);
     assert.match(client.body, /copy-derived-text/);
+    assert.match(client.body, /Retrieval plan/);
     assert.match(client.body, /Answer candidates/);
     assert.match(client.body, /Supporting claims/);
+    assert.match(client.body, /Suggested manual actions/);
+    assert.match(client.body, /Suggested next questions/);
     assert.match(client.body, /Linked ReviewItems/);
     assert.match(client.body, /Linked FollowUps/);
     assert.match(client.body, /Matched pages/);
@@ -908,11 +912,15 @@ export async function runWorkbenchTests() {
         .body
     );
     assert.equal(ask.query, "Who is my manager?");
+    assert.equal(ask.queryIntent.primary, "manager_reporting");
+    assert.equal(ask.plannedLookups.some((lookup) => lookup.kind === "relation_claims"), true);
     assert.equal(ask.activeClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
     assert.equal(ask.answerCandidates.some((candidate) => candidate.claim_id === "clm_jeff_manager"), true);
     assert.equal(ask.supportingClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
     assert.equal(ask.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
     assert.equal(ask.linkedFollowUps.some((item) => item.id === "fu_ask_jeff"), true);
+    assert.equal(ask.manualActions.some((action) => action.action === "open_followups"), true);
+    assert.equal(ask.suggestedNextQuestions.some((question) => /source Event supports/i.test(question)), true);
     assert.equal(ask.matchedPages.some((page) => page.path === "memory/people/jeff.md"), true);
     assert.match(ask.contextPack, /clm_jeff_manager/);
     assert.match(ask.contextPack, /ev_2026_05_21_001/);
@@ -928,6 +936,7 @@ export async function runWorkbenchTests() {
     assert.equal(noMatchAsk.answerCandidates.length, 0);
     assert.equal(noMatchAsk.matchedPages.length, 0);
     assert.equal(noMatchAsk.missingInformation.some((item) => item.code === "no_match"), true);
+    assert.equal(noMatchAsk.manualActions.some((action) => action.action === "capture_note"), true);
     assert.match(noMatchAsk.warnings.join("\n"), /memory has no match/);
 
     const askWithoutQuery = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask" });

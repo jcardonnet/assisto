@@ -338,8 +338,11 @@ export async function runCoreRetrievalTests() {
     assert.doesNotMatch(pack, /payroll/);
 
     const fullResult = await retrieval.retrieveContextForAnswer(root, query);
+    assert.equal(fullResult.queryIntent.primary, "person_facts");
+    assert.equal(fullResult.plannedLookups.some((lookup) => lookup.kind === "named_targets"), true);
     assert.match(fullResult.contextPack, /# Context pack/);
     assert.match(fullResult.contextPack, /GPT was not called/);
+    assert.match(fullResult.contextPack, /## Retrieval plan/);
     assert.equal(fullResult.matchedPages.some((page) => page.path === "memory/people/joe.md"), true);
     assert.equal(fullResult.activeClaims.some((claim) => claim.claim_id === "clm_joe_search"), true);
     assert.equal(fullResult.uncertainClaims.some((claim) => claim.scope_state === "partial"), true);
@@ -350,30 +353,52 @@ export async function runCoreRetrievalTests() {
     assert.equal(fullResult.linkedReviewItems.some((item) => item.id === "rev_qdrant_scope"), true);
     assert.equal(fullResult.linkedFollowUps.some((item) => item.id === "fu_ask_joe"), true);
     assert.deepEqual(fullResult.missingInformation, []);
+    assert.equal(fullResult.manualActions.some((action) => action.action === "inspect_entity"), true);
+    assert.equal(fullResult.suggestedNextQuestions.some((question) => /source Event supports/i.test(question)), true);
     assert.match(fullResult.contextPack, /What memory can say/);
     assert.match(fullResult.contextPack, /What memory cannot confirm/);
+    assert.match(fullResult.contextPack, /Suggested manual actions/);
 
     const managerResult = await retrieval.retrieveContextForAnswer(root, "Who is my manager?");
+    assert.equal(managerResult.queryIntent.primary, "manager_reporting");
+    assert.equal(managerResult.plannedLookups.some((lookup) => lookup.kind === "relation_claims"), true);
     assert.equal(managerResult.activeClaims.some((claim) => claim.claim_id === "clm_mike_manager"), true);
     assert.equal(managerResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_002"), true);
     assert.equal(managerResult.answerCandidates.some((candidate) => candidate.claim_id === "clm_mike_manager"), true);
 
     const reportingResult = await retrieval.retrieveContextForAnswer(root, "Who reports to Jeff?");
+    assert.equal(reportingResult.queryIntent.primary, "manager_reporting");
     assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/maria.md"), true);
     assert.equal(reportingResult.activeClaims.some((claim) => claim.claim_id === "clm_maria_reports_to_jeff"), true);
     assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/mike.md"), false);
     assert.equal(reportingResult.matchedPages.some((page) => page.path === "memory/people/joel.md"), false);
 
     const sourceResult = await retrieval.retrieveContextForAnswer(root, "What source Event supports clm_joe_search?");
+    assert.equal(sourceResult.queryIntent.primary, "source_evidence");
+    assert.equal(sourceResult.plannedLookups.some((lookup) => lookup.kind === "source_events"), true);
     assert.equal(sourceResult.evidenceEvents.some((event) => event.id === "ev_2026_05_21_001"), true);
 
     const reviewResult = await retrieval.retrieveContextForAnswer(root, "What do I need to review about Qdrant?");
+    assert.equal(reviewResult.queryIntent.primary, "review_risk");
     assert.equal(reviewResult.linkedItems.some((item) => item.id === "rev_qdrant_scope"), true);
+    assert.equal(reviewResult.manualActions.some((action) => action.action === "review_item"), true);
+
+    const followupResult = await retrieval.retrieveContextForAnswer(root, "What open follow-ups are linked to Joe?");
+    assert.equal(followupResult.queryIntent.primary, "follow_up");
+    assert.equal(followupResult.manualActions.some((action) => action.action === "open_followups"), true);
+
+    const recentResult = await retrieval.retrieveContextForAnswer(root, "What changed recently?");
+    assert.equal(recentResult.queryIntent.primary, "recent_changes");
+    assert.equal(recentResult.plannedLookups.some((lookup) => lookup.kind === "recent_events"), true);
+    assert.equal(recentResult.evidenceEvents.length > 0, true);
+    assert.equal(recentResult.manualActions.some((action) => action.action === "open_today"), true);
 
     const noMatch = await retrieval.retrieveContextForAnswer(root, "What is the Neptune deploy key?");
+    assert.equal(noMatch.queryIntent.primary, "general");
     assert.deepEqual(noMatch.matchedPages, []);
     assert.deepEqual(noMatch.answerCandidates, []);
     assert.equal(noMatch.missingInformation.some((item) => item.code === "no_match"), true);
+    assert.equal(noMatch.manualActions.some((action) => action.action === "capture_note"), true);
     assert.equal(noMatch.warnings.some((warning) => /No named/.test(warning)), true);
     assert.match(noMatch.contextPack, /No-match guidance/);
   } finally {

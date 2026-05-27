@@ -27,6 +27,9 @@ try {
     const manager = await retrieval.retrieveContextForAnswer(root, "Who is my manager?");
     const reporting = await retrieval.retrieveContextForAnswer(root, "Who reports to Jeff?");
 
+    assert.equal(manager.queryIntent.primary, "manager_reporting");
+    assert.equal(reporting.plannedLookups.some((lookup) => lookup.kind === "relation_claims"), true);
+
     if (manager.activeClaims.some((claim) => claim.claim_id === "clm_mike_manager")) {
       metrics.targetRecall += 1;
     }
@@ -60,6 +63,10 @@ try {
     const source = await retrieval.retrieveContextForAnswer(root, "What source Event supports clm_joe_role_engineer?");
     const role = await retrieval.retrieveContextForAnswer(root, "What changed about Joe's role?");
 
+    assert.equal(source.queryIntent.primary, "source_evidence");
+    assert.equal(role.queryIntent.intents.includes("role_ownership"), true);
+    assert.equal(role.queryIntent.intents.includes("recent_changes"), true);
+
     if (source.evidenceEvents.some((event) => event.id === "ev_joe_role_active")) {
       metrics.targetRecall += 1;
       metrics.citationCoverage += 1;
@@ -87,6 +94,10 @@ try {
     const followup = await retrieval.retrieveContextForAnswer(root, "What open follow-ups are linked to Joe?");
     const context = await retrieval.retrieveContextForAnswer(root, "What changed for Warehouse Project?");
 
+    assert.equal(review.queryIntent.primary, "review_risk");
+    assert.equal(followup.queryIntent.primary, "follow_up");
+    assert.equal(context.queryIntent.intents.includes("project_context"), true);
+
     if (review.linkedItems.some((item) => item.id === "rev_mysql_scope")) {
       metrics.targetRecall += 1;
       metrics.uncertaintySurfaced += 1;
@@ -113,6 +124,18 @@ try {
     if (noMatch.missingInformation.some((item) => item.code === "no_match")) {
       metrics.answerBasisCoverage += 1;
     }
+
+    assert.equal(noMatch.manualActions.some((action) => action.action === "capture_note"), true);
+  });
+
+  await suite("recent-change planner loads Events without persistence", async () => {
+    const recent = await retrieval.retrieveContextForAnswer(root, "What changed recently?");
+
+    assert.equal(recent.queryIntent.primary, "recent_changes");
+    assert.equal(recent.plannedLookups.some((lookup) => lookup.kind === "recent_events"), true);
+    assert.equal(recent.evidenceEvents.length > 0, true);
+    assert.equal(recent.manualActions.some((action) => action.action === "open_today"), true);
+    metrics.citationCoverage += recent.evidenceEvents.length > 0 ? 1 : 0;
   });
 
   const afterSnapshot = await snapshotFiles(root);

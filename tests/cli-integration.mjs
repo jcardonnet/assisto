@@ -246,8 +246,12 @@ export async function runCliIntegrationTests() {
       "How should I explain Joe and Mike the difference between Solr and Qdrant?"
     ]);
     const answerBasis = JSON.parse(answerBasisResult.stdout);
+    assert.equal(typeof answerBasis.queryIntent.primary, "string");
+    assert.equal(Array.isArray(answerBasis.plannedLookups), true);
     assert.equal(Array.isArray(answerBasis.answerCandidates), true);
     assert.equal(Array.isArray(answerBasis.missingInformation), true);
+    assert.equal(Array.isArray(answerBasis.manualActions), true);
+    assert.equal(Array.isArray(answerBasis.suggestedNextQuestions), true);
     assert.match(answerBasis.contextPack, /# Context pack/);
   } finally {
     await rm(askRoot, { recursive: true, force: true });

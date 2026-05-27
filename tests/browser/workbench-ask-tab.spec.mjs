@@ -46,12 +46,18 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await page.locator("#ask-input").fill("Who is my manager?");
     await page.locator("#ask-form").getByRole("button", { name: "Ask" }).click();
 
+    await expect(page.getByRole("heading", { name: "Retrieval plan" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Answer candidates" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Supporting claims" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Suggested manual actions" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Suggested next questions" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Evidence Events" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Linked FollowUps" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched pages" })).toBeVisible();
     const answerSection = page.locator('[data-ask-section="answer-candidates"]');
+    const planSection = page.locator('[data-ask-section="retrieval-plan"]');
+    await expect(planSection.getByRole("heading", { name: "manager_reporting" })).toBeVisible();
+    await expect(planSection.getByRole("heading", { name: "relation_claims" })).toBeVisible();
     await expect(answerSection.getByText("Jeff is my manager.")).toBeVisible();
     await expect(answerSection.getByText("claim_id: clm_jeff_manager")).toBeVisible();
     await expect(answerSection.getByText("page: memory/people/jeff.md")).toBeVisible();
@@ -89,10 +95,12 @@ test("ask tab renders no-match guidance without inventing memory", async ({ page
     await expect(page.getByRole("heading", { name: "What memory cannot confirm" })).toBeVisible();
     const cannotConfirmSection = page.locator('[data-ask-section="what-memory-cannot-confirm"]');
     const answerSection = page.locator('[data-ask-section="answer-candidates"]');
+    const manualActionSection = page.locator('[data-ask-section="suggested-manual-actions"]');
     await expect(
       cannotConfirmSection.getByText("No deterministic memory page, claim ID, or relation claim matched the question.")
     ).toBeVisible();
     await expect(answerSection.getByText("No active answer candidates found.")).toBeVisible();
+    await expect(manualActionSection.getByText("Capture a note if this should become memory")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched pages" })).toBeVisible();
     const matchedPagesSection = page.locator('[data-ask-section="matched-pages"]');
     await expect(matchedPagesSection.getByText("No matched people, topics, or contexts.")).toBeVisible();
