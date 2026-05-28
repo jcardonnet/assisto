@@ -25,7 +25,7 @@
     "env:doctor": "node scripts/env-doctor.mjs",
     "check:memory-data": "node scripts/check-memory-data.mjs",
     "pr:review-wait": "node scripts/wait-for-pr-review.mjs",
-    "pr:closeout": "node scripts/pr-closeout.mjs",
+    "pr:closeout": "node scripts/agent-pr.mjs closeout",
     "mxbai:upload": "bash scripts/mxbai-upload.sh",
     "mxbai:smoke": "bash scripts/mxbai-smoke.sh",
     "agent:start": "node scripts/agent-control.mjs start",
@@ -36,7 +36,8 @@
     "agent:validate": "node scripts/agent-policy.mjs validate",
     "agent:run": "node scripts/agent-run.mjs run",
     "agent:diagnose:last": "node scripts/agent-run.mjs diagnose-last",
-    "agent:diagnose": "node scripts/agent-run.mjs diagnose"
+    "agent:diagnose": "node scripts/agent-run.mjs diagnose",
+    "agent:pr": "node scripts/agent-pr.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
