@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { loadTsModule } from "./ts-module-loader.mjs";
 import { makeTempVault, writeVaultFile } from "./helpers/temp-vault.mjs";
-import { writeWorkbenchFixture } from "./workbench.mjs";
+import { writeContextProjectScenario } from "./helpers/scenario-factory.mjs";
 
 export async function runCoreTodayTests() {
   const todayModule = await loadTsModule("packages/core/src/today/index.ts");
   const root = await makeTempVault("assisto-core-today-");
 
   try {
-    await writeWorkbenchFixture(root);
+    await writeContextProjectScenario(root);
     const today = await todayModule.buildTodayWorkbenchResult(root, {
       now: "2026-05-27T05:00:00.000Z",
       recentLimit: 2

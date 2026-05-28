@@ -22,6 +22,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["agent:diagnose"], "node scripts/agent-run.mjs diagnose");
   assert.equal(packageJson.scripts["agent:pr"], "node scripts/agent-pr.mjs");
   assert.equal(packageJson.scripts["agent:ci-local"], "node scripts/agent-ci-local.mjs");
+  assert.equal(packageJson.scripts["agent:map"], "node scripts/agent-map.mjs");
 
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /Usage: pnpm validate:local/);
   assert.match(readFileSync(".gitignore", "utf8"), /\.assisto-agent\/runs\//);
@@ -32,6 +33,7 @@ export async function runScriptHelperTests() {
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /memory\/transactions/);
   assert.match(readFileSync("scripts/agent-pr.mjs", "utf8"), /Usage: pnpm agent:pr status/);
   assert.match(readFileSync("scripts/agent-ci-local.mjs", "utf8"), /Usage: pnpm agent:ci-local --plan/);
+  assert.match(readFileSync("scripts/agent-map.mjs", "utf8"), /Usage: pnpm agent:map build/);
   assert.match(readFileSync(".devcontainer/ci-local.sh", "utf8"), /pnpm validate:ci-parity/);
   assert.match(readFileSync("scripts/mxbai-smoke.sh", "utf8"), /MXBAI_SMOKE_VERBOSE/);
 }

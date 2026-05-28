@@ -28,3 +28,7 @@ Use `pnpm agent:diagnose:last` or `pnpm agent:diagnose <log-id>` to revisit the 
 Use `pnpm agent:pr advance <state> <pr>` to record explicit PR transitions on the active run. Use `pnpm agent:pr comments <pr> --write` to snapshot review threads into ignored run state, and `pnpm agent:pr status <pr>` to inspect readiness gates.
 
 `pnpm agent:pr closeout <pr> --merge --yes --refresh-mxbai` refuses to merge unless review waiting has elapsed, review threads are checked and resolved, CI is green, the PR is non-draft and mergeable, guarded memory data is unchanged, and the active run records validation as passed.
+
+## Repo Map
+
+Use `pnpm agent:map build` to generate `.assisto-agent/cache/repo-map.json`, an ignored map from repo areas to source paths, tests, evals, docs, invariants, and public commands. Use `pnpm agent:map query "<area>"` to find the relevant validation and context for a subsystem before editing.

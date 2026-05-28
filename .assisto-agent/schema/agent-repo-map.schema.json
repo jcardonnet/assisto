@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assisto.local/schema/agent-repo-map.schema.json",
+  "title": "AgentRepoMap",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "areas"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "areas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["area", "paths", "tests", "evals", "docs", "invariants", "commands"],
+        "properties": {
+          "area": { "type": "string" },
+          "paths": { "type": "array", "items": { "type": "string" } },
+          "tests": { "type": "array", "items": { "type": "string" } },
+          "evals": { "type": "array", "items": { "type": "string" } },
+          "docs": { "type": "array", "items": { "type": "string" } },
+          "invariants": { "type": "array", "items": { "type": "string" } },
+          "commands": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
