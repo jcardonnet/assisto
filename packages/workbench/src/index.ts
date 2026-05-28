@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   applyTransaction,
   buildActivationStatusResult,
+  buildDailyQueueResult,
   buildDogfoodHomeResult,
   checkMemoryHealth,
   buildSessionBrief,
@@ -48,6 +49,7 @@ import {
   type CapturePreviewResult,
   type ContextPackResult,
   type ContextNoteResult,
+  type DailyQueueResult,
   type DogfoodHomeResult,
   type ExtractionProvider,
   type EntityKind,
@@ -218,6 +220,7 @@ export interface WorkbenchFollowupSummary {
 
 export type WorkbenchHealthSummary = MemoryHealthResult;
 export type WorkbenchToday = TodayWorkbenchResult;
+export type WorkbenchDailyQueue = DailyQueueResult;
 export type WorkbenchDogfoodHome = DogfoodHomeResult;
 export type WorkbenchActivationStatus = ActivationStatusResult;
 export type WorkbenchSeedKitResult = SeedKitResult;
@@ -405,6 +408,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/today") {
     return jsonRoute(200, await buildTodayWorkbenchResult(root));
+  }
+
+  if (requestUrl.pathname === "/api/daily/queue") {
+    return jsonRoute(200, await buildDailyQueueResult(root));
   }
 
   if (requestUrl.pathname === "/api/dogfood/home") {
@@ -2296,6 +2303,8 @@ const quickCaptureForm = document.querySelector("#quick-capture-form");
 let snapshot = null;
 let health = null;
 let dogfoodHome = null;
+let dailyQueue = null;
+let dailyQueueIndex = 0;
 let activationStatus = null;
 let activeTab = "today";
 let reviewReasonFilter = "all";
@@ -2352,6 +2361,28 @@ document.addEventListener("keydown", (event) => {
   void openQuickCapture();
 });
 
+document.addEventListener("keydown", (event) => {
+  if (activeTab !== "today" || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) {
+    return;
+  }
+
+  const active = document.activeElement;
+  if (active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)) {
+    return;
+  }
+
+  if (!dailyQueue?.items?.length) {
+    return;
+  }
+
+  event.preventDefault();
+  dailyQueueIndex =
+    event.key === "ArrowRight"
+      ? Math.min(dailyQueueIndex + 1, dailyQueue.items.length - 1)
+      : Math.max(dailyQueueIndex - 1, 0);
+  renderDogfoodHome(dogfoodHome, dailyQueue);
+});
+
 async function openQuickCapture() {
   await loadQuickCaptureContextOptions();
   document.querySelector("#quick-capture-output").innerHTML = "";
@@ -2404,6 +2435,8 @@ async function runQuickCapture(path, body) {
       snapshot = await fetchJson("/api/snapshot");
       health = null;
       dogfoodHome = null;
+      dailyQueue = null;
+      dailyQueueIndex = 0;
       activationStatus = null;
       reviewTurbo = null;
     }
@@ -2536,14 +2569,17 @@ function render() {
 }
 
 async function renderToday() {
-  if (!dogfoodHome || !activationStatus) {
+  if (!dogfoodHome || !activationStatus || !dailyQueue) {
     view.innerHTML = '<article class="item"><h2>Loading Dogfood Home</h2><p class="meta">Reading local markdown memory.</p></article>';
-    const [loadedHome, loadedActivationStatus] = await Promise.all([
+    const [loadedHome, loadedActivationStatus, loadedDailyQueue] = await Promise.all([
       fetchJson("/api/dogfood/home"),
-      fetchJson("/api/activation/status")
+      fetchJson("/api/activation/status"),
+      fetchJson("/api/daily/queue")
     ]);
     dogfoodHome = loadedHome;
     activationStatus = loadedActivationStatus;
+    dailyQueue = loadedDailyQueue;
+    dailyQueueIndex = Math.min(dailyQueueIndex, Math.max((dailyQueue.items?.length ?? 1) - 1, 0));
 
     if (activeTab !== "today") {
       return;
@@ -2555,7 +2591,7 @@ async function renderToday() {
   }
 
   renderActivationWizard(activationStatus);
-  renderDogfoodHome(dogfoodHome);
+  renderDogfoodHome(dogfoodHome, dailyQueue);
 }
 
 function renderActivationWizard(result) {
@@ -2595,7 +2631,7 @@ function renderActivationWizard(result) {
   }
 }
 
-function renderDogfoodHome(result) {
+function renderDogfoodHome(result, queue) {
   const countCards = Object.keys(result.counts).map((key) => \`<article class="item">
     <h3>\${escapeHtml(key.replaceAll("_", " "))}</h3>
     <p class="pill">\${escapeHtml(result.counts[key])}</p>
@@ -2621,6 +2657,7 @@ function renderDogfoodHome(result) {
       </div>
     </dl>
   </article>
+  \${renderDailyQueue(queue)}
   <section><h2>Daily loop</h2><div class="grid">\${countCards}</div></section>
   <section><h2>Brief shortcuts</h2><div class="action-row">
     \${briefLinkButtonHtml("today", "", "", "Daily brief")}
@@ -2641,6 +2678,106 @@ function renderDogfoodHome(result) {
   <div id="today-action-output" class="action-output"></div>\`;
   bindTodayActions();
   bindBriefLinks();
+}
+
+function renderDailyQueue(queue) {
+  if (!queue) {
+    return '<section><h2>Daily queue</h2><article class="item"><h3>Loading</h3><p class="meta">Reading queue state.</p></article></section>';
+  }
+
+  if (!queue.items.length) {
+    return \`<section><h2>Daily queue</h2><article class="item">
+      <h3>Queue clear</h3>
+      <p class="meta">No pending daily review items. Capture what changed when there is new work memory.</p>
+    </article></section>\`;
+  }
+
+  dailyQueueIndex = Math.min(dailyQueueIndex, queue.items.length - 1);
+  const item = queue.items[dailyQueueIndex] ?? queue.current_item;
+  const countSummary = Object.keys(queue.counts)
+    .map((key) => \`\${escapeHtml(key.replaceAll("_", " "))}: \${escapeHtml(queue.counts[key])}\`)
+    .join(" · ");
+  const list = queue.items.map((queueItem, index) => \`<li class="\${index === dailyQueueIndex ? "active" : ""}">
+    <button type="button" class="link-button daily-queue-select" data-index="\${escapeHtml(index)}" aria-label="\${escapeHtml(queueItem.label)}">
+      \${escapeHtml(index + 1)}. \${escapeHtml(queueItem.item_type.replaceAll("_", " "))}
+    </button>
+  </li>\`).join("");
+
+  return \`<section data-today-section="daily-queue">
+    <h2>Daily queue</h2>
+    <article class="item daily-queue-card">
+      <div class="split">
+        <div>
+          <p class="eyebrow">Focused daily review</p>
+          <h3>\${escapeHtml(item.label)}</h3>
+          <p class="pill">\${escapeHtml(item.item_type.replaceAll("_", " "))} · \${escapeHtml(item.target_id)}</p>
+          <p class="meta">\${escapeHtml(item.detail)}</p>
+        </div>
+        <div class="action-row">
+          <button type="button" class="secondary daily-queue-prev" \${dailyQueueIndex === 0 ? "disabled" : ""}>Previous</button>
+          <button type="button" class="secondary daily-queue-next" \${dailyQueueIndex >= queue.items.length - 1 ? "disabled" : ""}>Next</button>
+        </div>
+      </div>
+      \${detailListHtml([
+        ["Suggested action", item.suggested_action],
+        ["Affected files", item.affected_files.join(", ") || "none"],
+        ["Source Events", item.source_events.join(", ") || "none"],
+        ["Route", item.route_hint],
+        ["Counts", countSummary]
+      ])}
+      \${dailyQueueItemActionHtml(item)}
+      <ol class="compact-list">\${list}</ol>
+    </article>
+  </section>\`;
+}
+
+function dailyQueueItemActionHtml(item) {
+  if (item.item_type === "pending_transaction") {
+    return \`<div class="action-stack">
+      <form class="today-transaction-apply-form" data-transaction-id="\${escapeHtml(item.target_id)}">
+        <div class="action-row">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview apply</button>
+          <button type="submit" name="mode" value="apply">Apply transaction</button>
+        </div>
+      </form>
+      <form class="today-transaction-reject-form" data-transaction-id="\${escapeHtml(item.target_id)}">
+        <div class="action-row">
+          <input name="reason" placeholder="Rejection reason">
+          <button type="submit" name="mode" value="preview" class="secondary">Preview reject</button>
+          <button type="submit" name="mode" value="apply">Reject transaction</button>
+        </div>
+      </form>
+    </div>\`;
+  }
+
+  if (item.item_type === "stale_noop_event") {
+    return \`<form class="today-stale-reprocess-form" data-event-id="\${escapeHtml(item.target_id)}">
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview reprocess</button>
+        <button type="submit" name="mode" value="apply">Stage reprocess</button>
+      </div>
+    </form>\`;
+  }
+
+  if (item.item_type === "health_finding") {
+    return \`<form class="daily-health-finding-form" data-finding-id="\${escapeHtml(item.target_id)}">
+      <div class="action-row">
+        <input name="note" placeholder="Finding note">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview finding</button>
+        <button type="submit" name="mode" value="apply">Stage finding</button>
+      </div>
+    </form>\`;
+  }
+
+  if (item.item_type === "review_item") {
+    return \`<div class="action-row">
+      <button type="button" class="secondary daily-open-review-item" data-review-id="\${escapeHtml(item.target_id)}">Open Review</button>
+    </div>\`;
+  }
+
+  return \`<div class="action-row">
+    <button type="button" class="secondary" data-tab-jump="briefs">Open Briefs</button>
+  </div>\`;
 }
 
 function todayPendingTransactionsHtml(transactions) {
@@ -2811,6 +2948,41 @@ function todaySectionHtml(label, items, renderItem, emptyText) {
 }
 
 function bindTodayActions() {
+  for (const button of document.querySelectorAll(".daily-queue-prev")) {
+    button.addEventListener("click", () => {
+      dailyQueueIndex = Math.max(dailyQueueIndex - 1, 0);
+      renderDogfoodHome(dogfoodHome, dailyQueue);
+    });
+  }
+
+  for (const button of document.querySelectorAll(".daily-queue-next")) {
+    button.addEventListener("click", () => {
+      dailyQueueIndex = Math.min(dailyQueueIndex + 1, (dailyQueue?.items?.length ?? 1) - 1);
+      renderDogfoodHome(dogfoodHome, dailyQueue);
+    });
+  }
+
+  for (const button of document.querySelectorAll(".daily-queue-select")) {
+    button.addEventListener("click", () => {
+      dailyQueueIndex = Number(button.dataset.index ?? 0);
+      renderDogfoodHome(dogfoodHome, dailyQueue);
+    });
+  }
+
+  for (const button of document.querySelectorAll(".daily-open-review-item")) {
+    button.addEventListener("click", () => {
+      reviewReasonFilter = "all";
+      activateTab("review");
+    });
+  }
+
+  for (const button of view.querySelectorAll("[data-tab-jump]")) {
+    button.addEventListener("click", () => {
+      selectWorkbenchTab(button.dataset.tabJump);
+      render();
+    });
+  }
+
   for (const button of document.querySelectorAll(".today-open-review")) {
     button.addEventListener("click", () => {
       reviewReasonFilter = button.dataset.reviewReason ?? "all";
@@ -2852,6 +3024,18 @@ function bindTodayActions() {
       });
     });
   }
+
+  for (const form of document.querySelectorAll(".daily-health-finding-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runTodayAction(preview ? "/api/health/stage-finding/preview" : "/api/health/stage-finding", {
+        findingId: form.dataset.findingId,
+        note: form.elements.note.value
+      });
+    });
+  }
 }
 
 async function runTodayAction(path, body) {
@@ -2877,10 +3061,12 @@ async function refreshTodayAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
   dogfoodHome = await fetchJson("/api/dogfood/home");
+  dailyQueue = await fetchJson("/api/daily/queue");
+  dailyQueueIndex = 0;
   reviewTurbo = null;
 
   if (activeTab === "today") {
-    renderDogfoodHome(dogfoodHome);
+    renderDogfoodHome(dogfoodHome, dailyQueue);
   }
 }
 

@@ -66,6 +66,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /activate status/);
   assert.match(help.stdout, /seed kit/);
+  assert.match(help.stdout, /daily queue/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
 
@@ -412,6 +413,15 @@ export async function runCliIntegrationTests() {
     const activationJson = JSON.parse(activationJsonResult.stdout);
     assert.equal(activationJson.memory_state, "active");
     assert.equal(activationJson.next_wizard_step.step_id, "review_one_transaction");
+
+    const dailyQueue = await runWm(todayRoot, ["daily", "queue"]);
+    assert.match(dailyQueue.stdout, /Daily queue/);
+    assert.match(dailyQueue.stdout, /Current: Review pending transaction/);
+
+    const dailyQueueJsonResult = await runWm(todayRoot, ["daily", "queue", "--json"]);
+    const dailyQueueJson = JSON.parse(dailyQueueJsonResult.stdout);
+    assert.equal(dailyQueueJson.current_item.item_type, "pending_transaction");
+    assert.equal(dailyQueueJson.current_item.target_id, "tx_2026_05_21_apply");
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }
