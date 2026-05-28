@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  buildActivationStatusResult,
   buildDogfoodHomeResult,
   checkMemoryHealth,
   buildSessionBrief,
@@ -40,6 +41,7 @@ import {
   retrieveContextForAnswer,
   validateTransaction,
   type AnswerDraftResult,
+  type ActivationStatusResult,
   type CaptureCreateResult,
   type CapturePreviewResult,
   type ContextPackResult,
@@ -211,6 +213,7 @@ export interface WorkbenchFollowupSummary {
 export type WorkbenchHealthSummary = MemoryHealthResult;
 export type WorkbenchToday = TodayWorkbenchResult;
 export type WorkbenchDogfoodHome = DogfoodHomeResult;
+export type WorkbenchActivationStatus = ActivationStatusResult;
 
 export type WorkbenchBriefTargetOption = SessionBriefTarget;
 
@@ -399,6 +402,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/dogfood/home") {
     return jsonRoute(200, await buildDogfoodHomeResult(root));
+  }
+
+  if (requestUrl.pathname === "/api/activation/status") {
+    return jsonRoute(200, await buildActivationStatusResult(root));
   }
 
   if (requestUrl.pathname === "/api/review") {
@@ -1682,6 +1689,7 @@ function workbenchHtml(): string {
         <button type="button" data-tab="health" aria-pressed="false">Health</button>
         <button type="button" data-tab="briefs" aria-pressed="false">Briefs</button>
       </nav>
+      <section id="activation-wizard" class="activation-wizard" aria-live="polite"></section>
       <section id="view" class="view" aria-live="polite"></section>
       <dialog id="quick-capture-dialog" class="quick-capture-dialog" aria-labelledby="quick-capture-title">
         <article class="quick-capture-panel">
@@ -1834,6 +1842,34 @@ h1 {
 .view {
   display: grid;
   gap: 12px;
+}
+
+.activation-wizard {
+  display: grid;
+  gap: 12px;
+}
+
+.activation-wizard:empty {
+  display: none;
+}
+
+.activation-card {
+  border-color: #b8d7d0;
+  background: #f8fbfa;
+}
+
+.activation-steps {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding-left: 18px;
+}
+
+.activation-step {
+  align-items: baseline;
+  display: grid;
+  gap: 4px;
+  grid-template-columns: auto minmax(140px, 0.4fr) minmax(200px, 1fr);
 }
 
 .toolbar,
@@ -2198,6 +2234,7 @@ pre {
 
 function workbenchClientJs(): string {
   return `const view = document.querySelector("#view");
+const activationWizard = document.querySelector("#activation-wizard");
 const status = document.querySelector("#status");
 const quickCaptureDialog = document.querySelector("#quick-capture-dialog");
 const quickCaptureOpen = document.querySelector("#quick-capture-open");
@@ -2206,6 +2243,7 @@ const quickCaptureForm = document.querySelector("#quick-capture-form");
 let snapshot = null;
 let health = null;
 let dogfoodHome = null;
+let activationStatus = null;
 let activeTab = "today";
 let reviewReasonFilter = "all";
 let reviewLaneFilter = "all";
@@ -2313,6 +2351,7 @@ async function runQuickCapture(path, body) {
       snapshot = await fetchJson("/api/snapshot");
       health = null;
       dogfoodHome = null;
+      activationStatus = null;
       reviewTurbo = null;
     }
     output.innerHTML = renderActionResult(result);
@@ -2370,6 +2409,8 @@ function render() {
     void renderToday();
     return;
   }
+
+  activationWizard.innerHTML = "";
 
   if (activeTab === "capture") {
     renderCapture();
@@ -2442,10 +2483,14 @@ function render() {
 }
 
 async function renderToday() {
-  if (!dogfoodHome) {
+  if (!dogfoodHome || !activationStatus) {
     view.innerHTML = '<article class="item"><h2>Loading Dogfood Home</h2><p class="meta">Reading local markdown memory.</p></article>';
-    const loadedHome = await fetchJson("/api/dogfood/home");
+    const [loadedHome, loadedActivationStatus] = await Promise.all([
+      fetchJson("/api/dogfood/home"),
+      fetchJson("/api/activation/status")
+    ]);
     dogfoodHome = loadedHome;
+    activationStatus = loadedActivationStatus;
 
     if (activeTab !== "today") {
       return;
@@ -2456,7 +2501,45 @@ async function renderToday() {
     return;
   }
 
+  renderActivationWizard(activationStatus);
   renderDogfoodHome(dogfoodHome);
+}
+
+function renderActivationWizard(result) {
+  if (!result || (result.activated && result.next_wizard_step?.step_id === "run_health" && result.next_wizard_step?.state === "complete")) {
+    activationWizard.innerHTML = "";
+    return;
+  }
+
+  const steps = (result.wizard_steps ?? []).map((step) => \`<li class="activation-step \${escapeHtml(step.state)}">
+    <span class="pill">\${escapeHtml(step.state)}</span>
+    <strong>\${escapeHtml(step.label)}</strong>
+    <span class="meta">\${escapeHtml(step.detail)}</span>
+  </li>\`).join("");
+
+  activationWizard.innerHTML = \`<article class="item activation-card">
+    <div>
+      <p class="eyebrow">Activation wizard</p>
+      <h2>First-run activation</h2>
+      <p class="meta">State: \${escapeHtml(result.memory_state)} · next: \${escapeHtml(result.next_wizard_step.label)}</p>
+    </div>
+    <p class="meta">\${escapeHtml(result.suggested_next_action)}</p>
+    <div class="action-row">
+      <button type="button" data-tab-jump="capture" class="secondary">Go to Capture</button>
+      <button type="button" data-tab-jump="transactions" class="secondary">Go to Transactions</button>
+      <button type="button" data-tab-jump="ask" class="secondary">Go to Ask</button>
+      <button type="button" data-tab-jump="briefs" class="secondary">Go to Briefs</button>
+      <button type="button" data-tab-jump="health" class="secondary">Go to Health</button>
+    </div>
+    <ol class="activation-steps">\${steps}</ol>
+  </article>\`;
+
+  for (const button of activationWizard.querySelectorAll("[data-tab-jump]")) {
+    button.addEventListener("click", () => {
+      selectWorkbenchTab(button.dataset.tabJump);
+      render();
+    });
+  }
 }
 
 function renderDogfoodHome(result) {

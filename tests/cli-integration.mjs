@@ -64,6 +64,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /import notes/);
   assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
+  assert.match(help.stdout, /activate status/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
 
@@ -370,6 +371,17 @@ export async function runCliIntegrationTests() {
     const dogfoodJson = JSON.parse(dogfoodJsonResult.stdout);
     assert.equal(dogfoodJson.next_recommended_action.action, "review_pending_transaction");
     assert.equal(dogfoodJson.daily_progress.open_items, 7);
+
+    const activation = await runWm(todayRoot, ["activate", "status"]);
+    assert.match(activation.stdout, /Activation/);
+    assert.match(activation.stdout, /State: active/);
+    assert.match(activation.stdout, /Next step: Review one memory proposal/);
+    assert.match(activation.stdout, /pending_transactions\t4/);
+
+    const activationJsonResult = await runWm(todayRoot, ["activate", "status", "--json"]);
+    const activationJson = JSON.parse(activationJsonResult.stdout);
+    assert.equal(activationJson.memory_state, "active");
+    assert.equal(activationJson.next_wizard_step.step_id, "review_one_transaction");
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }

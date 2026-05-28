@@ -36,6 +36,8 @@ test("v6 dogfood activation flow stays derived and transaction backed", async ({
     });
 
     await page.goto(server.url);
+    await expect(page.getByRole("heading", { name: "First-run activation" })).toBeVisible();
+    await expect(page.getByText("Review one memory proposal", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Dogfood Home" })).toBeVisible();
     await expect(page.getByText("next recommended action")).toBeVisible();
 

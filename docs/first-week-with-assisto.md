@@ -12,7 +12,13 @@ wm workbench serve --host 127.0.0.1 --port 3721
 
 Open the printed URL. Start on the Today tab. It is a derived dashboard; it does not write a completion marker.
 
-The Today tab is now the Dogfood Home. Treat it as the cockpit for the loop: it shows the next recommended manual action, pending Transactions, staged ReviewItems, stale NOOP Events, open FollowUps, recent activity, health warnings, quick briefs, and recent friction logs. All of those sections are derived from markdown.
+The Today tab is now the Dogfood Home. Treat it as the cockpit for the loop: it shows the first-run Activation Wizard, next recommended manual action, pending Transactions, staged ReviewItems, stale NOOP Events, open FollowUps, recent activity, health warnings, quick briefs, and recent friction logs. All of those sections are derived from markdown.
+
+Check the same activation state from the CLI:
+
+```bash
+wm activate status
+```
 
 ## Daily capture
 

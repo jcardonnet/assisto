@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   applyTransaction,
+  buildActivationStatusResult,
   buildDogfoodHomeResult,
   buildSessionBrief,
   buildTodayWorkbenchResult,
@@ -101,6 +102,10 @@ export async function main(
 
     if (command === "today") {
       return await commandToday(parsed.root, rest, io);
+    }
+
+    if (command === "activate") {
+      return await commandActivate(parsed.root, rest, io);
     }
 
     if (command === "dogfood") {
@@ -487,6 +492,52 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
     io.stdout("\nSuggested manual actions\n");
     for (const action of home.suggested_manual_actions) {
       io.stdout(`- ${action}\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function commandActivate(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm activate status [--json]\n");
+    return 0;
+  }
+
+  if (subcommand !== "status") {
+    throw new Error("Usage: wm activate status [--json]");
+  }
+
+  const status = await buildActivationStatusResult(root, { now: io.now });
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(status, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Activation (${status.generated_at})\n`);
+  io.stdout(`State: ${status.memory_state}${status.activated ? " (activated)" : " (not activated)"}\n`);
+  io.stdout(`Next step: ${status.next_wizard_step.label}\n`);
+  io.stdout(`Next action: ${status.suggested_next_action}\n\n`);
+  io.stdout("Counts\n");
+
+  for (const [key, value] of Object.entries(status.counts)) {
+    io.stdout(`${key}\t${value}\n`);
+  }
+
+  if (status.first_useful_ask.suggested_questions.length > 0) {
+    io.stdout("\nSuggested questions\n");
+    for (const question of status.first_useful_ask.suggested_questions) {
+      io.stdout(`- ${question}\n`);
+    }
+  }
+
+  if (status.first_useful_ask.blockers.length > 0) {
+    io.stdout("\nAsk readiness blockers\n");
+    for (const blocker of status.first_useful_ask.blockers) {
+      io.stdout(`- ${blocker}\n`);
     }
   }
 
@@ -1065,6 +1116,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] today [--json]",
+      "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] dogfood status [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',
