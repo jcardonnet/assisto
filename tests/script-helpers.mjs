@@ -17,6 +17,9 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["agent:note"], "node scripts/agent-control.mjs note");
   assert.equal(packageJson.scripts["agent:policy"], "node scripts/agent-policy.mjs policy");
   assert.equal(packageJson.scripts["agent:validate"], "node scripts/agent-policy.mjs validate");
+  assert.equal(packageJson.scripts["agent:run"], "node scripts/agent-run.mjs run");
+  assert.equal(packageJson.scripts["agent:diagnose:last"], "node scripts/agent-run.mjs diagnose-last");
+  assert.equal(packageJson.scripts["agent:diagnose"], "node scripts/agent-run.mjs diagnose");
 
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /Usage: pnpm validate:local/);
   assert.match(readFileSync(".gitignore", "utf8"), /\.assisto-agent\/runs\//);

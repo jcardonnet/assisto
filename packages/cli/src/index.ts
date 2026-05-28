@@ -51,6 +51,7 @@ export interface CliIo {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   stdin?: () => Promise<string>;
+  now?: string;
 }
 
 interface ParsedArgs {
@@ -726,7 +727,7 @@ async function commandBrief(root: string, args: string[], io: CliIo): Promise<nu
 
   const kind = parseBriefKind(rawKind);
   const briefOptions = parseBriefOptions(kind, args.slice(1));
-  const result = await buildSessionBrief(root, briefOptions);
+  const result = await buildSessionBrief(root, { ...briefOptions, now: io.now });
   io.stdout(result.contextPack);
 
   return 0;
