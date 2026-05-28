@@ -6,6 +6,7 @@ import {
   applyTransaction,
   buildActivationStatusResult,
   buildDailyQueueResult,
+  buildCaptureInboxResult,
   buildDogfoodHomeResult,
   checkMemoryHealth,
   buildSessionBrief,
@@ -46,6 +47,7 @@ import {
   type AnswerDraftResult,
   type ActivationStatusResult,
   type CaptureCreateResult,
+  type CaptureInboxResult,
   type CapturePreviewResult,
   type ContextPackResult,
   type ContextNoteResult,
@@ -224,6 +226,7 @@ export type WorkbenchDailyQueue = DailyQueueResult;
 export type WorkbenchDogfoodHome = DogfoodHomeResult;
 export type WorkbenchActivationStatus = ActivationStatusResult;
 export type WorkbenchSeedKitResult = SeedKitResult;
+export type WorkbenchCaptureInbox = CaptureInboxResult;
 
 export type WorkbenchBriefTargetOption = SessionBriefTarget;
 
@@ -420,6 +423,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/activation/status") {
     return jsonRoute(200, await buildActivationStatusResult(root));
+  }
+
+  if (requestUrl.pathname === "/api/capture/inbox") {
+    return jsonRoute(200, await buildCaptureInboxResult(root));
   }
 
   if (requestUrl.pathname === "/api/review") {
@@ -2318,6 +2325,7 @@ let entityKind = "person";
 let entityList = null;
 let entityDetail = null;
 let importTriageUnits = [];
+let captureInbox = null;
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -2439,6 +2447,7 @@ async function runQuickCapture(path, body) {
       dailyQueueIndex = 0;
       activationStatus = null;
       reviewTurbo = null;
+      captureInbox = null;
     }
     output.innerHTML = renderActionResult(result);
   } catch (error) {
@@ -2499,7 +2508,7 @@ function render() {
   activationWizard.innerHTML = "";
 
   if (activeTab === "capture") {
-    renderCapture();
+    void renderCapture();
     return;
   }
 
@@ -3078,19 +3087,33 @@ function activateTab(name) {
   render();
 }
 
-function renderCapture() {
-  view.innerHTML = \`<article class="item">
+async function renderCapture() {
+  if (!captureInbox) {
+    view.innerHTML = '<article class="item"><h2>Loading Capture</h2><p class="meta">Reading recent Events and pending capture Transactions.</p></article>';
+    captureInbox = await fetchJson("/api/capture/inbox");
+
+    if (activeTab !== "capture") {
+      return;
+    }
+  }
+
+  view.innerHTML = \`\${renderCaptureInbox(captureInbox)}
+  <article class="item">
     <h2>Capture note</h2>
     <form id="capture-form" class="capture-form">
       <label class="field" for="capture-note"><span>Note</span><textarea id="capture-note" name="note" rows="7" placeholder="Paste a short work note"></textarea></label>
+      \${captureTemplatesHtml(captureInbox)}
       <div class="action-row">
         <label class="field" for="capture-observed-at"><span>Observed at</span><input id="capture-observed-at" name="observedAt" placeholder="YYYY-MM-DD"></label>
-        <label class="field" for="capture-source-label"><span>Source label</span><input id="capture-source-label" name="sourceLabel" placeholder="standup, slack, meeting note"></label>
+        <label class="field" for="capture-source-label"><span>Source label</span><input id="capture-source-label" name="sourceLabel" list="capture-source-label-presets" placeholder="standup, slack, meeting note"></label>
       </div>
+      \${captureObservedAtShortcutsHtml(captureInbox)}
       <div class="action-row">
-        <label class="field" for="capture-context"><span>Context</span><input id="capture-context" name="context" placeholder="Context id, path, or name"></label>
+        <label class="field" for="capture-context"><span>Context</span><input id="capture-context" name="context" list="capture-context-options" placeholder="Context id, path, or name"></label>
         <label class="field" for="capture-provider"><span>Provider</span><select id="capture-provider" name="provider"><option value="rule">rule</option><option value="openai">openai</option></select></label>
       </div>
+      <datalist id="capture-source-label-presets">\${captureInbox.source_label_presets.map((preset) => \`<option value="\${escapeHtml(preset.source_label)}">\${escapeHtml(preset.label)}</option>\`).join("")}</datalist>
+      <datalist id="capture-context-options">\${captureInbox.context_suggestions.map((context) => \`<option value="\${escapeHtml(context.id)}">\${escapeHtml(context.name)} · \${escapeHtml(context.path)}</option>\`).join("")}</datalist>
       <div class="action-row">
         <button type="submit" name="mode" value="preview" class="secondary">Preview capture</button>
         <button type="submit" name="mode" value="create">Create pending transaction</button>
@@ -3127,6 +3150,7 @@ function renderCapture() {
       provider: form.elements.provider.value
     });
   });
+  bindCaptureInboxActions(captureInbox);
   document.querySelector("#seed-kit-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -3142,6 +3166,79 @@ function renderCapture() {
       thingsIKeepForgetting: form.elements.thingsIKeepForgetting.value
     });
   });
+}
+
+function renderCaptureInbox(inbox) {
+  const pending = inbox.pending_capture_transactions.length
+    ? inbox.pending_capture_transactions.map((transaction) => \`<article class="item">
+      <h3>\${escapeHtml(transaction.transaction_id)}</h3>
+      <p class="pill">\${escapeHtml(transaction.operations.join(", ") || "NOOP")} · \${transaction.requires_review ? "review needed" : "ready"}</p>
+      \${detailListHtml([
+        ["Path", transaction.path],
+        ["Source labels", transaction.source_labels.join(", ") || "none"],
+        ["Affected files", transaction.affected_files.join(", ") || "none"],
+        ["Likely next action", transaction.likely_next_review_action]
+      ])}
+      \${plainListHtml("Why staged", transaction.why_staged)}
+    </article>\`).join("")
+    : '<article class="item"><h3>No pending capture Transactions</h3><p class="meta">New captures will appear here after creation.</p></article>';
+  const events = inbox.recent_events.length
+    ? inbox.recent_events.map((event) => \`<article class="item">
+      <h3>\${escapeHtml(event.event_id)}</h3>
+      <p class="pill">\${escapeHtml(event.source_label ?? "event")}</p>
+      \${detailListHtml([
+        ["Recorded", event.recorded_at ?? "unknown"],
+        ["Observed", event.observed_at ?? "unknown"],
+        ["Contexts", event.contexts.join(", ") || "none"],
+        ["Raw excerpt", event.raw_excerpt || "none"]
+      ])}
+    </article>\`).join("")
+    : '<article class="item"><h3>No recent Events</h3><p class="meta">Capture a note to create the first Event.</p></article>';
+
+  return \`<section id="capture-inbox">
+    <h2>Capture inbox</h2>
+    <div class="grid">\${pending}</div>
+    <h3>Recent Events</h3>
+    <div class="grid">\${events}</div>
+  </section>\`;
+}
+
+function captureTemplatesHtml(inbox) {
+  if (!inbox.capture_templates.length) {
+    return "";
+  }
+
+  return \`<div class="action-row">\${inbox.capture_templates.map((template) => \`<button type="button" class="secondary capture-template" data-template-id="\${escapeHtml(template.template_id)}">\${escapeHtml(template.label)}</button>\`).join("")}</div>\`;
+}
+
+function captureObservedAtShortcutsHtml(inbox) {
+  if (!inbox.observed_at_shortcuts.length) {
+    return "";
+  }
+
+  return \`<div class="action-row">\${inbox.observed_at_shortcuts.map((shortcut) => \`<button type="button" class="secondary capture-observed-shortcut" data-date="\${escapeHtml(shortcut.date)}">\${escapeHtml(shortcut.label)}</button>\`).join("")}</div>\`;
+}
+
+function bindCaptureInboxActions(inbox) {
+  for (const button of document.querySelectorAll(".capture-template")) {
+    button.addEventListener("click", () => {
+      const template = inbox.capture_templates.find((item) => item.template_id === button.dataset.templateId);
+
+      if (!template) {
+        return;
+      }
+
+      document.querySelector("#capture-note").value = template.note;
+      document.querySelector("#capture-source-label").value = template.source_label;
+      document.querySelector("#capture-note").focus();
+    });
+  }
+
+  for (const button of document.querySelectorAll(".capture-observed-shortcut")) {
+    button.addEventListener("click", () => {
+      document.querySelector("#capture-observed-at").value = button.dataset.date ?? "";
+    });
+  }
 }
 
 function renderImport() {
@@ -4028,10 +4125,17 @@ async function refreshAfterAction() {
   health = null;
   dogfoodHome = null;
   reviewTurbo = null;
+  captureInbox = null;
 
   if (activeTab === "health") {
     health = await fetchJson("/api/health");
     renderHealthCenter(health);
+    return;
+  }
+
+  if (activeTab === "capture") {
+    captureInbox = await fetchJson("/api/capture/inbox");
+    await renderCapture();
     return;
   }
 
@@ -4050,7 +4154,8 @@ function renderActionResult(result) {
     ["Transaction path", result.transaction_path],
     ["State", result.transaction_state],
     ["Risk", result.risk_level ?? "unspecified"],
-    ["Requires review", String(Boolean(result.requires_review))]
+    ["Requires review", String(Boolean(result.requires_review))],
+    ["Needs context", String(Boolean(result.needs_context))]
   ];
 
   if (result.validation) {
@@ -4076,6 +4181,8 @@ function renderActionResult(result) {
     \${plainListHtml("Operations", result.operations)}
     \${plainListHtml("Affected files", result.affected_files)}
     \${plainListHtml("Source Events", result.source_events)}
+    \${plainListHtml("Why staged", result.why_staged)}
+    \${result.likely_next_review_action ? \`<section><h3>Likely next review action</h3><p class="meta">\${escapeHtml(result.likely_next_review_action)}</p></section>\` : ""}
     \${plainListHtml("Proposed file writes", proposedFileWrites)}
     \${seedUnitsHtml(result.units)}
   </article>\`;
