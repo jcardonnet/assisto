@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assisto.local/schema/agent-failure-diagnosis.schema.json",
+  "title": "AgentFailureDiagnosis",
+  "type": "object",
+  "required": ["code", "summary", "workaround", "rerun_command", "rerun_passed"],
+  "properties": {
+    "code": { "type": "string" },
+    "summary": { "type": "string" },
+    "workaround": { "type": "string" },
+    "rerun_command": { "type": "array", "items": { "type": "string" } },
+    "rerun_passed": { "type": ["boolean", "null"] }
+  },
+  "additionalProperties": false
+}

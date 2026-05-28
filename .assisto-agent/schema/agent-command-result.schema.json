@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assisto.local/schema/agent-command-result.schema.json",
+  "title": "AgentCommandResult",
+  "type": "object",
+  "required": [
+    "id",
+    "schema_version",
+    "command",
+    "exit_code",
+    "started_at",
+    "ended_at",
+    "duration_ms",
+    "environment_hints",
+    "stdout",
+    "stdout_summary",
+    "stderr",
+    "stderr_summary",
+    "rerun_passed",
+    "diagnosis"
+  ],
+  "properties": {
+    "id": { "type": "string", "pattern": "^cmd_[0-9]{8}T[0-9]{6}Z_[a-z0-9]+$" },
+    "schema_version": { "const": 1 },
+    "command": { "type": "array", "items": { "type": "string" } },
+    "exit_code": { "type": "integer" },
+    "started_at": { "type": "string", "format": "date-time" },
+    "ended_at": { "type": "string", "format": "date-time" },
+    "duration_ms": { "type": "integer" },
+    "environment_hints": {
+      "type": "object",
+      "required": ["cwd", "tmpdir", "temp", "tmp", "ci", "github_actions"],
+      "properties": {
+        "cwd": { "type": "string" },
+        "tmpdir": { "type": ["string", "null"] },
+        "temp": { "type": ["string", "null"] },
+        "tmp": { "type": ["string", "null"] },
+        "ci": { "type": ["string", "null"] },
+        "github_actions": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "stdout": { "type": "string" },
+    "stdout_summary": { "type": "string" },
+    "stderr": { "type": "string" },
+    "stderr_summary": { "type": "string" },
+    "rerun_passed": { "type": ["boolean", "null"] },
+    "diagnosis": { "$ref": "agent-failure-diagnosis.schema.json" }
+  },
+  "additionalProperties": false
+}

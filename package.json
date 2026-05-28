@@ -33,7 +33,10 @@
     "agent:handoff": "node scripts/agent-control.mjs handoff",
     "agent:note": "node scripts/agent-control.mjs note",
     "agent:policy": "node scripts/agent-policy.mjs policy",
-    "agent:validate": "node scripts/agent-policy.mjs validate"
+    "agent:validate": "node scripts/agent-policy.mjs validate",
+    "agent:run": "node scripts/agent-run.mjs run",
+    "agent:diagnose:last": "node scripts/agent-run.mjs diagnose-last",
+    "agent:diagnose": "node scripts/agent-run.mjs diagnose"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

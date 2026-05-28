@@ -15,7 +15,7 @@ async function makeTempVault() {
   return root;
 }
 
-async function runWm(root, args) {
+async function runWm(root, args, ioOverrides = {}) {
   if (!cliModule) {
     cliModule = await loadTsModule("packages/cli/src/index.ts");
   }
@@ -24,7 +24,8 @@ async function runWm(root, args) {
   const stderr = [];
   const exitCode = await cliModule.main(["--root", root, ...args], {
     stdout: (text) => stdout.push(text),
-    stderr: (text) => stderr.push(text)
+    stderr: (text) => stderr.push(text),
+    ...ioOverrides
   });
 
   assert.equal(exitCode, 0, stderr.join(""));
@@ -337,7 +338,7 @@ export async function runCliIntegrationTests() {
     assert.match(followups.stdout, /fu_ask_jeff/);
     assert.doesNotMatch(followups.stdout, /fu_closed/);
 
-    const recent = await runWm(briefRoot, ["brief", "recent", "person", "per_jeff"]);
+    const recent = await runWm(briefRoot, ["brief", "recent", "person", "per_jeff"], { now: "2026-05-22T12:00:00.000Z" });
     assert.match(recent.stdout, /# Session brief: Recent changes: Jeff/);
     assert.match(recent.stdout, /Jeff is my manager/);
     assert.doesNotMatch(recent.stdout, /prefers email/);
