@@ -1316,6 +1316,40 @@ export async function runWorkbenchTests() {
     assert.match(ask.contextPack, /clm_jeff_manager/);
     assert.match(ask.contextPack, /ev_2026_05_21_001/);
 
+    const askSession = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask/session?q=Who%20is%20my%20manager%3F" }))
+        .body
+    );
+    assert.equal(askSession.query, "Who is my manager?");
+    assert.equal(askSession.basis.answerCandidates.some((candidate) => candidate.claim_id === "clm_jeff_manager"), true);
+    assert.equal(askSession.citation_explorer.claim_ids.includes("clm_jeff_manager"), true);
+    assert.equal(askSession.citation_explorer.event_ids.includes("ev_2026_05_21_001"), true);
+    assert.equal(askSession.citation_explorer.page_paths.includes("memory/people/jeff.md"), true);
+    assert.equal(askSession.matched_page_previews.some((preview) => preview.path === "memory/people/jeff.md"), true);
+    assert.equal(
+      askSession.source_event_previews.some((preview) => /Jeff is my manager/.test(preview.raw_text_preview)),
+      true
+    );
+    assert.deepEqual(askSession.pinned_questions, []);
+
+    const pinnedAsk = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/ask/pin",
+          body: JSON.stringify({ question: "Who is my manager?" })
+        })
+      ).body
+    );
+    assert.deepEqual(pinnedAsk.pinned_questions, ["Who is my manager?"]);
+    assert.match(await readFile(path.join(root, ".assisto-local/retrieval/questions.json"), "utf8"), /Who is my manager/);
+
+    const pinnedAskSession = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask/session" })).body
+    );
+    assert.deepEqual(pinnedAskSession.pinned_questions, ["Who is my manager?"]);
+    assert.equal(pinnedAskSession.basis, null);
+
     const noMatchAsk = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {
@@ -1330,6 +1364,24 @@ export async function runWorkbenchTests() {
     assert.equal(noMatchAsk.manualActions.some((action) => action.action === "capture_note"), true);
     assert.equal(noMatchAsk.manualActions.some((action) => action.action === "log_friction"), true);
     assert.match(noMatchAsk.warnings.join("\n"), /memory has no match/);
+
+    const missingMemoryPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/ask/missing-memory/preview",
+          body: JSON.stringify({
+            question: "What is the Neptune deploy key?",
+            note: "Need to capture the Neptune deploy key source."
+          })
+        })
+      ).body
+    );
+    assert.equal(missingMemoryPreview.action, "log_friction");
+    assert.equal(missingMemoryPreview.created, false);
+    assert.equal(missingMemoryPreview.kind, "retrieval_miss");
+    assert.match(missingMemoryPreview.event_raw_text, /Need to capture the Neptune deploy key source/);
+    await assert.rejects(() => readVaultFile(root, missingMemoryPreview.event_path), /ENOENT/);
 
     const frictionPreview = JSON.parse(
       (

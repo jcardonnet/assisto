@@ -93,7 +93,11 @@ What source Event supports this claim?
 
 Trust citations, uncertainty, and missing-memory guidance more than prose. Ask output is derived and disposable.
 
+Use pinned questions for the small set of real work questions you keep asking. Pins live under `.assisto-local/retrieval/questions.json`, so they are local UI/session state rather than canonical memory. The Ask tab also shows a citation explorer plus matched-page and source-Event previews so you can inspect the basis without opening files by hand.
+
 If Ask cannot answer something important, use the “Log retrieval miss” action. This creates an Event plus a pending NOOP Transaction so the miss becomes reviewable without inventing a fact or creating a standalone friction page.
+
+Use “Preview missing-memory action” before logging a miss when you want to inspect the Event/Transaction shape without writing anything.
 
 Optional answer drafts are ephemeral. They can use only the deterministic answer basis, must cite claims or Events, and are not saved to memory.
 

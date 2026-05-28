@@ -97,6 +97,51 @@ export interface WorkbenchSnapshot {
   ask: ContextPackResult | null;
 }
 
+export interface WorkbenchAskSession {
+  generated_at: string;
+  query?: string;
+  basis: ContextPackResult | null;
+  pinned_questions: string[];
+  citation_explorer: WorkbenchAskCitationExplorer;
+  matched_page_previews: WorkbenchAskPagePreview[];
+  source_event_previews: WorkbenchAskEventPreview[];
+  missing_memory_actions: WorkbenchAskMissingMemoryAction[];
+}
+
+export interface WorkbenchAskCitationExplorer {
+  claim_ids: string[];
+  event_ids: string[];
+  page_paths: string[];
+  review_item_ids: string[];
+  followup_ids: string[];
+}
+
+export interface WorkbenchAskPagePreview {
+  path: string;
+  id?: string;
+  name: string;
+  type?: string;
+  why_included: string;
+  content_preview: string;
+}
+
+export interface WorkbenchAskEventPreview {
+  path: string;
+  id?: string;
+  recorded_at?: string;
+  observed_at?: string;
+  why_included: string;
+  raw_text_preview: string;
+}
+
+export interface WorkbenchAskMissingMemoryAction {
+  action: "capture_note" | "log_retrieval_miss";
+  label: string;
+  endpoint: string;
+  preview_endpoint: string;
+  note: string;
+}
+
 export interface WorkbenchReviewInbox {
   items: WorkbenchReviewItem[];
   grouped_by_reason: WorkbenchReviewReasonGroup[];
@@ -474,6 +519,10 @@ export async function handleWorkbenchRoute(
       : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
+  if (requestUrl.pathname === "/api/ask/session") {
+    return jsonRoute(200, await buildAskSession(root, optionalQuery(requestUrl)));
+  }
+
   if (requestUrl.pathname === "/api/followups") {
     return jsonRoute(200, await collectFollowups(root));
   }
@@ -615,6 +664,14 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/ask/draft/preview") {
       return jsonRoute(200, await createAskDraftPreview(root, input));
+    }
+
+    if (pathname === "/api/ask/pin") {
+      return jsonRoute(200, await pinAskQuestion(root, input));
+    }
+
+    if (pathname === "/api/ask/missing-memory/preview") {
+      return jsonRoute(200, await createAskMissingMemoryPreview(root, input));
     }
 
     if (pathname === "/api/friction/log/preview") {
@@ -804,6 +861,148 @@ function importSessionPath(root: string, sessionId: string): string {
   return path.join(root, ".assisto-local", "import-sessions", `${sessionId}.json`);
 }
 
+async function readPinnedQuestions(root: string): Promise<string[]> {
+  try {
+    const parsed = JSON.parse(await readFile(askQuestionsPath(root), "utf8")) as { questions?: unknown };
+    return Array.isArray(parsed.questions)
+      ? parsed.questions.filter((question): question is string => typeof question === "string" && question.trim().length > 0)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function askQuestionsPath(root: string): string {
+  return path.join(root, ".assisto-local", "retrieval", "questions.json");
+}
+
+function buildCitationExplorer(basis: ContextPackResult): WorkbenchAskCitationExplorer {
+  const claims = [
+    ...(basis.answerCandidates ?? []).map((candidate) => candidate.claim_id),
+    ...(basis.supportingClaims ?? []).map((claim) => claim.claim_id),
+    ...(basis.uncertainClaims ?? []).map((claim) => claim.claim_id)
+  ];
+  const evidence = [
+    ...(basis.evidenceEvents ?? []).map((event) => event.id),
+    ...(basis.supportingClaims ?? []).flatMap((claim) => claim.evidence ?? []),
+    ...(basis.answerCandidates ?? []).flatMap((candidate) => candidate.evidence ?? [])
+  ];
+
+  return {
+    claim_ids: uniqueStrings(claims),
+    event_ids: uniqueStrings(evidence.filter((value): value is string => typeof value === "string")),
+    page_paths: uniqueStrings([
+      ...(basis.matchedPages ?? []).map((page) => page.path),
+      ...(basis.supportingClaims ?? []).map((claim) => claim.page_path),
+      ...(basis.answerCandidates ?? []).map((candidate) => candidate.page_path)
+    ]),
+    review_item_ids: uniqueStrings((basis.linkedReviewItems ?? []).map((item) => item.id).filter((value): value is string => typeof value === "string")),
+    followup_ids: uniqueStrings((basis.linkedFollowUps ?? []).map((item) => item.id).filter((value): value is string => typeof value === "string"))
+  };
+}
+
+function emptyCitationExplorer(): WorkbenchAskCitationExplorer {
+  return {
+    claim_ids: [],
+    event_ids: [],
+    page_paths: [],
+    review_item_ids: [],
+    followup_ids: []
+  };
+}
+
+function matchedPagePreviews(basis: ContextPackResult): WorkbenchAskPagePreview[] {
+  return (basis.matchedPages ?? []).map((page) => {
+    const loaded = (basis.pages ?? []).find((candidate) => candidate.path === page.path);
+    return {
+      path: page.path,
+      id: page.id,
+      name: page.name,
+      type: page.type,
+      why_included: page.whyIncluded,
+      content_preview: compactWorkbenchPreview(loaded?.body ?? loaded?.content ?? "")
+    };
+  });
+}
+
+async function sourceEventPreviews(root: string, basis: ContextPackResult): Promise<WorkbenchAskEventPreview[]> {
+  return Promise.all(
+    (basis.evidenceEvents ?? []).map(async (event) => {
+      const loaded = (basis.events ?? []).find((candidate) => candidate.path === event.path);
+      let body = loaded?.body ?? "";
+
+      if (!body) {
+        try {
+          body = parseMarkdownFile(await readMarkdownPage(root, event.path)).body;
+        } catch {
+          body = "";
+        }
+      }
+
+      return {
+        path: event.path,
+        id: event.id,
+        recorded_at: event.recorded_at,
+        observed_at: event.observed_at,
+        why_included: event.why_included,
+        raw_text_preview: compactWorkbenchPreview(markdownSection(body, "Raw text") ?? body)
+      };
+    })
+  );
+}
+
+function missingMemoryActions(basis: ContextPackResult): WorkbenchAskMissingMemoryAction[] {
+  if (!(basis.missingInformation ?? []).length && !(basis.manualActions ?? []).some((action) => action.action === "log_friction")) {
+    return [];
+  }
+
+  return [
+    {
+      action: "capture_note",
+      label: "Capture missing memory",
+      endpoint: "/api/capture",
+      preview_endpoint: "/api/capture/preview",
+      note: "Route a source-backed note through capture if this fact should become memory."
+    },
+    {
+      action: "log_retrieval_miss",
+      label: "Log retrieval miss",
+      endpoint: "/api/friction/log",
+      preview_endpoint: "/api/ask/missing-memory/preview",
+      note: "Record the miss as Event evidence plus a pending NOOP Transaction."
+    }
+  ];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+
+function compactWorkbenchPreview(text: string): string {
+  return text.trim().replace(/\s+/g, " ").slice(0, 320);
+}
+
+function markdownSection(body: string, heading: string): string | undefined {
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  const headingIndex = lines.findIndex((line) => line.trim().toLowerCase() === `## ${heading.toLowerCase()}`);
+
+  if (headingIndex === -1) {
+    return undefined;
+  }
+
+  const sectionLines: string[] = [];
+
+  for (const line of lines.slice(headingIndex + 1)) {
+    if (/^#{1,6}\s+/.test(line)) {
+      break;
+    }
+
+    sectionLines.push(line);
+  }
+
+  return sectionLines.join("\n").trim();
+}
+
 function importTriageUnitsInput(input: Record<string, unknown>): ImportTriageUnitInput[] | undefined {
   const units = input.units;
 
@@ -900,6 +1099,43 @@ async function createEventReprocessPreview(
 async function createAskDraftPreview(root: string, input: Record<string, unknown>): Promise<AnswerDraftResult> {
   const question = requiredStringInput(input, "question", "q");
   return previewAnswerDraft(root, question);
+}
+
+async function buildAskSession(root: string, query?: string): Promise<WorkbenchAskSession> {
+  const basis = query ? await retrieveContextForAnswer(root, query) : null;
+  return {
+    generated_at: new Date().toISOString(),
+    query: basis?.query ?? query,
+    basis,
+    pinned_questions: await readPinnedQuestions(root),
+    citation_explorer: basis ? buildCitationExplorer(basis) : emptyCitationExplorer(),
+    matched_page_previews: basis ? matchedPagePreviews(basis) : [],
+    source_event_previews: basis ? await sourceEventPreviews(root, basis) : [],
+    missing_memory_actions: basis ? missingMemoryActions(basis) : []
+  };
+}
+
+async function pinAskQuestion(root: string, input: Record<string, unknown>): Promise<{ pinned_questions: string[] }> {
+  const question = requiredStringInput(input, "question", "q");
+  const existing = await readPinnedQuestions(root);
+  const pinned = [question, ...existing.filter((item) => item.toLowerCase() !== question.toLowerCase())].slice(0, 25);
+  const filePath = askQuestionsPath(root);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify({ updated_at: new Date().toISOString(), questions: pinned }, null, 2)}\n`, "utf8");
+  return { pinned_questions: pinned };
+}
+
+async function createAskMissingMemoryPreview(
+  root: string,
+  input: Record<string, unknown>
+): Promise<FrictionLogPreviewResult> {
+  const question = requiredStringInput(input, "question", "q");
+  const note = optionalStringInput(input, "note") ?? `Memory could not answer: ${question}`;
+  return previewFrictionLog(root, {
+    kind: "retrieval_miss",
+    question,
+    note
+  });
 }
 
 async function createFrictionLogPreview(
@@ -2605,8 +2841,8 @@ function render() {
         if (draft) {
           renderAnswerDraft(await postJson("/api/ask/draft/preview", { question }));
         } else {
-          const result = await fetchJson(\`/api/ask?q=\${encodeURIComponent(question)}\`);
-          renderAnswerBasis(result);
+          const session = await fetchJson(\`/api/ask/session?q=\${encodeURIComponent(question)}\`);
+          renderAskSession(session);
         }
       } catch (error) {
         document.querySelector("#ask-result").innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
@@ -4313,7 +4549,26 @@ function plainListHtml(label, items) {
 }
 
 function renderAnswerBasis(result) {
-  renderAskResult(result);
+  renderAskSession({
+    query: result.query,
+    basis: result,
+    pinned_questions: [],
+    citation_explorer: citationExplorerFromBasis(result),
+    matched_page_previews: [],
+    source_event_previews: [],
+    missing_memory_actions: []
+  });
+}
+
+function renderAskSession(session) {
+  if (session.basis) {
+    renderAskResult(session.basis, session);
+    return;
+  }
+
+  clearCopyOutput();
+  document.querySelector("#ask-result").innerHTML = pinnedQuestionsHtml(session);
+  bindAskPinQuestion(session);
 }
 
 function renderAnswerDraft(result) {
@@ -4350,7 +4605,7 @@ function answerDraftHtml(result) {
   </section>\`;
 }
 
-function renderAskResult(result) {
+function renderAskResult(result, session = null) {
   clearCopyOutput();
   const cannotConfirm = [
     ...(result.missingInformation ?? []).map((item) => ({
@@ -4367,15 +4622,20 @@ function renderAskResult(result) {
     }))
   ];
   const sections = [
+    pinnedQuestionsHtml(session ?? { query: result.query, pinned_questions: [] }),
     retrievalPlanHtml(result),
     askSectionHtml("Answer candidates", result.answerCandidates ?? [], answerCandidateHtml, "No active answer candidates found."),
     askSectionHtml("Supporting claims", result.supportingClaims ?? [], claimHtml, "No active supporting claims were loaded."),
+    citationExplorerHtml(session?.citation_explorer ?? citationExplorerFromBasis(result)),
+    askSectionHtml("Matched page preview", session?.matched_page_previews ?? [], matchedPagePreviewHtml, "No matched page previews."),
+    askSectionHtml("Source Event preview", session?.source_event_previews ?? [], sourceEventPreviewHtml, "No source Event previews."),
     askSectionHtml("What memory cannot confirm", cannotConfirm, missingInfoHtml, "No missing information detected for loaded active claims."),
     askSectionHtml("Uncertainty", result.uncertainClaims ?? [], uncertainClaimHtml, "No staged, partial, superseded, rejected, or contested claims were loaded."),
     askSectionHtml("Evidence Events", result.evidenceEvents ?? [], eventHtml, "No cited Event pages were loaded."),
     askSectionHtml("Linked ReviewItems", result.linkedReviewItems ?? [], linkedItemHtml, "No linked ReviewItems."),
     askSectionHtml("Linked FollowUps", result.linkedFollowUps ?? [], linkedItemHtml, "No linked FollowUps."),
     askSectionHtml("Suggested manual actions", result.manualActions ?? [], manualActionHtml, "No suggested manual actions."),
+    missingMemoryActionHtml(result, session),
     askFrictionLogHtml(result),
     askSectionHtml("Suggested next questions", (result.suggestedNextQuestions ?? []).map((question) => ({ question })), nextQuestionHtml, "No suggested next questions."),
     askSectionHtml("Matched pages", result.matchedPages ?? [], pageSummaryHtml, "No matched people, topics, or contexts."),
@@ -4384,8 +4644,190 @@ function renderAskResult(result) {
 
   document.querySelector("#ask-result").innerHTML = sections.join("");
   bindCopyControls();
+  bindAskPinQuestion(session ?? { query: result.query, pinned_questions: [] });
+  bindAskMissingMemory(result);
   bindAskFrictionLog(result);
   bindBriefLinks();
+}
+
+function pinnedQuestionsHtml(session) {
+  const query = session?.query ?? "";
+  const pinned = session?.pinned_questions ?? [];
+  const pinButton = query
+    ? \`<div class="action-row"><button type="button" class="secondary" id="ask-pin-current" data-question="\${escapeHtml(query)}">Pin question</button></div>\`
+    : "";
+
+  return \`<section data-ask-section="pinned-questions">
+    <h2>Pinned questions</h2>
+    \${pinButton}
+    <div id="ask-pinned-output">\${pinnedQuestionsBodyHtml(pinned)}</div>
+  </section>\`;
+}
+
+function pinnedQuestionsBodyHtml(pinned) {
+  return pinned.length
+    ? \`<div class="grid">\${pinned.map((question) => \`<article class="item ask-card"><h3>Pinned question</h3><p>\${escapeHtml(question)}</p><button type="button" class="secondary ask-run-pinned" data-question="\${escapeHtml(question)}">Ask pinned</button></article>\`).join("")}</div>\`
+    : '<article class="item"><h3>Empty</h3><p class="meta">No pinned local questions.</p></article>';
+}
+
+function citationExplorerFromBasis(result) {
+  const claimIds = [
+    ...(result.answerCandidates ?? []).map((candidate) => candidate.claim_id),
+    ...(result.supportingClaims ?? []).map((claim) => claim.claim_id),
+    ...(result.uncertainClaims ?? []).map((claim) => claim.claim_id)
+  ];
+  const eventIds = [
+    ...(result.evidenceEvents ?? []).map((event) => event.id),
+    ...(result.answerCandidates ?? []).flatMap((candidate) => candidate.evidence ?? []),
+    ...(result.supportingClaims ?? []).flatMap((claim) => claim.evidence ?? [])
+  ];
+
+  return {
+    claim_ids: uniqueClientStrings(claimIds),
+    event_ids: uniqueClientStrings(eventIds),
+    page_paths: uniqueClientStrings([
+      ...(result.matchedPages ?? []).map((page) => page.path),
+      ...(result.answerCandidates ?? []).map((candidate) => candidate.page_path),
+      ...(result.supportingClaims ?? []).map((claim) => claim.page_path)
+    ]),
+    review_item_ids: uniqueClientStrings((result.linkedReviewItems ?? []).map((item) => item.id)),
+    followup_ids: uniqueClientStrings((result.linkedFollowUps ?? []).map((item) => item.id))
+  };
+}
+
+function citationExplorerHtml(explorer) {
+  const rows = [
+    ["Claim IDs", explorer.claim_ids ?? []],
+    ["Event IDs", explorer.event_ids ?? []],
+    ["Page paths", explorer.page_paths ?? []],
+    ["ReviewItems", explorer.review_item_ids ?? []],
+    ["FollowUps", explorer.followup_ids ?? []]
+  ];
+
+  return \`<section data-ask-section="citation-explorer">
+    <h2>Citation explorer</h2>
+    <article class="item ask-card">
+      \${rows.map(([label, values]) => plainListHtml(label, values.length ? values : ["none"])).join("")}
+      <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(rows.flatMap(([, values]) => values).join("; "))}">Copy citations</button>
+    </article>
+  </section>\`;
+}
+
+function matchedPagePreviewHtml(preview) {
+  const lines = [
+    \`page: \${preview.path}\`,
+    \`id: \${preview.id ?? "unknown"}\`,
+    \`why: \${preview.why_included ?? "loaded from deterministic match"}\`
+  ];
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(preview.name ?? preview.path)}</h3>
+    <p class="pill">\${escapeHtml(preview.type ?? "page")}</p>
+    \${detailListHtml([
+      ["Path", preview.path],
+      ["Why included", preview.why_included ?? "loaded from deterministic match"]
+    ])}
+    <p>\${escapeHtml(preview.content_preview ?? "")}</p>
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function sourceEventPreviewHtml(preview) {
+  const lines = [
+    \`event: \${preview.id ?? "unknown"}\`,
+    \`path: \${preview.path}\`,
+    \`recorded: \${preview.recorded_at ?? "unknown"}\`
+  ];
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(preview.id ?? preview.path)}</h3>
+    <p class="pill">source Event preview</p>
+    \${detailListHtml([
+      ["Path", preview.path],
+      ["Observed", preview.observed_at ?? "unknown"],
+      ["Why included", preview.why_included ?? "cited by retrieved claim"]
+    ])}
+    <p>\${escapeHtml(preview.raw_text_preview ?? "")}</p>
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+  </article>\`;
+}
+
+function missingMemoryActionHtml(result, session = null) {
+  const actions = session?.missing_memory_actions ?? [];
+  const shouldShow = actions.length || (result.missingInformation ?? []).length || (result.manualActions ?? []).some((action) => action.action === "log_friction");
+
+  if (!shouldShow) {
+    return "";
+  }
+
+  return \`<section data-ask-section="missing-memory-action">
+    <h2>Missing-memory action</h2>
+    <article class="item ask-card">
+      <h3>Preview a source-backed feedback action</h3>
+      <p class="meta">Preview creates no files. Use capture or friction logging when this missing memory should become evidence.</p>
+      \${plainListHtml("Allowed routes", actions.map((action) => \`\${action.label}: \${action.preview_endpoint}\`))}
+      <form id="ask-missing-memory-form" class="action-stack">
+        <label class="field" for="ask-missing-memory-note"><span>Missing-memory note</span><textarea id="ask-missing-memory-note" name="note" rows="4" placeholder="What should be captured or reviewed?"></textarea></label>
+        <div class="action-row"><button type="submit" class="secondary">Preview missing-memory action</button></div>
+      </form>
+      <div id="ask-missing-memory-output" class="action-output"></div>
+    </article>
+  </section>\`;
+}
+
+function bindAskPinQuestion(session) {
+  document.querySelector("#ask-pin-current")?.addEventListener("click", async (event) => {
+    const output = document.querySelector("#ask-pinned-output");
+    output.innerHTML = "<pre>Pinning</pre>";
+
+    try {
+      const result = await postJson("/api/ask/pin", { question: event.currentTarget.dataset.question });
+      output.innerHTML = pinnedQuestionsBodyHtml(result.pinned_questions);
+      for (const button of output.querySelectorAll(".ask-run-pinned")) {
+        bindPinnedQuestionButton(button);
+      }
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+
+  for (const button of document.querySelectorAll(".ask-run-pinned")) {
+    bindPinnedQuestionButton(button);
+  }
+}
+
+function bindPinnedQuestionButton(button) {
+  button.addEventListener("click", async () => {
+    const input = document.querySelector("#ask-input");
+    input.value = button.dataset.question ?? "";
+    document.querySelector("#ask-form").requestSubmit();
+  });
+}
+
+function bindAskMissingMemory(result) {
+  const form = document.querySelector("#ask-missing-memory-form");
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const output = document.querySelector("#ask-missing-memory-output");
+    output.innerHTML = "<pre>Previewing</pre>";
+
+    try {
+      const action = await postJson("/api/ask/missing-memory/preview", {
+        question: result.query,
+        note: form.elements.note.value
+      });
+      output.innerHTML = renderActionResult(action);
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+}
+
+function uniqueClientStrings(values) {
+  return [...new Set((values ?? []).filter(Boolean))].sort();
 }
 
 function retrievalPlanHtml(result) {

@@ -73,7 +73,13 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(page.getByRole("heading", { name: "Evidence Events" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Linked FollowUps" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched pages" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Citation explorer" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Matched page preview" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Source Event preview" })).toBeVisible();
     const answerSection = page.locator('[data-ask-section="answer-candidates"]');
+    const citationSection = page.locator('[data-ask-section="citation-explorer"]');
+    const pagePreviewSection = page.locator('[data-ask-section="matched-page-preview"]');
+    const eventPreviewSection = page.locator('[data-ask-section="source-event-preview"]');
     const planSection = page.locator('[data-ask-section="retrieval-plan"]');
     await expect(planSection.getByRole("heading", { name: "manager_reporting" })).toBeVisible();
     await expect(planSection.getByRole("heading", { name: "relation_claims" })).toBeVisible();
@@ -81,6 +87,13 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(answerSection.getByText("claim_id: clm_jeff_manager")).toBeVisible();
     await expect(answerSection.getByText("page: memory/people/jeff.md")).toBeVisible();
     await expect(answerSection.getByText("events: ev_2026_05_21_001")).toBeVisible();
+    await expect(citationSection.getByText("clm_jeff_manager")).toBeVisible();
+    await expect(citationSection.getByText("ev_2026_05_21_001")).toBeVisible();
+    await expect(pagePreviewSection.getByText("memory/people/jeff.md")).toBeVisible();
+    await expect(eventPreviewSection.getByText("Jeff is my manager.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Pin question" }).click();
+    await expect(page.locator('[data-ask-section="pinned-questions"]').getByText("Who is my manager?")).toBeVisible();
 
     await page.getByRole("button", { name: "Copy citation" }).first().click();
     await expect(page.locator("#copy-output")).toContainText("Derived text only; not saved");
@@ -141,10 +154,17 @@ test("ask tab renders no-match guidance without inventing memory", async ({ page
     await expect(manualActionSection.getByText("Capture a note if this should become memory")).toBeVisible();
     await expect(manualActionSection.getByText("Log this retrieval miss")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Log retrieval miss" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Missing-memory action" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched pages" })).toBeVisible();
     const matchedPagesSection = page.locator('[data-ask-section="matched-pages"]');
     await expect(matchedPagesSection.getByText("No matched people, topics, or contexts.")).toBeVisible();
     await expect(page.locator(".ask-card", { hasText: "Neptune deploy key" })).toHaveCount(0);
+
+    await page.getByLabel("Missing-memory note").fill("Need to capture the Neptune deploy key source.");
+    await page.getByRole("button", { name: "Preview missing-memory action" }).click();
+    await expect(page.locator("#ask-missing-memory-output").getByRole("heading", { name: "Preview only" })).toBeVisible();
+    await expect(page.locator("#ask-missing-memory-output")).toContainText("log friction");
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ENOENT/);
 
     await page.getByLabel("Friction note").fill("Memory could not answer the Neptune deploy key question.");
     await page.getByRole("button", { name: "Preview log" }).click();
