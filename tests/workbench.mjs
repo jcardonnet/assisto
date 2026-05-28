@@ -765,6 +765,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /import-form/);
     assert.match(client.body, /\/api\/import\/preview/);
     assert.match(client.body, /\/api\/import/);
+    assert.match(client.body, /\/api\/import\/session/);
     assert.match(client.body, /\/api\/import\/triage\/preview/);
     assert.match(client.body, /\/api\/import\/triage/);
     assert.match(client.body, /import-triage-form/);
@@ -1116,7 +1117,21 @@ export async function runWorkbenchTests() {
     assert.equal(importTriagePreview.units_kept, 1);
     assert.equal(importTriagePreview.units_skipped, 1);
     assert.equal(importTriagePreview.units[0].context, "ctx_inventory_project");
+    assert.equal(importTriagePreview.likely_counts.safe, 1);
+    assert.ok(importTriagePreview.session_id);
     await assert.rejects(() => readVaultFile(root, importTriagePreview.units[0].event_path), /ENOENT/);
+
+    const importSession = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: `/api/import/session?id=${encodeURIComponent(importTriagePreview.session_id)}`
+        })
+      ).body
+    );
+    assert.equal(importSession.session_id, importTriagePreview.session_id);
+    assert.equal(importSession.result.units_total, 2);
+    assert.equal(importSession.result.created, false);
 
     const importTriageCreateRoot = await makeTempVault("assisto-workbench-import-triage-route-");
 

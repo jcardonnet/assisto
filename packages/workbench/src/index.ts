@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http, { type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -429,6 +429,16 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildCaptureInboxResult(root));
   }
 
+  if (requestUrl.pathname === "/api/import/session") {
+    const sessionId = requestUrl.searchParams.get("id")?.trim();
+
+    if (!sessionId) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    return jsonRoute(200, await readImportSession(root, sessionId));
+  }
+
   if (requestUrl.pathname === "/api/review") {
     return jsonRoute(200, await collectReviewInbox(root));
   }
@@ -755,7 +765,43 @@ async function createImportTriagePreview(
     units: importTriageUnitsInput(input)
   };
 
-  return created ? createImportTriage(root, importInput, options) : previewImportTriage(root, importInput, options);
+  const result = created ? await createImportTriage(root, importInput, options) : await previewImportTriage(root, importInput, options);
+  const session = await writeImportSession(root, result);
+  return { ...result, session_id: session.session_id };
+}
+
+interface ImportSessionRecord {
+  session_id: string;
+  created_at: string;
+  result: ImportTriagePreviewResult | ImportTriageCreateResult;
+}
+
+async function writeImportSession(
+  root: string,
+  result: ImportTriagePreviewResult | ImportTriageCreateResult
+): Promise<ImportSessionRecord> {
+  const sessionId = `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const record: ImportSessionRecord = {
+    session_id: sessionId,
+    created_at: new Date().toISOString(),
+    result: { ...result, session_id: sessionId }
+  };
+  const sessionPath = importSessionPath(root, sessionId);
+  await mkdir(path.dirname(sessionPath), { recursive: true });
+  await writeFile(sessionPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  return record;
+}
+
+async function readImportSession(root: string, sessionId: string): Promise<ImportSessionRecord> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+    throw new Error("Import session id must be alphanumeric with dashes or underscores.");
+  }
+
+  return JSON.parse(await readFile(importSessionPath(root, sessionId), "utf8")) as ImportSessionRecord;
+}
+
+function importSessionPath(root: string, sessionId: string): string {
+  return path.join(root, ".assisto-local", "import-sessions", `${sessionId}.json`);
 }
 
 function importTriageUnitsInput(input: Record<string, unknown>): ImportTriageUnitInput[] | undefined {
@@ -3325,10 +3371,16 @@ function renderImportTriageEditor(result = null) {
     <h2>Import triage</h2>
     <p class="meta">Edit, split, merge, or skip curated Markdown/text units before creating Event plus pending Transaction records.</p>
     \${result ? detailListHtml([
+      ["Session", result.session_id ?? "none"],
       ["Units", String(result.units_total ?? importTriageUnits.length)],
       ["Kept", String(result.units_kept ?? result.units_imported ?? 0)],
-      ["Skipped", String(result.units_skipped ?? 0)]
+      ["Skipped", String(result.units_skipped ?? 0)],
+      ["Likely safe", String(result.likely_counts?.safe ?? 0)],
+      ["Likely staged", String(result.likely_counts?.staged ?? 0)],
+      ["Duplicates", String(result.likely_counts?.duplicates ?? 0)],
+      ["Estimated review units", String(result.estimated_review_load?.units_needing_review ?? 0)]
     ]) : ""}
+    \${result?.session_id ? \`<div class="action-row"><button type="button" class="secondary import-session-load" data-session-id="\${escapeHtml(result.session_id)}">Reload import session</button></div>\` : ""}
     <form id="import-triage-form" class="action-stack">
       <div id="import-triage-units" class="grid">\${cards || '<article class="item"><h3>Empty</h3><p class="meta">No triage units.</p></article>'}</div>
       <div class="action-row">
@@ -3394,6 +3446,21 @@ function bindImportTriageActions() {
       output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
     }
   });
+
+  for (const button of document.querySelectorAll(".import-session-load")) {
+    button.addEventListener("click", async () => {
+      const output = document.querySelector("#import-output");
+      output.innerHTML = "<pre>Loading session</pre>";
+      try {
+        const session = await fetchJson(\`/api/import/session?id=\${encodeURIComponent(button.dataset.sessionId ?? "")}\`);
+        importTriageUnits = triageUnitsFromResult(session.result);
+        renderImportTriageEditor(session.result);
+        output.innerHTML = renderImportTriageResult(session.result);
+      } catch (error) {
+        output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+      }
+    });
+  }
 }
 
 function updateImportTriageUnitsFromDom() {
@@ -3477,6 +3544,10 @@ function renderImportTriageResult(result) {
       ["Observed", unit.observed_at ?? "none"],
       ["Context", unit.context ?? "none"],
       ["Source hash", unit.source_hash],
+      ["Likely outcome", unit.extraction_summary?.likely_outcome ?? "unknown"],
+      ["Claims", String(unit.extraction_summary?.claim_count ?? 0)],
+      ["Staged reviews", String(unit.extraction_summary?.staged_review_count ?? 0)],
+      ["FollowUps", String(unit.extraction_summary?.followup_count ?? 0)],
       ["Event", unit.event_path ? \`\${unit.event_id} · \${unit.event_path}\` : unit.existing_event_path ?? "none"],
       ["Transaction", unit.transaction_path ? \`\${unit.transaction_id} · \${unit.transaction_path}\` : "none"],
       ["Validation", unit.validation ? (unit.validation.passed ? "passed" : "failed") : "not run"]
@@ -3489,10 +3560,17 @@ function renderImportTriageResult(result) {
     <h2>\${result.created ? "Triage imports created" : "Preview triage"}</h2>
     <p class="pill">\${escapeHtml(result.provider_name)}</p>
     \${detailListHtml([
+      ["Session", result.session_id ?? "none"],
       ["Units", String(result.units_total)],
       ["Kept", String(result.units_kept)],
-      ["Skipped", String(result.units_skipped)]
+      ["Skipped", String(result.units_skipped)],
+      ["Likely safe", String(result.likely_counts?.safe ?? 0)],
+      ["Likely staged", String(result.likely_counts?.staged ?? 0)],
+      ["Likely conflicts", String(result.likely_counts?.conflicts ?? 0)],
+      ["Duplicates", String(result.likely_counts?.duplicates ?? 0)],
+      ["Estimated review units", String(result.estimated_review_load?.units_needing_review ?? 0)]
     ])}
+    \${plainListHtml("Duplicate groups", (result.duplicate_groups ?? []).map((group) => \`\${group.source_hash.slice(0, 12)}: \${group.unit_ids.join(", ")}\`))}
   </article>
   <section><h2>Triage units</h2><div class="grid">\${units || '<article class="item"><h3>Empty</h3><p class="meta">No triage units.</p></article>'}</div></section>\`;
 }

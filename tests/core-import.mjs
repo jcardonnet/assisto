@@ -94,8 +94,8 @@ export async function runCoreImportTests() {
           {
             unit_id: "unit_3",
             action: "keep",
-            raw_text: "I will ask Jeff about budgets.",
-            source_label: "triaged follow-up"
+            raw_text: "We use MySQL.",
+            source_label: "triaged unscoped topic"
           }
         ]
       },
@@ -116,9 +116,15 @@ export async function runCoreImportTests() {
     assert.equal(preview.units[0].observed_at, "2026-05-22");
     assert.equal(preview.units[0].context, "ctx_inventory_project");
     assert.equal(preview.units[0].validation.passed, true);
+    assert.equal(preview.units[0].extraction_summary.claim_count > 0, true);
+    assert.equal(preview.units[0].extraction_summary.likely_outcome, "safe");
     assert.equal(preview.units[1].triage_action, "skip");
     assert.equal(preview.units[1].skip_reason, "triage_skip");
+    assert.equal(preview.units[1].extraction_summary.likely_outcome, "skipped");
     assert.equal(preview.units[2].event_id, "ev_2026_05_24_002");
+    assert.equal(preview.units[2].extraction_summary.likely_outcome, "staged");
+    assert.equal(preview.estimated_review_load.units_needing_review, 1);
+    assert.equal(preview.likely_counts.staged, 1);
     await assert.rejects(() => readVaultFile(triagePreviewRoot, "memory/events/2026/2026-05/2026-05-24-001.md"), /ENOENT/);
   } finally {
     await rm(triagePreviewRoot, { recursive: true, force: true });
@@ -164,6 +170,10 @@ export async function runCoreImportTests() {
     assert.equal(created.units_skipped, 2);
     assert.equal(created.units[1].skip_reason, "duplicate_source_hash");
     assert.equal(created.units[2].skip_reason, "triage_skip");
+    assert.equal(created.duplicate_groups.length, 1);
+    assert.equal(created.duplicate_groups[0].unit_ids.includes("unit_1"), true);
+    assert.equal(created.duplicate_groups[0].unit_ids.includes("unit_2"), true);
+    assert.equal(created.likely_counts.duplicates, 1);
     assert.match(await readVaultFile(triageCreateRoot, "memory/events/2026/2026-05/2026-05-24-001.md"), /source_label: triaged person note/);
     assert.match(await readVaultFile(triageCreateRoot, "memory/events/2026/2026-05/2026-05-24-001.md"), /ctx_inventory_project/);
     assert.match(await readVaultFile(triageCreateRoot, "memory/transactions/pending/tx_2026_05_24_001.md"), /transaction_state: pending/);
