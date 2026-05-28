@@ -45,7 +45,7 @@ test("import tab triages units with split, skip, and per-unit metadata", async (
 
     await page.goto(server.url);
     await page.getByRole("button", { name: "Import" }).click();
-    await page.getByLabel("Batch text").fill("Joe is the DBA.\n\nWe use MySQL.\n---\nI will ask Jeff about budgets.");
+    await page.getByLabel("Batch text").fill("Joe is the DBA.\n\nWe use MySQL.\n---\nJoe is the DBA.");
     await page.getByRole("button", { name: "Prepare triage" }).click();
     await expect(page.getByRole("heading", { name: "Import triage" })).toBeVisible();
 
@@ -58,8 +58,19 @@ test("import tab triages units with split, skip, and per-unit metadata", async (
 
     await page.getByRole("button", { name: "Preview triage" }).click();
     await expect(page.getByRole("heading", { name: "Preview triage" })).toBeVisible();
+    const importOutput = page.locator("#import-output");
     await expect(page.getByText("triaged person note")).toBeVisible();
     await expect(page.getByText("triage_skip")).toBeVisible();
+    await expect(importOutput.getByText("Likely safe")).toBeVisible();
+    await expect(importOutput.getByText("Likely staged")).toBeVisible();
+    await expect(importOutput.getByText("Estimated review units")).toBeVisible();
+    await expect(importOutput.getByText("Duplicate groups")).toBeVisible();
+    await expect(importOutput.getByText("unit_1, unit_3")).toBeVisible();
+    await expect(importOutput.getByText("Likely outcome").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reload import session" })).toBeVisible();
+    await page.getByRole("button", { name: "Reload import session" }).click();
+    await expect(page.getByRole("heading", { name: "Preview triage" })).toBeVisible();
+    await expect(importOutput.getByText("unit_1, unit_3")).toBeVisible();
     await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ENOENT/);
 
     await page.getByRole("button", { name: "Create triage" }).click();
@@ -67,7 +78,6 @@ test("import tab triages units with split, skip, and per-unit metadata", async (
     assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /source_label: triaged person note/);
     assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ctx_inventory_project/);
     assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"), /transaction_state: pending/);
-    assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_002.md"), /transaction_state: pending/);
     await assert.rejects(() => readVaultFile(root, "memory/people/joe.md"), /ENOENT/);
   } finally {
     await server?.close();

@@ -90,20 +90,55 @@ export type ImportTriageUnitResult = ImportUnitResult & {
   triage_action: ImportTriageUnitAction;
   observed_at?: string | null;
   context?: string;
+  extraction_summary: ImportUnitExtractionSummary;
 };
 
 export interface ImportTriageResult {
   action: "import_triage";
   created: boolean;
+  session_id?: string;
   units_total: number;
   units_kept: number;
   units_skipped: number;
   provider_name: string;
   units: ImportTriageUnitResult[];
+  duplicate_groups: ImportDuplicateGroup[];
+  estimated_review_load: ImportEstimatedReviewLoad;
+  likely_counts: ImportLikelyCounts;
 }
 
 export type ImportTriagePreviewResult = ImportTriageResult & { created: false };
 export type ImportTriageCreateResult = ImportTriageResult & { created: true };
+
+export interface ImportUnitExtractionSummary {
+  claim_count: number;
+  staged_review_count: number;
+  followup_count: number;
+  operation_count: number;
+  likely_outcome: "safe" | "staged" | "conflict" | "duplicate" | "skipped";
+}
+
+export interface ImportDuplicateGroup {
+  source_hash: string;
+  unit_ids: string[];
+  existing_event_id?: string;
+  existing_event_path?: string;
+}
+
+export interface ImportEstimatedReviewLoad {
+  units_needing_review: number;
+  staged_review_items: number;
+  conflict_units: number;
+  duplicate_units: number;
+}
+
+export interface ImportLikelyCounts {
+  safe: number;
+  staged: number;
+  conflicts: number;
+  duplicates: number;
+  skipped: number;
+}
 
 const defaultGlob = "*.md,*.txt";
 
@@ -365,7 +400,8 @@ async function runImportTriage(
       unit_id: unitId,
       triage_action: triageAction,
       observed_at: observedAt,
-      context
+      context,
+      extraction_summary: extractionSummaryForImportedUnit(result)
     });
     seenSourceHashes.set(sourceHash, {
       event_id: ingest.event_id,
@@ -380,7 +416,10 @@ async function runImportTriage(
     units_kept: results.filter((unit) => !unit.skipped).length,
     units_skipped: results.filter((unit) => unit.skipped).length,
     provider_name: providerName,
-    units: results
+    units: results,
+    duplicate_groups: duplicateGroups(results),
+    estimated_review_load: estimatedReviewLoad(results),
+    likely_counts: likelyCounts(results)
   };
 }
 
@@ -584,7 +623,74 @@ function triageSkippedUnit(input: {
     unit_id: input.unitId,
     triage_action: input.triageAction,
     observed_at: input.observedAt,
-    context: input.context
+    context: input.context,
+    extraction_summary: extractionSummaryForSkippedUnit(input.reason)
+  };
+}
+
+function extractionSummaryForImportedUnit(unit: ImportUnitResult): ImportUnitExtractionSummary {
+  const stagedReviewCount = unit.staged_review_paths.length;
+  const conflict = unit.staged_review_paths.some((reviewPath) => /role|reporting|conflict|change/i.test(reviewPath));
+  const validationFailed = unit.validation ? !unit.validation.passed : false;
+
+  return {
+    claim_count: unit.extracted_claim_ids.length,
+    staged_review_count: stagedReviewCount,
+    followup_count: unit.followup_paths.length,
+    operation_count: unit.operations.length,
+    likely_outcome: conflict ? "conflict" : stagedReviewCount > 0 || validationFailed ? "staged" : "safe"
+  };
+}
+
+function extractionSummaryForSkippedUnit(reason: "duplicate_source_hash" | "triage_skip"): ImportUnitExtractionSummary {
+  return {
+    claim_count: 0,
+    staged_review_count: 0,
+    followup_count: 0,
+    operation_count: 0,
+    likely_outcome: reason === "duplicate_source_hash" ? "duplicate" : "skipped"
+  };
+}
+
+function duplicateGroups(units: ImportTriageUnitResult[]): ImportDuplicateGroup[] {
+  const groups = new Map<string, ImportTriageUnitResult[]>();
+
+  for (const unit of units) {
+    const group = groups.get(unit.source_hash) ?? [];
+    group.push(unit);
+    groups.set(unit.source_hash, group);
+  }
+
+  return [...groups.entries()]
+    .filter(([, group]) => group.length > 1 || group.some((unit) => unit.skip_reason === "duplicate_source_hash"))
+    .map(([sourceHash, group]) => {
+      const existing = group.find((unit) => unit.existing_event_id || unit.existing_event_path);
+      return {
+        source_hash: sourceHash,
+        unit_ids: group.map((unit) => unit.unit_id).sort(),
+        existing_event_id: existing?.existing_event_id,
+        existing_event_path: existing?.existing_event_path
+      };
+    })
+    .sort((left, right) => left.source_hash.localeCompare(right.source_hash));
+}
+
+function estimatedReviewLoad(units: ImportTriageUnitResult[]): ImportEstimatedReviewLoad {
+  return {
+    units_needing_review: units.filter((unit) => unit.extraction_summary.likely_outcome === "staged" || unit.extraction_summary.likely_outcome === "conflict").length,
+    staged_review_items: units.reduce((sum, unit) => sum + unit.extraction_summary.staged_review_count, 0),
+    conflict_units: units.filter((unit) => unit.extraction_summary.likely_outcome === "conflict").length,
+    duplicate_units: units.filter((unit) => unit.extraction_summary.likely_outcome === "duplicate").length
+  };
+}
+
+function likelyCounts(units: ImportTriageUnitResult[]): ImportLikelyCounts {
+  return {
+    safe: units.filter((unit) => unit.extraction_summary.likely_outcome === "safe").length,
+    staged: units.filter((unit) => unit.extraction_summary.likely_outcome === "staged").length,
+    conflicts: units.filter((unit) => unit.extraction_summary.likely_outcome === "conflict").length,
+    duplicates: units.filter((unit) => unit.extraction_summary.likely_outcome === "duplicate").length,
+    skipped: units.filter((unit) => unit.extraction_summary.likely_outcome === "skipped").length
   };
 }
 

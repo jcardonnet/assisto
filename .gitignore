@@ -28,6 +28,7 @@ test-results/
 .assisto-agent/runs/
 .assisto-agent/logs/
 .assisto-agent/cache/
+.assisto-local/**
 
 # Pi runtime caches; keep .pi skills, prompts, and extensions tracked
 .pi/cache/
