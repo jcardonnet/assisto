@@ -14,9 +14,11 @@ import {
   createHealthReviewTransaction,
   createFrictionLog,
   createImportNotes,
+  createSeedKit,
   previewCaptureNote,
   previewFrictionLog,
   previewImportNotes,
+  previewSeedKit,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -33,6 +35,8 @@ import {
   type ImportNotesResult,
   type ParsedTransaction,
   type ReviewActionState,
+  type SeedKitInput,
+  type SeedKitResult,
   type SessionBriefKind,
   type ValidationDocument,
   type ValidationResult
@@ -98,6 +102,10 @@ export async function main(
 
     if (command === "import") {
       return await commandImport(parsed.root, rest, io, cwd);
+    }
+
+    if (command === "seed") {
+      return await commandSeed(parsed.root, rest, io, cwd);
     }
 
     if (command === "today") {
@@ -398,6 +406,36 @@ async function commandImport(root: string, args: string[], io: CliIo, cwd: strin
 
   printImportResult(result, io);
   return importValidationPassed(result) ? 0 : 1;
+}
+
+async function commandSeed(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm seed kit --file <json|md> [--dry-run]\n");
+    return 0;
+  }
+
+  if (subcommand !== "kit") {
+    throw new Error("Usage: wm seed kit --file <json|md> [--dry-run]");
+  }
+
+  const fromFile = optionValue(args, "--file");
+
+  if (!fromFile) {
+    throw new Error("wm seed kit requires --file <json|md>.");
+  }
+
+  const dryRun = args.includes("--dry-run");
+  const input = parseSeedKitFile(await readFile(path.resolve(cwd, fromFile), "utf8"), fromFile);
+  const result = dryRun ? await previewSeedKit(root, input, { now: io.now }) : await createSeedKit(root, input, { now: io.now });
+
+  if (dryRun) {
+    io.stdout(`Dry run. No changes written to ${root}.\n`);
+  }
+
+  printSeedKitResult(result, io);
+  return result.validation.passed ? 0 : 1;
 }
 
 async function commandToday(root: string, args: string[], io: CliIo): Promise<number> {
@@ -1057,6 +1095,108 @@ function importValidationPassed(result: ImportNotesResult): boolean {
   return result.units.every((unit) => unit.skipped || unit.validation?.passed === true);
 }
 
+function parseSeedKitFile(content: string, filePath: string): SeedKitInput {
+  if (filePath.toLowerCase().endsWith(".json")) {
+    const parsed = JSON.parse(content) as unknown;
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Seed kit JSON must be an object.");
+    }
+
+    return parsed as SeedKitInput;
+  }
+
+  const sections = markdownSeedSections(content);
+
+  if (Object.keys(sections).length > 0) {
+    return sections;
+  }
+
+  return {
+    things_i_keep_forgetting: content
+  };
+}
+
+function markdownSeedSections(content: string): SeedKitInput {
+  const output: SeedKitInput = {};
+  let current: keyof SeedKitInput | null = null;
+  const buffers: Partial<Record<keyof SeedKitInput, string[]>> = {};
+
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(/^#{1,3}\s+(.+?)\s*$/)?.[1];
+
+    if (heading) {
+      current = seedSectionKey(heading);
+      continue;
+    }
+
+    if (!current) {
+      continue;
+    }
+
+    buffers[current] = [...(buffers[current] ?? []), line.replace(/^[-*]\s+/, "")];
+  }
+
+  for (const [key, lines] of Object.entries(buffers) as Array<[keyof SeedKitInput, string[]]>) {
+    const value = lines.map((line) => line.trim()).filter(Boolean);
+
+    if (value.length > 0) {
+      output[key] = value;
+    }
+  }
+
+  return output;
+}
+
+function seedSectionKey(label: string): keyof SeedKitInput | null {
+  const normalized = label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  if (normalized === "my role" || normalized === "role") {
+    return "my_role";
+  }
+
+  if (normalized === "manager team" || normalized === "team" || normalized === "manager") {
+    return "manager_team";
+  }
+
+  if (normalized === "current projects" || normalized === "projects" || normalized === "contexts" || normalized === "current contexts") {
+    return "current_projects";
+  }
+
+  if (normalized === "important people" || normalized === "people") {
+    return "important_people";
+  }
+
+  if (normalized === "systems topics" || normalized === "systems" || normalized === "topics") {
+    return "systems_topics";
+  }
+
+  if (normalized === "open loops" || normalized === "follow ups" || normalized === "followups") {
+    return "open_loops";
+  }
+
+  if (normalized === "things i keep forgetting" || normalized === "memory gaps") {
+    return "things_i_keep_forgetting";
+  }
+
+  return null;
+}
+
+function printSeedKitResult(result: SeedKitResult, io: CliIo): void {
+  io.stdout(`Seed units: ${result.units.length}\n`);
+  io.stdout(`Validation: ${result.validation.passed ? "passed" : "failed"}\n`);
+
+  for (const unit of result.units) {
+    io.stdout(`${unit.section_label}: ${unit.source_label}\n`);
+    io.stdout(`Event: ${unit.event_id} (${unit.event_path})\n`);
+    io.stdout(`Pending transaction: ${unit.transaction_id} (${unit.transaction_path})\n`);
+
+    if (unit.staged_review_paths.length > 0) {
+      io.stdout(`Staged review proposals: ${unit.staged_review_paths.join(", ")}\n`);
+    }
+  }
+}
+
 function printValidationResult(result: ValidationResult, io: CliIo): void {
   if (result.passed) {
     io.stdout("Validation passed.\n");
@@ -1115,6 +1255,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
+      "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] dogfood status [--json]",

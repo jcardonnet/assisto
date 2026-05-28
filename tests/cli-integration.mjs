@@ -65,6 +65,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /activate status/);
+  assert.match(help.stdout, /seed kit/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
 
@@ -187,6 +188,35 @@ export async function runCliIntegrationTests() {
     await expectMissing(frictionRoot, "memory/topics/friction.md");
   } finally {
     await rm(frictionRoot, { recursive: true, force: true });
+  }
+
+  const seedRoot = await makeTempVault();
+  const seedFile = path.join(seedRoot, "seed.json");
+
+  try {
+    await writeFile(
+      seedFile,
+      JSON.stringify({
+        my_role: "I am an AI Engineer at SmartEquip.",
+        manager_team: ["Jeff is my manager."],
+        open_loops: ["I need to ask Jeff about onboarding."]
+      }),
+      "utf8"
+    );
+
+    const dryRun = await runWm(seedRoot, ["seed", "kit", "--file", seedFile, "--dry-run"]);
+    assert.match(dryRun.stdout, /Dry run\. No changes written/);
+    assert.match(dryRun.stdout, /Seed units: 3/);
+    await expectMissing(seedRoot, "memory/events/2026/2026-05/2026-05-20-001.md");
+
+    const created = await runWm(seedRoot, ["seed", "kit", "--file", seedFile]);
+    assert.match(created.stdout, /Seed units: 3/);
+    assert.match(created.stdout, /seed:role/);
+    assert.match(created.stdout, /Validation: passed/);
+    assert.match(await readVaultFile(seedRoot, "memory/events/2026/2026-05/2026-05-20-001.md"), /source_label: seed:role/);
+    await expectMissing(seedRoot, "memory/people/jeff.md");
+  } finally {
+    await rm(seedRoot, { recursive: true, force: true });
   }
 
   const importRoot = await makeTempVault();

@@ -38,6 +38,12 @@ CLI parity:
 wm capture --observed-at 2026-05-27 --source-label "daily note" "I need to ask Jeff about onboarding."
 ```
 
+For first-day setup, use the Personal Seed Kit in the Capture tab or start from `docs/seed-kit-template.md`:
+
+```bash
+wm seed kit --file docs/seed-kit-template.md --dry-run
+```
+
 If the optional OpenAI provider is configured, use it only for candidate extraction. Deterministic validation still decides whether candidates become pending Transactions or staged review, and no Transaction is applied automatically.
 
 ## Review pending work

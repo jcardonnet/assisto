@@ -29,6 +29,19 @@ test("capture tab previews and creates pending transactions without canonical pa
     assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /source_label: browser capture/);
     assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_20_001.md"), /transaction_state: pending/);
     await assert.rejects(() => readVaultFile(root, "memory/people/joe.md"), /ENOENT/);
+
+    await page.getByLabel("My role").fill("I am an AI Engineer at SmartEquip.");
+    await page.getByLabel("Manager and team").fill("Jeff is my manager.");
+    await page.getByRole("button", { name: "Preview seed kit" }).click();
+    await expect(page.getByRole("heading", { name: "Preview only" })).toBeVisible();
+    await expect(page.getByText("seed:role")).toBeVisible();
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-002.md"), /ENOENT/);
+
+    await page.getByRole("button", { name: "Create seed kit" }).click();
+    await expect(page.getByRole("heading", { name: "Pending transaction created" })).toBeVisible();
+    assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-002.md"), /source_label: seed:role/);
+    assert.match(await readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-003.md"), /source_label: seed:manager-team/);
+    await assert.rejects(() => readVaultFile(root, "memory/people/jeff.md"), /ENOENT/);
   } finally {
     await server?.close();
     await rm(root, { recursive: true, force: true });

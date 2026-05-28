@@ -755,6 +755,9 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /quick-capture-context-options/);
     assert.match(client.body, /\/api\/capture\/preview/);
     assert.match(client.body, /\/api\/capture/);
+    assert.match(client.body, /seed-kit-form/);
+    assert.match(client.body, /\/api\/seed\/preview/);
+    assert.match(client.body, /\/api\/seed\/create/);
     assert.match(client.body, /import-form/);
     assert.match(client.body, /\/api\/import\/preview/);
     assert.match(client.body, /\/api\/import/);
@@ -982,6 +985,48 @@ export async function runWorkbenchTests() {
     await assert.rejects(() => readVaultFile(captureCreateRoot, "memory/people/joe.md"), /ENOENT/);
     } finally {
       await rm(captureCreateRoot, { recursive: true, force: true });
+    }
+
+    const seedPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/seed/preview",
+          body: JSON.stringify({
+            myRole: "I am an AI Engineer at SmartEquip.",
+            managerTeam: "Jeff is my manager.",
+            openLoops: "I need to ask Jeff about onboarding."
+          })
+        })
+      ).body
+    );
+    assert.equal(seedPreview.action, "seed_kit");
+    assert.equal(seedPreview.created, false);
+    assert.equal(seedPreview.units.length, 3);
+    assert.equal(seedPreview.validation.passed, true);
+    await assert.rejects(() => readVaultFile(root, seedPreview.units[0].event_path), /ENOENT/);
+
+    const seedCreateRoot = await makeTempVault("assisto-workbench-seed-route-");
+
+    try {
+      const seedCreated = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(seedCreateRoot, {
+            method: "POST",
+            url: "/api/seed/create",
+            body: JSON.stringify({
+              currentProjects: "Inventory Project uses MySQL.",
+              importantPeople: "Jeff is my manager."
+            })
+          })
+        ).body
+      );
+      assert.equal(seedCreated.created, true);
+      assert.equal(seedCreated.units.length, 2);
+      assert.match(await readVaultFile(seedCreateRoot, seedCreated.units[0].event_path), /source_label: seed:context/);
+      await assert.rejects(() => readVaultFile(seedCreateRoot, "memory/people/jeff.md"), /ENOENT/);
+    } finally {
+      await rm(seedCreateRoot, { recursive: true, force: true });
     }
 
     const importPreview = await workbench.handleWorkbenchRoute(root, {

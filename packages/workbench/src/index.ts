@@ -14,6 +14,7 @@ import {
   createHealthReviewTransaction,
   createImportNotes,
   createImportTriage,
+  createSeedKit,
   createContextNoteTransaction,
   createEntityAliasTransaction,
   createEntityContextTransaction,
@@ -37,6 +38,7 @@ import {
   previewFrictionLog,
   previewImportNotes,
   previewImportTriage,
+  previewSeedKit,
   previewAnswerDraft,
   retrieveContextForAnswer,
   validateTransaction,
@@ -65,6 +67,10 @@ import {
   type ReviewActionState,
   type ReviewStateTransactionResult,
   type ReviewItemSummary,
+  type SeedKitCreateResult,
+  type SeedKitInput,
+  type SeedKitPreviewResult,
+  type SeedKitResult,
   type SessionBriefKind,
   type SessionBriefTarget,
   type SessionBriefTargetKind,
@@ -214,6 +220,7 @@ export type WorkbenchHealthSummary = MemoryHealthResult;
 export type WorkbenchToday = TodayWorkbenchResult;
 export type WorkbenchDogfoodHome = DogfoodHomeResult;
 export type WorkbenchActivationStatus = ActivationStatusResult;
+export type WorkbenchSeedKitResult = SeedKitResult;
 
 export type WorkbenchBriefTargetOption = SessionBriefTarget;
 
@@ -534,6 +541,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createCapturePreview(root, input, true));
     }
 
+    if (pathname === "/api/seed/preview") {
+      return jsonRoute(200, await createSeedPreview(root, input, false));
+    }
+
+    if (pathname === "/api/seed/create") {
+      return jsonRoute(200, await createSeedPreview(root, input, true));
+    }
+
     if (pathname === "/api/import/preview") {
       return jsonRoute(200, await createImportPreview(root, input, false));
     }
@@ -662,6 +677,24 @@ async function createCapturePreview(
   };
 
   return created ? createCaptureNote(root, note, options) : previewCaptureNote(root, note, options);
+}
+
+async function createSeedPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<SeedKitPreviewResult | SeedKitCreateResult> {
+  const seedInput: SeedKitInput = {
+    my_role: optionalStringArrayInput(input, "myRole", "my_role"),
+    manager_team: optionalStringArrayInput(input, "managerTeam", "manager_team"),
+    current_projects: optionalStringArrayInput(input, "currentProjects", "current_projects"),
+    important_people: optionalStringArrayInput(input, "importantPeople", "important_people"),
+    systems_topics: optionalStringArrayInput(input, "systemsTopics", "systems_topics"),
+    open_loops: optionalStringArrayInput(input, "openLoops", "open_loops"),
+    things_i_keep_forgetting: optionalStringArrayInput(input, "thingsIKeepForgetting", "things_i_keep_forgetting")
+  };
+
+  return created ? createSeedKit(root, seedInput) : previewSeedKit(root, seedInput);
 }
 
 async function createImportPreview(
@@ -1583,6 +1616,26 @@ function optionalStringInput(input: Record<string, unknown>, ...keys: string[]):
 
     if (typeof value === "string" && value.trim()) {
       return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function optionalStringArrayInput(input: Record<string, unknown>, ...keys: string[]): string[] | undefined {
+  for (const key of keys) {
+    const value = input[key];
+
+    if (Array.isArray(value)) {
+      const items = value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+      return items.length > 0 ? items : undefined;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      return value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
     }
   }
 
@@ -2858,6 +2911,22 @@ function renderCapture() {
       </div>
     </form>
   </article>
+  <article class="item">
+    <h2>Personal Seed Kit</h2>
+    <form id="seed-kit-form" class="capture-form">
+      <label class="field" for="seed-my-role"><span>My role</span><textarea id="seed-my-role" name="myRole" rows="3" placeholder="I am an AI Engineer at SmartEquip."></textarea></label>
+      <label class="field" for="seed-manager-team"><span>Manager and team</span><textarea id="seed-manager-team" name="managerTeam" rows="3" placeholder="Jeff is my manager. Kuastav reports to Jeff."></textarea></label>
+      <label class="field" for="seed-current-projects"><span>Current projects and contexts</span><textarea id="seed-current-projects" name="currentProjects" rows="3" placeholder="Inventory Project uses MySQL."></textarea></label>
+      <label class="field" for="seed-important-people"><span>Important people</span><textarea id="seed-important-people" name="importantPeople" rows="3" placeholder="Priya owns the API migration."></textarea></label>
+      <label class="field" for="seed-systems-topics"><span>Systems and topics</span><textarea id="seed-systems-topics" name="systemsTopics" rows="3" placeholder="Solr powers product search."></textarea></label>
+      <label class="field" for="seed-open-loops"><span>Open loops</span><textarea id="seed-open-loops" name="openLoops" rows="3" placeholder="I need to ask Jeff about onboarding."></textarea></label>
+      <label class="field" for="seed-memory-gaps"><span>Things I keep forgetting</span><textarea id="seed-memory-gaps" name="thingsIKeepForgetting" rows="3" placeholder="I keep forgetting who owns reporting."></textarea></label>
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview seed kit</button>
+        <button type="submit" name="mode" value="create">Create seed kit</button>
+      </div>
+    </form>
+  </article>
   <div id="action-output" class="action-output"></div>\`;
   document.querySelector("#capture-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2870,6 +2939,21 @@ function renderCapture() {
       sourceLabel: form.elements.sourceLabel.value,
       context: form.elements.context.value,
       provider: form.elements.provider.value
+    });
+  });
+  document.querySelector("#seed-kit-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    const preview = submitter?.value === "preview";
+    await runAction(preview ? "/api/seed/preview" : "/api/seed/create", {
+      myRole: form.elements.myRole.value,
+      managerTeam: form.elements.managerTeam.value,
+      currentProjects: form.elements.currentProjects.value,
+      importantPeople: form.elements.importantPeople.value,
+      systemsTopics: form.elements.systemsTopics.value,
+      openLoops: form.elements.openLoops.value,
+      thingsIKeepForgetting: form.elements.thingsIKeepForgetting.value
     });
   });
 }
@@ -3807,7 +3891,24 @@ function renderActionResult(result) {
     \${plainListHtml("Affected files", result.affected_files)}
     \${plainListHtml("Source Events", result.source_events)}
     \${plainListHtml("Proposed file writes", proposedFileWrites)}
+    \${seedUnitsHtml(result.units)}
   </article>\`;
+}
+
+function seedUnitsHtml(units) {
+  if (!Array.isArray(units) || units.length === 0) {
+    return "";
+  }
+
+  return \`<section><h3>Seed units</h3><div class="grid">\${units.map((unit) => \`<article class="item">
+    <h4>\${escapeHtml(unit.section_label ?? unit.section_id)}</h4>
+    <p class="pill">\${escapeHtml(unit.source_label)}</p>
+    \${detailListHtml([
+      ["Event", unit.event_id ? \`\${unit.event_id} · \${unit.event_path}\` : "none"],
+      ["Transaction", unit.transaction_id ? \`\${unit.transaction_id} · \${unit.transaction_path}\` : "none"],
+      ["Validation", unit.validation?.passed ? "passed" : "failed"]
+    ])}
+  </article>\`).join("")}</div></section>\`;
 }
 
 function actionModeLabel(result) {
