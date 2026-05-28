@@ -60,6 +60,7 @@ export async function runAgentControlTests() {
     });
 
     assert.equal(run.slug, "agent-ledger");
+    assert.equal(run.changed_files.some((file) => file.startsWith("ackage")), false);
     assert.equal(run.branch, "codex/agent-ledger");
     assert.equal(run.validation_status, "not_run");
     assert.equal(run.review_state, "not_requested");

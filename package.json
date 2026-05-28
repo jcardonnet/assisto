@@ -31,7 +31,9 @@
     "agent:start": "node scripts/agent-control.mjs start",
     "agent:status": "node scripts/agent-control.mjs status",
     "agent:handoff": "node scripts/agent-control.mjs handoff",
-    "agent:note": "node scripts/agent-control.mjs note"
+    "agent:note": "node scripts/agent-control.mjs note",
+    "agent:policy": "node scripts/agent-policy.mjs policy",
+    "agent:validate": "node scripts/agent-policy.mjs validate"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

@@ -2,9 +2,6 @@
 import { spawnSync } from "node:child_process";
 
 const tempEnv = {
-  COREPACK_HOME: "/tmp/corepack",
-  LOCALAPPDATA: "/tmp",
-  XDG_CACHE_HOME: "/tmp",
   TMPDIR: "/tmp",
   TEMP: "/tmp",
   TMP: "/tmp"
@@ -92,7 +89,7 @@ function commandList(options) {
 }
 
 function formatCommand(script) {
-  return `COREPACK_HOME=/tmp/corepack LOCALAPPDATA=/tmp XDG_CACHE_HOME=/tmp TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm ${script}`;
+  return `TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm ${script}`;
 }
 
 function runScript(script) {

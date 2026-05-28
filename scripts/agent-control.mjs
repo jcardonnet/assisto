@@ -72,7 +72,7 @@ function parseChangedFiles(statusOutput) {
   return statusOutput
     .split("\n")
     .filter(Boolean)
-    .map((line) => line.slice(3).trim())
+    .map((line) => line.replace(/^.{2}\s?/u, "").trim())
     .filter(Boolean)
     .sort();
 }
