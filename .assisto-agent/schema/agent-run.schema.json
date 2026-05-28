@@ -36,6 +36,7 @@
     "commands": { "type": "array", "items": { "type": "object" } },
     "validation_status": { "enum": ["not_run", "running", "passed", "failed", "partial"] },
     "review_state": { "enum": ["not_requested", "requested", "threads_pending", "addressed", "non_actionable", "approved"] },
+    "pr_state": { "$ref": "agent-pr-state.schema.json" },
     "pr_url": { "type": ["string", "null"] },
     "blockers": { "type": "array", "items": { "type": "string" } },
     "next_action": { "type": "string" },

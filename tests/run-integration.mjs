@@ -17,6 +17,7 @@ import { runScriptHelperTests } from "./script-helpers.mjs";
 import { runAgentControlTests } from "./agent-control.mjs";
 import { runAgentPolicyTests } from "./agent-policy.mjs";
 import { runAgentRunnerTests } from "./agent-runner.mjs";
+import { runAgentPrTests } from "./agent-pr.mjs";
 
 export async function runIntegrationTests() {
   assertRequiredPaths();
@@ -38,6 +39,7 @@ export async function runIntegrationTests() {
   await runAgentControlTests();
   await runAgentPolicyTests();
   await runAgentRunnerTests();
+  await runAgentPrTests();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

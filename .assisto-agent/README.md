@@ -22,3 +22,9 @@ Use `pnpm agent:run -- <command...>` when a validation or workflow command is li
 - a link from the active run ledger when one exists.
 
 Use `pnpm agent:diagnose:last` or `pnpm agent:diagnose <log-id>` to revisit the most recent or a specific command result.
+
+## PR State
+
+Use `pnpm agent:pr advance <state> <pr>` to record explicit PR transitions on the active run. Use `pnpm agent:pr comments <pr> --write` to snapshot review threads into ignored run state, and `pnpm agent:pr status <pr>` to inspect readiness gates.
+
+`pnpm agent:pr closeout <pr> --merge --yes --refresh-mxbai` refuses to merge unless review waiting has elapsed, review threads are checked and resolved, CI is green, the PR is non-draft and mergeable, guarded memory data is unchanged, and the active run records validation as passed.

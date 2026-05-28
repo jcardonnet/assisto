@@ -8,7 +8,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["env:doctor"], "node scripts/env-doctor.mjs");
   assert.equal(packageJson.scripts["check:memory-data"], "node scripts/check-memory-data.mjs");
   assert.equal(packageJson.scripts["pr:review-wait"], "node scripts/wait-for-pr-review.mjs");
-  assert.equal(packageJson.scripts["pr:closeout"], "node scripts/pr-closeout.mjs");
+  assert.equal(packageJson.scripts["pr:closeout"], "node scripts/agent-pr.mjs closeout");
   assert.equal(packageJson.scripts["mxbai:upload"], "bash scripts/mxbai-upload.sh");
   assert.equal(packageJson.scripts["mxbai:smoke"], "bash scripts/mxbai-smoke.sh");
   assert.equal(packageJson.scripts["agent:start"], "node scripts/agent-control.mjs start");
@@ -20,6 +20,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["agent:run"], "node scripts/agent-run.mjs run");
   assert.equal(packageJson.scripts["agent:diagnose:last"], "node scripts/agent-run.mjs diagnose-last");
   assert.equal(packageJson.scripts["agent:diagnose"], "node scripts/agent-run.mjs diagnose");
+  assert.equal(packageJson.scripts["agent:pr"], "node scripts/agent-pr.mjs");
 
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /Usage: pnpm validate:local/);
   assert.match(readFileSync(".gitignore", "utf8"), /\.assisto-agent\/runs\//);
@@ -28,6 +29,6 @@ export async function runScriptHelperTests() {
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /Usage: pnpm check:memory-data/);
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /memory\/events/);
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /memory\/transactions/);
-  assert.match(readFileSync("scripts/pr-closeout.mjs", "utf8"), /Usage: pnpm pr:closeout/);
+  assert.match(readFileSync("scripts/agent-pr.mjs", "utf8"), /Usage: pnpm agent:pr status/);
   assert.match(readFileSync("scripts/mxbai-smoke.sh", "utf8"), /MXBAI_SMOKE_VERBOSE/);
 }
