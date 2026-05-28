@@ -32,3 +32,7 @@ Use `pnpm agent:pr advance <state> <pr>` to record explicit PR transitions on th
 ## Repo Map
 
 Use `pnpm agent:map build` to generate `.assisto-agent/cache/repo-map.json`, an ignored map from repo areas to source paths, tests, evals, docs, invariants, and public commands. Use `pnpm agent:map query "<area>"` to find the relevant validation and context for a subsystem before editing.
+
+## Agent Workbench
+
+Use `pnpm agent:workbench serve` to start a local-only browser UI for agent run state, validation planning, diagnostics, PR state, repo map, and handoff. Mutating actions require explicit confirmation and are routed through the same CLI helpers as terminal workflows.
