@@ -723,6 +723,7 @@ export async function runWorkbenchTests() {
 
     const shell = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/" });
     assert.equal(shell.status, 200);
+    assert.match(shell.body, /activation-wizard/);
     assert.match(shell.body, /data-tab="today"/);
     assert.match(shell.body, /quick-capture-open/);
     assert.match(shell.body, /quick-capture-dialog/);
@@ -739,6 +740,8 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /data-tab="briefs"/);
 
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
+    assert.match(client.body, /\/api\/activation\/status/);
+    assert.match(client.body, /renderActivationWizard/);
     assert.match(client.body, /renderDogfoodHome/);
     assert.match(client.body, /\/api\/dogfood\/home/);
     assert.match(client.body, /next recommended action/);
@@ -917,6 +920,13 @@ export async function runWorkbenchTests() {
     assert.equal(dogfoodHome.next_recommended_action.action, "review_pending_transaction");
     assert.equal(dogfoodHome.next_recommended_action.target_id, "tx_2026_05_21_apply");
     assert.equal(dogfoodHome.quick_briefs.some((brief) => brief.kind === "today"), true);
+
+    const activationStatus = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/activation/status" })).body
+    );
+    assert.equal(activationStatus.memory_state, "active");
+    assert.equal(activationStatus.counts.pending_transactions, 4);
+    assert.equal(activationStatus.next_wizard_step.step_id, "review_one_transaction");
 
     const capturePreview = await workbench.handleWorkbenchRoute(root, {
       method: "POST",
