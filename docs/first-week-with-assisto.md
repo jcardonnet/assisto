@@ -23,7 +23,7 @@ wm daily queue
 
 ## Daily capture
 
-Use Quick capture from any Workbench tab, or use the Capture tab for larger notes. Keep notes small and real:
+Use Quick capture from any Workbench tab, or use the Capture tab for larger notes. The Capture tab also shows a Capture Inbox with recent Events, pending capture Transactions, source-label presets, observed-at shortcuts, recent Context suggestions, and reusable templates. Keep notes small and real:
 
 ```text
 Jeff is my manager for Inventory Project.
@@ -32,6 +32,8 @@ I need to ask Jeff about onboarding.
 ```
 
 Preview first. Create only when the Event text looks right. Create writes the raw Event plus a pending Transaction; it does not apply claims to Person, Topic, Context, or FollowUp pages.
+
+After preview, check the “why staged,” “needs context,” and “likely next review action” fields. They are guidance only; the write path is still Event plus pending Transaction.
 
 CLI parity:
 

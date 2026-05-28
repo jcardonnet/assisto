@@ -14,6 +14,13 @@ test("capture tab previews and creates pending transactions without canonical pa
 
     await page.goto(server.url);
     await page.getByRole("button", { name: "Capture", exact: true }).click();
+    const captureForm = page.locator("#capture-form");
+    await expect(page.getByRole("heading", { name: "Capture inbox" })).toBeVisible();
+    await expect(captureForm.getByRole("button", { name: "Manager or team" })).toBeVisible();
+    await captureForm.getByRole("button", { name: "Today" }).click();
+    await expect(page.getByLabel("Observed at", { exact: true })).toHaveValue("2026-05-26");
+    await captureForm.getByRole("button", { name: "Manager or team" }).click();
+    await expect(page.getByLabel("Note", { exact: true })).toHaveValue(/Name is my manager/);
     await page.getByLabel("Note", { exact: true }).fill("Joe is the DBA. We use MySQL.");
     await page.getByLabel("Observed at", { exact: true }).fill("2026-05-21");
     await page.getByLabel("Source label", { exact: true }).fill("browser capture");

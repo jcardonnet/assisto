@@ -753,8 +753,10 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /today-open-review/);
     assert.match(client.body, /Read warnings/);
     assert.match(client.body, /capture-form/);
+    assert.match(client.body, /capture-inbox/);
     assert.match(client.body, /quick-capture-form/);
     assert.match(client.body, /quick-capture-context-options/);
+    assert.match(client.body, /\/api\/capture\/inbox/);
     assert.match(client.body, /\/api\/capture\/preview/);
     assert.match(client.body, /\/api\/capture/);
     assert.match(client.body, /seed-kit-form/);
@@ -938,6 +940,12 @@ export async function runWorkbenchTests() {
     assert.equal(dailyQueue.current_item.target_id, "tx_2026_05_21_apply");
     assert.equal(dailyQueue.items.some((item) => item.item_type === "review_item"), true);
 
+    const captureInbox = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/capture/inbox" })).body);
+    assert.equal(captureInbox.recent_events[0].event_id, "ev_2026_05_21_003");
+    assert.equal(captureInbox.pending_capture_transactions.some((transaction) => transaction.transaction_id === "tx_2026_05_21_apply"), true);
+    assert.equal(captureInbox.source_label_presets.some((preset) => preset.source_label === "daily note"), true);
+    assert.equal(captureInbox.capture_templates.some((template) => template.template_id === "manager_team"), true);
+
     const capturePreview = await workbench.handleWorkbenchRoute(root, {
       method: "POST",
       url: "/api/capture/preview",
@@ -952,6 +960,8 @@ export async function runWorkbenchTests() {
     const previewPayload = JSON.parse(capturePreview.body);
     assert.equal(previewPayload.created, false);
     assert.equal(previewPayload.validation.passed, true);
+    assert.equal(previewPayload.needs_context, false);
+    assert.match(previewPayload.likely_next_review_action, /Open Review/);
     assert.equal(previewPayload.proposed_file_writes.some((write) => write.path === "memory/people/joe.md"), true);
     await assert.rejects(() => readVaultFile(root, previewPayload.event_path), /ENOENT/);
 
