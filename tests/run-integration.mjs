@@ -21,6 +21,7 @@ import { runAgentRunnerTests } from "./agent-runner.mjs";
 import { runAgentPrTests } from "./agent-pr.mjs";
 import { runAgentCiLocalTests } from "./agent-ci-local.mjs";
 import { runAgentMapTests } from "./agent-map.mjs";
+import { runAgentWorkbenchTests } from "./agent-workbench.mjs";
 
 export async function runIntegrationTests() {
   assertRequiredPaths();
@@ -46,6 +47,7 @@ export async function runIntegrationTests() {
   await runAgentPrTests();
   await runAgentCiLocalTests();
   await runAgentMapTests();
+  await runAgentWorkbenchTests();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
