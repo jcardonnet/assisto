@@ -254,9 +254,12 @@ pnpm check:memory-data
 pnpm pr:review-wait <pr-number-or-url>
 pnpm pr:closeout <pr-number-or-url>
 pnpm agent:pr status <pr-number-or-url>
+pnpm agent:ci-local --plan
 ```
 
 `pnpm env:doctor` checks local Node/pnpm/temp/GitHub/Mixedbread/Playwright/localhost readiness. `pnpm check:memory-data` fails if a branch accidentally changes `memory/events/**` or `memory/transactions/**` unless `ASSISTO_ALLOW_MEMORY_DATA_CHANGES=1` or `--allow` is used. `pnpm pr:closeout` delegates to the Agent Control Plane PR state machine: it performs the delayed review-thread check, records review snapshots, verifies mergeability, CI, validation state, and memory-data guard status, and can merge/sync/refresh Mixedbread only when called with explicit merge flags.
+
+Use `pnpm agent:validate` for fast policy-selected local confidence. Use `pnpm agent:ci-local --plan` before large PRs or after sandbox/browser failures to see the Docker/devcontainer CI capsule; `pnpm agent:ci-local` builds the Node 22/pnpm 9.15.4 capsule, installs Playwright Chromium, passes through GitHub/Mixedbread/OpenAI credentials, and runs `pnpm validate:ci-parity`. GitHub Actions remains the authoritative remote CI gate.
 
 The current implementation includes deterministic ingestion, a Capture Console for daily note entry, curated Markdown/text backfill import with `source_hash` dedupe and Workbench triage, a Today Home daily loop, a candidate extraction pipeline, optional OpenAI-compatible extraction/drafting that still stays behind deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, People/Topics/Contexts stewardship, Context operating pages, retrieval intent planning, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, Playwright browser coverage, and MVP/v2/v3/retrieval/v4/v5/v6 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
 

@@ -288,6 +288,15 @@ pnpm validate:local
 
 It applies those temp/cache variables to lint, typecheck, tests, evals, and browser tests. Use `pnpm validate:ci-parity` to run the same suite in the GitHub Actions order. Use `pnpm env:doctor` to check Node, pnpm, temp paths, GitHub auth, Mixedbread credentials, Playwright, localhost binding, and git status.
 
+For large PRs or after sandbox-specific browser/e2e failures, use the local CI capsule:
+
+```bash
+pnpm agent:ci-local --plan
+pnpm agent:ci-local
+```
+
+The capsule builds a Docker/devcontainer image on Node 22 with pnpm 9.15.4, WSL-safe temp/cache variables, Playwright Chromium setup, and explicit GitHub/Mixedbread/OpenAI credential pass-through. It runs `pnpm validate:ci-parity` locally, but GitHub Actions remains the authoritative remote CI gate.
+
 Repo-local Git email was set to the GitHub noreply address to avoid push rejection:
 
 ```text
