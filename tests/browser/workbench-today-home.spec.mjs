@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { makeTempVault, readVaultFile } from "../helpers/temp-vault.mjs";
+import { writeContextProjectScenario } from "../helpers/scenario-factory.mjs";
 import { loadTsModule } from "../ts-module-loader.mjs";
-import { writeWorkbenchFixture } from "../workbench.mjs";
 
 test("today tab summarizes daily triage and previews actions through existing routes", async ({ page }) => {
   const root = await makeTempVault("assisto-browser-today-home-");
@@ -11,7 +11,7 @@ test("today tab summarizes daily triage and previews actions through existing ro
   let server;
 
   try {
-    await writeWorkbenchFixture(root);
+    await writeContextProjectScenario(root);
     const eventBefore = await readVaultFile(root, "memory/events/2026/2026-05/2026-05-21-003.md");
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 

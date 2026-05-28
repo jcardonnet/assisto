@@ -13,12 +13,14 @@ import { runCoreLintTests } from "./core-lint.mjs";
 import { runCliIntegrationTests } from "./cli-integration.mjs";
 import { runPiExtensionTests } from "./pi-extension.mjs";
 import { runWorkbenchTests } from "./workbench.mjs";
+import { runScenarioFactoryTests } from "./scenario-factory.mjs";
 import { runScriptHelperTests } from "./script-helpers.mjs";
 import { runAgentControlTests } from "./agent-control.mjs";
 import { runAgentPolicyTests } from "./agent-policy.mjs";
 import { runAgentRunnerTests } from "./agent-runner.mjs";
 import { runAgentPrTests } from "./agent-pr.mjs";
 import { runAgentCiLocalTests } from "./agent-ci-local.mjs";
+import { runAgentMapTests } from "./agent-map.mjs";
 
 export async function runIntegrationTests() {
   assertRequiredPaths();
@@ -36,12 +38,14 @@ export async function runIntegrationTests() {
   await runCliIntegrationTests();
   await runPiExtensionTests();
   await runWorkbenchTests();
+  await runScenarioFactoryTests();
   await runScriptHelperTests();
   await runAgentControlTests();
   await runAgentPolicyTests();
   await runAgentRunnerTests();
   await runAgentPrTests();
   await runAgentCiLocalTests();
+  await runAgentMapTests();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

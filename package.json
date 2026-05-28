@@ -38,7 +38,8 @@
     "agent:diagnose:last": "node scripts/agent-run.mjs diagnose-last",
     "agent:diagnose": "node scripts/agent-run.mjs diagnose",
     "agent:pr": "node scripts/agent-pr.mjs",
-    "agent:ci-local": "node scripts/agent-ci-local.mjs"
+    "agent:ci-local": "node scripts/agent-ci-local.mjs",
+    "agent:map": "node scripts/agent-map.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
