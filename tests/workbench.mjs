@@ -741,7 +741,9 @@ export async function runWorkbenchTests() {
 
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
     assert.match(client.body, /\/api\/activation\/status/);
+    assert.match(client.body, /\/api\/daily\/queue/);
     assert.match(client.body, /renderActivationWizard/);
+    assert.match(client.body, /renderDailyQueue/);
     assert.match(client.body, /renderDogfoodHome/);
     assert.match(client.body, /\/api\/dogfood\/home/);
     assert.match(client.body, /next recommended action/);
@@ -930,6 +932,11 @@ export async function runWorkbenchTests() {
     assert.equal(activationStatus.memory_state, "active");
     assert.equal(activationStatus.counts.pending_transactions, 4);
     assert.equal(activationStatus.next_wizard_step.step_id, "review_one_transaction");
+
+    const dailyQueue = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/daily/queue" })).body);
+    assert.equal(dailyQueue.current_item.item_type, "pending_transaction");
+    assert.equal(dailyQueue.current_item.target_id, "tx_2026_05_21_apply");
+    assert.equal(dailyQueue.items.some((item) => item.item_type === "review_item"), true);
 
     const capturePreview = await workbench.handleWorkbenchRoute(root, {
       method: "POST",

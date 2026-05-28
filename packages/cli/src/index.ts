@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   applyTransaction,
   buildActivationStatusResult,
+  buildDailyQueueResult,
   buildDogfoodHomeResult,
   buildSessionBrief,
   buildTodayWorkbenchResult,
@@ -110,6 +111,10 @@ export async function main(
 
     if (command === "today") {
       return await commandToday(parsed.root, rest, io);
+    }
+
+    if (command === "daily") {
+      return await commandDaily(parsed.root, rest, io);
     }
 
     if (command === "activate") {
@@ -486,6 +491,58 @@ async function commandToday(root: string, args: string[], io: CliIo): Promise<nu
     io.stdout("\nSuggested manual actions\n");
     for (const action of today.suggested_manual_actions) {
       io.stdout(`- ${action}\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function commandDaily(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm daily queue [--json]\n");
+    return 0;
+  }
+
+  if (subcommand !== "queue") {
+    throw new Error("Usage: wm daily queue [--json]");
+  }
+
+  const queue = await buildDailyQueueResult(root);
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(queue, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Daily queue (${queue.generated_at})\n`);
+  io.stdout(`State: ${queue.queue_complete ? "complete" : "needs action"}\n`);
+
+  if (queue.current_item) {
+    io.stdout(
+      `Current: ${queue.current_item.label} (${queue.current_item.target_id}) - ${queue.current_item.suggested_action}\n\n`
+    );
+  } else {
+    io.stdout("Current: no pending daily queue item\n\n");
+  }
+
+  io.stdout("Counts\n");
+  for (const [key, value] of Object.entries(queue.counts)) {
+    io.stdout(`${key}\t${value}\n`);
+  }
+
+  if (queue.items.length > 0) {
+    io.stdout("\nQueue\n");
+    for (const item of queue.items) {
+      io.stdout(`- ${item.item_type}\t${item.target_id}\t${item.label}\n`);
+    }
+  }
+
+  if (queue.warnings.length > 0) {
+    io.stdout("\nWarnings\n");
+    for (const warning of queue.warnings) {
+      io.stdout(`- ${warning}\n`);
     }
   }
 
@@ -1257,6 +1314,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
+      "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] dogfood status [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',

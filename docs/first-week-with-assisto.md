@@ -12,12 +12,13 @@ wm workbench serve --host 127.0.0.1 --port 3721
 
 Open the printed URL. Start on the Today tab. It is a derived dashboard; it does not write a completion marker.
 
-The Today tab is now the Dogfood Home. Treat it as the cockpit for the loop: it shows the first-run Activation Wizard, next recommended manual action, pending Transactions, staged ReviewItems, stale NOOP Events, open FollowUps, recent activity, health warnings, quick briefs, and recent friction logs. All of those sections are derived from markdown.
+The Today tab is now the Dogfood Home. Treat it as the cockpit for the loop: it starts with a Daily Queue for the next one-at-a-time decision, then shows the first-run Activation Wizard, next recommended manual action, pending Transactions, staged ReviewItems, stale NOOP Events, open FollowUps, recent activity, health warnings, quick briefs, and recent friction logs. All of those sections are derived from markdown.
 
 Check the same activation state from the CLI:
 
 ```bash
 wm activate status
+wm daily queue
 ```
 
 ## Daily capture
@@ -49,6 +50,8 @@ If the optional OpenAI provider is configured, use it only for candidate extract
 ## Review pending work
 
 Use Today and Transactions to decide what to apply or reject. Use Review for staged claims that need scope, context, contradiction, or entity judgment.
+
+The fastest path is the Daily Queue at the top of Today. It prioritizes pending Transactions first, then staged ReviewItems, stale NOOP Events, open FollowUps, and high-severity health findings. Use the preview button before any write action. The queue is intentionally one item at a time.
 
 Good first-week rhythm:
 

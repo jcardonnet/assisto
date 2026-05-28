@@ -13,6 +13,7 @@ import { runCoreBriefTests } from "./core-briefs.mjs";
 import { runCoreTodayTests } from "./core-today.mjs";
 import { runCoreDogfoodTests } from "./core-dogfood.mjs";
 import { runCoreActivationTests } from "./core-activation.mjs";
+import { runCoreDailyTests } from "./core-daily.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -29,6 +30,7 @@ export async function runUnitTests() {
   await runCoreTodayTests();
   await runCoreDogfoodTests();
   await runCoreActivationTests();
+  await runCoreDailyTests();
 }
 
 export function assertRequiredPaths() {
