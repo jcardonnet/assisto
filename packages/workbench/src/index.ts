@@ -28,6 +28,10 @@ import {
   createContextNoteTransaction,
   createEntityAliasTransaction,
   createEntityContextTransaction,
+  createEntityIdentityReviewTransaction,
+  createEntityOwnershipTransaction,
+  createEntityReportingTransaction,
+  createEntityRoleTransaction,
   createOpenAiExtractionProvider,
   createReviewApplyTransaction,
   createReviewStateTransaction,
@@ -846,6 +850,38 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createEntityContextPreview(root, input, true));
     }
 
+    if (pathname === "/api/entities/role/preview") {
+      return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "role", false));
+    }
+
+    if (pathname === "/api/entities/role/stage") {
+      return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "role", true));
+    }
+
+    if (pathname === "/api/entities/reporting/preview") {
+      return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "reporting", false));
+    }
+
+    if (pathname === "/api/entities/reporting/stage") {
+      return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "reporting", true));
+    }
+
+    if (pathname === "/api/entities/ownership/preview") {
+      return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "ownership", false));
+    }
+
+    if (pathname === "/api/entities/ownership/stage") {
+      return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "ownership", true));
+    }
+
+    if (pathname === "/api/entities/identity-review/preview") {
+      return jsonRoute(200, await createEntityIdentityReviewPreview(root, input, false));
+    }
+
+    if (pathname === "/api/entities/identity-review/stage") {
+      return jsonRoute(200, await createEntityIdentityReviewPreview(root, input, true));
+    }
+
     if (pathname === "/api/entities/context-note/preview") {
       return jsonRoute(200, await createContextNotePreview(root, input, false));
     }
@@ -1351,6 +1387,52 @@ async function createEntityContextPreview(
   const result = created
     ? await createEntityContextTransaction(root, id, context, { note })
     : await withPreviewRoot(root, (previewRoot) => createEntityContextTransaction(previewRoot, id, context, { note }));
+
+  return {
+    ...result,
+    created
+  };
+}
+
+async function createEntityClaimRepairPreview(
+  root: string,
+  input: Record<string, unknown>,
+  kind: "role" | "reporting" | "ownership",
+  created: boolean
+): Promise<EntityStewardshipPreview> {
+  const id = requiredStringInput(input, "id", "entityId", "entity_id");
+  const statement = requiredStringInput(input, "statement");
+  const note = optionalStringInput(input, "note");
+  const context = optionalStringInput(input, "context") ?? undefined;
+  const supersedeClaimId = optionalStringInput(input, "supersede", "supersedeClaimId", "supersede_claim_id") ?? undefined;
+  const options = { note, context, supersedeClaimId };
+  const createRepair =
+    kind === "role"
+      ? createEntityRoleTransaction
+      : kind === "reporting"
+        ? createEntityReportingTransaction
+        : createEntityOwnershipTransaction;
+  const result = created
+    ? await createRepair(root, id, statement, options)
+    : await withPreviewRoot(root, (previewRoot) => createRepair(previewRoot, id, statement, options));
+
+  return {
+    ...result,
+    created
+  };
+}
+
+async function createEntityIdentityReviewPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<EntityStewardshipPreview> {
+  const id = requiredStringInput(input, "id", "entityId", "entity_id");
+  const note = optionalStringInput(input, "note");
+  const reason = optionalStringInput(input, "reason") ?? note ?? "Needs identity review.";
+  const result = created
+    ? await createEntityIdentityReviewTransaction(root, id, { reason, note })
+    : await withPreviewRoot(root, (previewRoot) => createEntityIdentityReviewTransaction(previewRoot, id, { reason, note }));
 
   return {
     ...result,
@@ -4646,6 +4728,9 @@ function entityDetailHtml(detail) {
           <button type="submit" name="mode" value="stage">Stage context</button>
         </div>
       </form>
+      \${entityRepairFormHtml(detail, "role", "Role correction", "Jeff is the platform DBA.")}
+      \${entityRepairFormHtml(detail, "reporting", "Reporting correction", "Jeff reports to Dana.")}
+      \${entityIdentityReviewFormHtml(detail)}
       \${entityContextNoteFormHtml(detail)}
     </div>
   </article>
@@ -4679,6 +4764,32 @@ function entityRiskCommandCenterHtml(detail) {
     \${plainListHtml("Alias conflicts", (detail.aliasConflicts ?? []).map((item) => \`\${item.alias} also appears on \${item.conflicts_with.name} · \${item.conflicts_with.id ?? item.conflicts_with.path}\`))}
     <p class="meta">Identity ambiguity remains staged; this console does not merge, split, delete, or autonomously resolve people/topics/contexts.</p>
   </article>\`;
+}
+
+function entityRepairFormHtml(detail, kind, label, placeholder) {
+  return \`<form class="entity-repair-form" data-entity-id="\${escapeHtml(detail.id ?? detail.path)}" data-repair-kind="\${escapeHtml(kind)}">
+    <label class="field"><span>\${escapeHtml(label)}</span><textarea name="statement" rows="3" placeholder="\${escapeHtml(placeholder)}"></textarea></label>
+    <div class="action-row">
+      <input name="context" placeholder="Optional Context id or path">
+      <input name="supersede" placeholder="Optional claim_id to supersede">
+    </div>
+    <label class="field"><span>Repair note</span><input name="note" placeholder="Optional human note"></label>
+    <div class="action-row">
+      <button type="submit" name="mode" value="preview" class="secondary">Preview \${escapeHtml(kind)}</button>
+      <button type="submit" name="mode" value="stage">Stage \${escapeHtml(kind)}</button>
+    </div>
+  </form>\`;
+}
+
+function entityIdentityReviewFormHtml(detail) {
+  return \`<form class="entity-identity-review-form" data-entity-id="\${escapeHtml(detail.id ?? detail.path)}">
+    <label class="field"><span>Identity review reason</span><input name="reason" placeholder="Why this entity needs identity review"></label>
+    <label class="field"><span>Review note</span><input name="note" placeholder="Optional human note"></label>
+    <div class="action-row">
+      <button type="submit" name="mode" value="preview" class="secondary">Preview identity review</button>
+      <button type="submit" name="mode" value="stage">Stage identity review</button>
+    </div>
+  </form>\`;
 }
 
 function entityContextNoteFormHtml(detail) {
@@ -4884,6 +4995,33 @@ function bindEntityActions() {
       await runEntityAction(preview ? "/api/entities/context/preview" : "/api/entities/context/stage", {
         id: form.dataset.entityId,
         context: form.elements.context.value
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".entity-repair-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const preview = event.submitter?.value === "preview";
+      const repairKind = form.dataset.repairKind;
+      await runEntityAction(preview ? \`/api/entities/\${repairKind}/preview\` : \`/api/entities/\${repairKind}/stage\`, {
+        id: form.dataset.entityId,
+        statement: form.elements.statement.value,
+        context: form.elements.context.value,
+        supersede: form.elements.supersede.value,
+        note: form.elements.note.value
+      });
+    });
+  }
+
+  for (const form of document.querySelectorAll(".entity-identity-review-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const preview = event.submitter?.value === "preview";
+      await runEntityAction(preview ? "/api/entities/identity-review/preview" : "/api/entities/identity-review/stage", {
+        id: form.dataset.entityId,
+        reason: form.elements.reason.value,
+        note: form.elements.note.value
       });
     });
   }

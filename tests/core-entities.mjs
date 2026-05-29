@@ -125,6 +125,45 @@ export async function runCoreEntityTests() {
     assert.match(contextReview.proposed_file_writes[0].path, /^memory\/review\/rev_entity_context_resolution_/);
     assert.match(contextReview.proposed_file_writes[0].content, /Context "No Such Project" did not resolve exactly/);
     assert.equal(await readVaultFile(root, "memory/topics/redis.md"), beforeRedis);
+
+    const roleRepair = await entities.createEntityRoleTransaction(root, "per_jeff", "Jeff is the platform DBA.", {
+      now: "2026-05-24T12:00:00-03:00",
+      context: "ctx_inventory_project",
+      supersedeClaimId: "clm_jeff_manager",
+      note: "Human selected the old manager claim to supersede."
+    });
+
+    assert.equal(roleRepair.action, "stage_entity_role");
+    assert.equal(roleRepair.validation.passed, true);
+    assert.deepEqual(roleRepair.operations, ["SUPERSEDE_CLAIM", "UPSERT_CLAIM"]);
+    assert.equal(roleRepair.transaction.requires_review, true);
+    assert.match(roleRepair.proposed_file_writes[0].content, /claim_state: superseded/);
+    assert.match(roleRepair.proposed_file_writes[0].content, /statement: Jeff is the platform DBA\./);
+    assert.match(roleRepair.proposed_file_writes[0].content, /claim_state: staged/);
+    assert.match(roleRepair.proposed_file_writes[0].content, /scope: ctx_inventory_project/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforeJeff);
+
+    const reportingRepair = await entities.createEntityReportingTransaction(root, "per_jeff", "Jeff reports to Dana.", {
+      now: "2026-05-24T12:00:00-03:00"
+    });
+
+    assert.equal(reportingRepair.action, "stage_entity_reporting");
+    assert.deepEqual(reportingRepair.operations, ["UPSERT_CLAIM"]);
+    assert.match(reportingRepair.proposed_file_writes[0].content, /statement: Jeff reports to Dana\./);
+    assert.match(reportingRepair.proposed_file_writes[0].content, /scope_state: unknown/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforeJeff);
+
+    const identityReview = await entities.createEntityIdentityReviewTransaction(root, "per_jeff", {
+      now: "2026-05-24T12:00:00-03:00",
+      reason: "Jeff may be duplicated with Jeffrey."
+    });
+
+    assert.equal(identityReview.action, "stage_entity_identity_review");
+    assert.deepEqual(identityReview.operations, ["STAGE_REVIEW"]);
+    assert.equal(identityReview.transaction.requires_review, true);
+    assert.match(identityReview.proposed_file_writes[0].path, /^memory\/review\/rev_entity_identity_review_/);
+    assert.match(identityReview.proposed_file_writes[0].content, /Identity review requested for Jeff/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforeJeff);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

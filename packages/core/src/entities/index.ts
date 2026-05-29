@@ -237,12 +237,29 @@ export interface EntityStewardshipOptions {
   note?: string;
 }
 
+export interface EntityClaimRepairOptions extends EntityStewardshipOptions {
+  context?: string;
+  supersedeClaimId?: string;
+}
+
+export interface EntityIdentityReviewOptions extends EntityStewardshipOptions {
+  reason?: string;
+}
+
 export interface EntityStewardshipPreview {
-  action: "stage_entity_alias" | "stage_entity_context";
+  action:
+    | "stage_entity_alias"
+    | "stage_entity_context"
+    | "stage_entity_role"
+    | "stage_entity_reporting"
+    | "stage_entity_ownership"
+    | "stage_entity_identity_review";
   created: boolean;
   transaction_id: string;
   transaction_path: string;
   transaction_state: string;
+  risk_level?: "low" | "medium" | "high";
+  requires_review: boolean;
   entity_id?: string;
   entity_path: string;
   validation: Awaited<ReturnType<typeof validateTransaction>>;
@@ -536,6 +553,67 @@ export async function createEntityContextTransaction(
   });
 }
 
+export async function createEntityRoleTransaction(
+  root: string,
+  idOrPath: string,
+  statement: string,
+  options: EntityClaimRepairOptions = {}
+): Promise<EntityStewardshipPreview> {
+  return createEntityClaimRepairTransaction(root, idOrPath, "role", statement, options);
+}
+
+export async function createEntityReportingTransaction(
+  root: string,
+  idOrPath: string,
+  statement: string,
+  options: EntityClaimRepairOptions = {}
+): Promise<EntityStewardshipPreview> {
+  return createEntityClaimRepairTransaction(root, idOrPath, "reporting", statement, options);
+}
+
+export async function createEntityOwnershipTransaction(
+  root: string,
+  idOrPath: string,
+  statement: string,
+  options: EntityClaimRepairOptions = {}
+): Promise<EntityStewardshipPreview> {
+  return createEntityClaimRepairTransaction(root, idOrPath, "ownership", statement, options);
+}
+
+export async function createEntityIdentityReviewTransaction(
+  root: string,
+  idOrPath: string,
+  options: EntityIdentityReviewOptions = {}
+): Promise<EntityStewardshipPreview> {
+  const now = options.now ?? defaultNow;
+  const index = await loadIndexOrEmpty(root);
+  const page = await loadResolvedEntity(root, index, idOrPath);
+  const transactionId = nextTransactionId(now, index);
+  const summary = entitySummary(page);
+  const reason = normalizeLabel(options.reason ?? options.note ?? "Needs identity review.", "identity review reason");
+
+  return writeStewardshipTransaction(root, {
+    action: "stage_entity_identity_review",
+    entityPage: page,
+    transactionId,
+    now,
+    writes: [
+      renderStewardshipReviewWrite(
+        page,
+        transactionId,
+        now,
+        "identity_review",
+        `Identity review requested for ${summary.name}: ${reason}`,
+        options.note
+      )
+    ],
+    operations: [{ operation: "STAGE_REVIEW" as const, description: `stage identity review for ${stripMemoryPrefix(page.path)}` }],
+    intent: `Stage identity review for ${summary.name}.`,
+    risk: "high",
+    requiresReview: true
+  });
+}
+
 export async function createContextNoteTransaction(
   root: string,
   idOrPath: string,
@@ -568,6 +646,47 @@ export async function createContextNoteTransaction(
   };
 }
 
+async function createEntityClaimRepairTransaction(
+  root: string,
+  idOrPath: string,
+  repairKind: "role" | "reporting" | "ownership",
+  statement: string,
+  options: EntityClaimRepairOptions
+): Promise<EntityStewardshipPreview> {
+  const now = options.now ?? defaultNow;
+  const normalizedStatement = normalizeLabel(statement, `${repairKind} correction statement`);
+  const index = await loadIndexOrEmpty(root);
+  const page = await loadResolvedEntity(root, index, idOrPath);
+  const transactionId = nextTransactionId(now, index);
+  const write = renderClaimRepairWrite(page, repairKind, normalizedStatement, now, options);
+  const operations = [
+    ...(options.supersedeClaimId
+      ? [
+          {
+            operation: "SUPERSEDE_CLAIM" as const,
+            description: `supersede ${options.supersedeClaimId} on ${stripMemoryPrefix(page.path)}`
+          }
+        ]
+      : []),
+    {
+      operation: "UPSERT_CLAIM" as const,
+      description: `stage ${repairKind} correction claim for ${stripMemoryPrefix(page.path)}`
+    }
+  ];
+
+  return writeStewardshipTransaction(root, {
+    action: `stage_entity_${repairKind}` as EntityStewardshipPreview["action"],
+    entityPage: page,
+    transactionId,
+    now,
+    writes: [write],
+    operations,
+    intent: `Stage ${repairKind} correction for ${entitySummary(page).name}.`,
+    risk: options.supersedeClaimId ? "high" : "medium",
+    requiresReview: true
+  });
+}
+
 async function writeStewardshipTransaction(
   root: string,
   input: {
@@ -576,9 +695,10 @@ async function writeStewardshipTransaction(
     transactionId: string;
     now: string;
     writes: TransactionFileWrite[];
-    operations: Array<{ operation: "UPSERT_CLAIM" | "STAGE_REVIEW"; description: string }>;
+    operations: Array<{ operation: "UPSERT_CLAIM" | "STAGE_REVIEW" | "SUPERSEDE_CLAIM"; description: string }>;
     intent: string;
-    risk: "low" | "medium";
+    risk: "low" | "medium" | "high";
+    requiresReview?: boolean;
   }
 ): Promise<EntityStewardshipPreview> {
   const sourceEvents = stringArrayValue(input.entityPage.frontmatter.source_events);
@@ -589,7 +709,7 @@ async function writeStewardshipTransaction(
     operations: input.operations,
     affected_files: input.writes.map((write) => stripMemoryPrefix(write.path)),
     risk_level: input.risk,
-    requires_review: input.operations.some((operation) => operation.operation === "STAGE_REVIEW"),
+    requires_review: input.requiresReview ?? input.operations.some((operation) => operation.operation === "STAGE_REVIEW"),
     rollback_notes:
       "If this stewardship change is wrong, reject this pending transaction or create a new stewardship transaction with the corrected metadata.",
     intent: input.intent,
@@ -611,6 +731,8 @@ async function writeStewardshipTransaction(
     transaction_id: input.transactionId,
     transaction_path: transactionFilePaths.pending(input.transactionId),
     transaction_state: transaction.transaction_state,
+    risk_level: transaction.risk_level,
+    requires_review: Boolean(transaction.requires_review),
     entity_id: stringValue(input.entityPage.frontmatter.id),
     entity_path: input.entityPage.path,
     validation,
@@ -652,6 +774,119 @@ function renderContextRelationWrite(
     path: page.path,
     content: serializeMarkdownFile(frontmatter, page.body)
   };
+}
+
+function renderClaimRepairWrite(
+  page: LoadedEntityPage,
+  repairKind: "role" | "reporting" | "ownership",
+  statement: string,
+  now: string,
+  options: EntityClaimRepairOptions
+): TransactionFileWrite {
+  const sourceEvents = stringArrayValue(page.frontmatter.source_events);
+  const claimId = `clm_${slugify(pageName(page.path, page.body))}_${repairKind}_${stableHash(`${page.path}:${repairKind}:${statement}`)}`;
+  const bodyWithSupersede = options.supersedeClaimId
+    ? supersedeClaimInBody(page.body, options.supersedeClaimId)
+    : page.body;
+  const body = appendStagedClaim(
+    bodyWithSupersede,
+    renderStagedRepairClaim({
+      claimId,
+      statement,
+      repairKind,
+      sourceEvents,
+      now,
+      context: options.context
+    })
+  );
+  const frontmatter: Frontmatter = {
+    ...page.frontmatter,
+    updated_at: now
+  };
+
+  return {
+    path: page.path,
+    content: serializeMarkdownFile(frontmatter, body)
+  };
+}
+
+function renderStagedRepairClaim(input: {
+  claimId: string;
+  statement: string;
+  repairKind: "role" | "reporting" | "ownership";
+  sourceEvents: string[];
+  now: string;
+  context?: string;
+}): string {
+  const scope = input.context?.trim() ? input.context.trim() : "null";
+  const scopeState = input.context?.trim() ? "complete" : "unknown";
+
+  return [
+    `- claim_id: ${input.claimId}`,
+    `  statement: ${input.statement}`,
+    "  claim_kind: fact",
+    "  claim_state: staged",
+    "  evidence_strength: explicit",
+    `  scope: ${scope}`,
+    `  scope_state: ${scopeState}`,
+    `  evidence: [${input.sourceEvents.join(", ")}]`,
+    `  recorded_at: ${input.now}`,
+    "  observed_at: null",
+    "  valid_from: null",
+    "  valid_to: null"
+  ].join("\n");
+}
+
+function appendStagedClaim(body: string, claimBlock: string): string {
+  const lines = body.trimEnd().split("\n");
+  const sectionIndex = lines.findIndex((line) => /^##\s+Staged claims\s*$/i.test(line.trim()));
+
+  if (sectionIndex === -1) {
+    return `${body.trimEnd()}\n\n## Staged claims\n\n${claimBlock}\n`;
+  }
+
+  const nextSectionIndex = lines.findIndex((line, index) => index > sectionIndex && /^##\s+/.test(line.trim()));
+  const insertAt = nextSectionIndex === -1 ? lines.length : nextSectionIndex;
+  const before = lines.slice(0, insertAt).join("\n").trimEnd();
+  const after = lines.slice(insertAt).join("\n").trimStart();
+
+  return `${before}\n\n${claimBlock}\n${after ? `\n${after}` : ""}`;
+}
+
+function supersedeClaimInBody(body: string, claimId: string): string {
+  const lines = body.split("\n");
+  const start = lines.findIndex((line) => new RegExp(`^-\\s+claim_id:\\s*${escapeRegExp(claimId)}\\s*$`).test(line.trim()));
+
+  if (start === -1) {
+    throw new Error(`Supersede claim_id not found on entity page: ${claimId}`);
+  }
+
+  let end = lines.length;
+
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+
+    if (/^#{1,6}\s+/.test(line) || /^-\s+claim_id:\s*/.test(line.trim())) {
+      end = index;
+      break;
+    }
+  }
+
+  let stateUpdated = false;
+
+  for (let index = start + 1; index < end; index += 1) {
+    if (/^\s+claim_state:\s*/.test(lines[index] ?? "")) {
+      lines[index] = "  claim_state: superseded";
+      stateUpdated = true;
+      break;
+    }
+  }
+
+  if (!stateUpdated) {
+    lines.splice(start + 1, 0, "  claim_state: superseded");
+  }
+
+  return lines.join("\n");
 }
 
 function renderStewardshipReviewWrite(
@@ -1419,6 +1654,10 @@ function stableHash(value: string): string {
   }
 
   return hash.toString(16).padStart(8, "0");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function uniqueSorted(values: string[]): string[] {
