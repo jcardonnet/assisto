@@ -21,6 +21,7 @@
     "eval:v5": "node tests/scenarios/run-v5.mjs",
     "eval:v6": "node tests/scenarios/run-v6.mjs",
     "eval:v7": "node tests/scenarios/run-v7.mjs",
+    "eval:answers": "node tests/scenarios/run-answers.mjs",
     "eval:dogfood-local": "node tests/scenarios/run-dogfood-local.mjs",
     "validate:local": "node scripts/validate-local.mjs",
     "validate:ci-parity": "node scripts/validate-local.mjs --ci-parity",

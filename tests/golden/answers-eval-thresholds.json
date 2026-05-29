@@ -1,0 +1,11 @@
+{
+  "directAnswerCoverageMin": 4,
+  "citationCoverageMin": 4,
+  "unsupportedAnswerCountMax": 0,
+  "irrelevantInclusionMax": 0,
+  "missingMemoryGuidanceMin": 1,
+  "conflictCoverageMin": 1,
+  "staleSignalCoverageMin": 1,
+  "repairActionCoverageMin": 3,
+  "generatedPersistenceViolationsMax": 0
+}
