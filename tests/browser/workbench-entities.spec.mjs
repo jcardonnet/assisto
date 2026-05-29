@@ -141,9 +141,17 @@ test("entities tab renders context operating pages and stages context notes", as
 
     const detailPanel = page.locator("#entity-detail");
     await expect(detailPanel.getByRole("heading", { name: "Inventory Project" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Context operating room" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Current state" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Owners and roles" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Review risks" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Source timeline" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Cited briefs" })).toBeVisible();
     await expect(detailPanel.getByRole("heading", { name: "Context operating page" })).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "clm_jeff_manager" }).first()).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "per_jeff · person" }).first()).toBeVisible();
+    await expect(detailPanel.getByRole("button", { name: "Context room" })).toBeVisible();
+    await expect(detailPanel.getByRole("button", { name: "Stage context correction" })).toBeVisible();
 
     const noteForm = detailPanel.locator(".entity-context-note-form");
     await noteForm.getByLabel("Context note or correction").fill("Inventory Project uses PostgreSQL for reporting.");
