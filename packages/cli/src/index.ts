@@ -9,6 +9,7 @@ import {
   buildActivationStatusResult,
   buildDailyQueueResult,
   buildDogfoodHomeResult,
+  buildUseAssistoTomorrowResult,
   runPersonalDogfoodEval,
   buildSessionBrief,
   buildTodayWorkbenchResult,
@@ -121,6 +122,10 @@ export async function main(
 
     if (command === "activate") {
       return await commandActivate(parsed.root, rest, io);
+    }
+
+    if (command === "use-tomorrow") {
+      return await commandUseTomorrow(parsed.root, rest, io);
     }
 
     if (command === "dogfood") {
@@ -548,6 +553,55 @@ async function commandDaily(root: string, args: string[], io: CliIo): Promise<nu
   if (queue.warnings.length > 0) {
     io.stdout("\nWarnings\n");
     for (const warning of queue.warnings) {
+      io.stdout(`- ${warning}\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function commandUseTomorrow(root: string, args: string[], io: CliIo): Promise<number> {
+  if (args.some((arg) => !["--json", "--help", "-h"].includes(arg))) {
+    throw new Error("Usage: wm use-tomorrow [--json]");
+  }
+
+  if (args.includes("--help") || args.includes("-h")) {
+    io.stdout("Usage: wm use-tomorrow [--json]\n");
+    return 0;
+  }
+
+  const result = await buildUseAssistoTomorrowResult(root, { now: io.now });
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Use Assisto Tomorrow (${result.generated_at})\n`);
+  io.stdout(`State: ${result.memory_state}${result.complete ? " (complete)" : " (in progress)"}\n`);
+  io.stdout(`Next step: ${result.next_step.label}\n`);
+  io.stdout(`Next action: ${result.next_step.detail}\n\n`);
+  io.stdout("Counts\n");
+
+  for (const [key, value] of Object.entries(result.counts)) {
+    io.stdout(`${key}\t${value}\n`);
+  }
+
+  io.stdout("\nSteps\n");
+  for (const step of result.steps) {
+    io.stdout(`- ${step.state}\t${step.step_id}\t${step.label}\n`);
+  }
+
+  if (result.suggested_actions.length > 0) {
+    io.stdout("\nSuggested actions\n");
+    for (const action of result.suggested_actions) {
+      io.stdout(`- ${action}\n`);
+    }
+  }
+
+  if (result.warnings.length > 0) {
+    io.stdout("\nWarnings\n");
+    for (const warning of result.warnings) {
       io.stdout(`- ${warning}\n`);
     }
   }
@@ -1414,6 +1468,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] activate status [--json]",
+      "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",
       "  wm [--root <path>] dogfood eval [--questions <path>] [--json]",
       "  wm [--root <path>] doctor memory-data [--json]",

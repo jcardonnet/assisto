@@ -86,6 +86,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /provider rule\|llm-stub\|openai/);
   assert.match(help.stdout, /workbench serve/);
   assert.match(help.stdout, /activate status/);
+  assert.match(help.stdout, /use-tomorrow/);
   assert.match(help.stdout, /seed kit/);
   assert.match(help.stdout, /daily queue/);
   assert.match(help.stdout, /doctor memory-data/);
@@ -482,6 +483,16 @@ export async function runCliIntegrationTests() {
     const activationJson = JSON.parse(activationJsonResult.stdout);
     assert.equal(activationJson.memory_state, "active");
     assert.equal(activationJson.next_wizard_step.step_id, "review_one_transaction");
+
+    const useTomorrow = await runWm(todayRoot, ["use-tomorrow"]);
+    assert.match(useTomorrow.stdout, /Use Assisto Tomorrow/);
+    assert.match(useTomorrow.stdout, /Next step: Review one memory proposal/);
+    assert.match(useTomorrow.stdout, /pending_transactions\t4/);
+
+    const useTomorrowJsonResult = await runWm(todayRoot, ["use-tomorrow", "--json"]);
+    const useTomorrowJson = JSON.parse(useTomorrowJsonResult.stdout);
+    assert.equal(useTomorrowJson.memory_state, "active");
+    assert.equal(useTomorrowJson.next_step.step_id, "review_one_transaction");
 
     const dailyQueue = await runWm(todayRoot, ["daily", "queue"]);
     assert.match(dailyQueue.stdout, /Daily queue/);

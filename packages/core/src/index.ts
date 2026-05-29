@@ -17,6 +17,7 @@ export * from "./dogfood";
 export * from "./dogfood-eval";
 export * from "./activation";
 export * from "./daily";
+export * from "./use-tomorrow";
 export * from "./seed";
 export * from "./import";
 export * from "./entities";
