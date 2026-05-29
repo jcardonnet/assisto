@@ -741,8 +741,10 @@ export async function runWorkbenchTests() {
 
     const client = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/assets/workbench.js" });
     assert.match(client.body, /\/api\/activation\/status/);
+    assert.match(client.body, /\/api\/use-tomorrow/);
     assert.match(client.body, /\/api\/daily\/queue/);
     assert.match(client.body, /renderActivationWizard/);
+    assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
     assert.match(client.body, /renderDogfoodHome/);
     assert.match(client.body, /\/api\/dogfood\/home/);
@@ -935,6 +937,15 @@ export async function runWorkbenchTests() {
     assert.equal(activationStatus.memory_state, "active");
     assert.equal(activationStatus.counts.pending_transactions, 4);
     assert.equal(activationStatus.next_wizard_step.step_id, "review_one_transaction");
+
+    const useTomorrow = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/use-tomorrow" })).body
+    );
+    assert.equal(useTomorrow.memory_state, "active");
+    assert.equal(useTomorrow.counts.pending_transactions, 4);
+    assert.equal(useTomorrow.steps.find((step) => step.step_id === "review_one_transaction").state, "ready");
+    assert.equal(useTomorrow.next_step.step_id, "review_one_transaction");
+    assert.equal(useTomorrow.linked_routes.brief, "/api/brief?kind=today");
 
     const dailyQueue = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/daily/queue" })).body);
     assert.equal(dailyQueue.current_item.item_type, "pending_transaction");
