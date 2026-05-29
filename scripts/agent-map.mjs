@@ -21,7 +21,7 @@ export function buildRepoMap({ generatedAt = new Date().toISOString() } = {}) {
         area: "memory-validation",
         paths: ["packages/core/src/validators", "packages/core/src/transactions", "memory/schema"],
         tests: ["tests/core-validators.mjs", "tests/core-transactions.mjs", "tests/core-transaction-apply.mjs"],
-        evals: ["eval:mvp", "eval:v2", "eval:v3", "eval:v4", "eval:v5", "eval:v6"],
+        evals: ["eval:mvp", "eval:v2", "eval:v3", "eval:v4", "eval:v5", "eval:v6", "eval:dogfood-local", "eval:v7"],
         docs: ["AGENTS.md", "docs/implementation-plan.md", "docs/decisions.md"],
         invariants: ["all multi-file mutations go through transactions", "every durable claim cites an Event"],
         commands: ["pnpm agent:validate", "pnpm check:memory-data"]
@@ -30,7 +30,7 @@ export function buildRepoMap({ generatedAt = new Date().toISOString() } = {}) {
         area: "ingestion-capture-import",
         paths: ["packages/core/src/ingest", "packages/core/src/capture", "packages/core/src/import", "packages/core/src/extraction"],
         tests: ["tests/core-ingest.mjs", "tests/core-capture.mjs", "tests/core-import.mjs", "tests/core-extraction.mjs"],
-        evals: ["eval:mvp", "eval:v2", "eval:v5", "eval:v6"],
+        evals: ["eval:mvp", "eval:v2", "eval:v5", "eval:v6", "eval:dogfood-local", "eval:v7"],
         docs: ["README.md", "docs/revised-design.md"],
         invariants: ["ingestion writes Events plus pending Transactions only", "no generated explanation persistence"],
         commands: ["wm capture", "wm import notes", "wm ingest"]
@@ -39,7 +39,7 @@ export function buildRepoMap({ generatedAt = new Date().toISOString() } = {}) {
         area: "retrieval-briefs",
         paths: ["packages/core/src/retrieval", "packages/core/src/briefs", "packages/cli/src/index.ts"],
         tests: ["tests/core-retrieval.mjs", "tests/core-briefs.mjs", "tests/cli-integration.mjs"],
-        evals: ["eval:retrieval", "eval:v4", "eval:v5", "eval:v6"],
+        evals: ["eval:retrieval", "eval:v4", "eval:v5", "eval:v6", "eval:dogfood-local", "eval:v7"],
         docs: ["README.md", ".pi/prompts/ask.md", ".pi/skills/work-memory-retrieve/SKILL.md"],
         invariants: ["retrieval remains deterministic", "briefs are derived and disposable"],
         commands: ["wm ask", "wm brief"]
@@ -48,7 +48,7 @@ export function buildRepoMap({ generatedAt = new Date().toISOString() } = {}) {
         area: "workbench-ui",
         paths: ["packages/workbench/src", "tests/browser", "tests/workbench.mjs"],
         tests: ["tests/workbench.mjs", "tests/browser/*.spec.mjs"],
-        evals: ["eval:v4", "eval:v5", "eval:v6"],
+        evals: ["eval:v4", "eval:v5", "eval:v6", "eval:dogfood-local", "eval:v7"],
         docs: ["README.md", "docs/wsl2-handoff.md"],
         invariants: ["UI mutations call transaction-backed helpers", "no direct canonical UI writes"],
         commands: ["wm workbench serve", "pnpm test:browser"]

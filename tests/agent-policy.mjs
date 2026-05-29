@@ -29,6 +29,8 @@ export async function runAgentPolicyTests() {
     "eval:v4",
     "eval:v5",
     "eval:v6",
+    "eval:dogfood-local",
+    "eval:v7",
     "check:memory-data"
   ]);
 
@@ -39,6 +41,8 @@ export async function runAgentPolicyTests() {
   const evalPlan = buildValidationPlan({ changedFiles: ["tests/scenarios/run-v6.mjs"] });
   assert.equal(evalPlan.mode, "eval-test-harness");
   assert.equal(commandNames(evalPlan).includes("eval:v6"), true);
+  assert.equal(commandNames(evalPlan).includes("eval:dogfood-local"), true);
+  assert.equal(commandNames(evalPlan).includes("eval:v7"), true);
 
   const skipBrowserPlan = buildValidationPlan({
     changedFiles: ["packages/workbench/src/index.ts"],

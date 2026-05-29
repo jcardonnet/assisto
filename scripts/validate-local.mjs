@@ -19,6 +19,8 @@ const localOrder = [
   "eval:v4",
   "eval:v5",
   "eval:v6",
+  "eval:dogfood-local",
+  "eval:v7",
   "test:browser"
 ];
 
@@ -34,7 +36,9 @@ const ciOrder = [
   "eval:retrieval",
   "eval:v4",
   "eval:v5",
-  "eval:v6"
+  "eval:v6",
+  "eval:dogfood-local",
+  "eval:v7"
 ];
 
 function usage() {
