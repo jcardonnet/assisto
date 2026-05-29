@@ -789,7 +789,9 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /entity-context-form/);
     assert.match(client.body, /entity-context-note-form/);
     assert.match(client.body, /Context operating page/);
-    assert.match(client.body, /\/api\/entities\?kind=/);
+    assert.match(client.body, /Context operating room/);
+    assert.match(client.body, /\/api\/entities\/stewardship\?kind=/);
+    assert.match(client.body, /\/api\/contexts\/operating-room/);
     assert.match(client.body, /\/api\/entities\/alias\/preview/);
     assert.match(client.body, /\/api\/entities\/context\/preview/);
     assert.match(client.body, /\/api\/entities\/context-note\/preview/);

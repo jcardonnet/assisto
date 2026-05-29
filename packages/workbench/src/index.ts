@@ -4664,6 +4664,20 @@ async function renderEntities() {
   renderEntityExplorer();
 }
 
+async function loadEntityDetailWithRoom(id) {
+  const detail = await fetchJson(\`/api/entities/stewardship/detail?id=\${encodeURIComponent(id)}\`);
+
+  if (detail.type === "context") {
+    try {
+      detail.contextOperatingRoom = await fetchJson(\`/api/contexts/operating-room?id=\${encodeURIComponent(detail.id ?? detail.path)}\`);
+    } catch (error) {
+      detail.contextOperatingRoomError = error.message;
+    }
+  }
+
+  return detail;
+}
+
 function renderEntityExplorer() {
   const kindFilters = ["person", "topic", "context"].map((kind) => \`<button type="button" class="reason-filter" data-entity-kind="\${kind}" aria-pressed="\${String(entityKind === kind)}">
     <strong>\${kind === "person" ? "People" : kind === "topic" ? "Topics" : "Contexts"}</strong>
@@ -4752,6 +4766,7 @@ function entityDetailHtml(detail) {
     </div>
   </article>
   \${entityRiskCommandCenterHtml(detail)}
+  \${contextOperatingRoomHtml(detail.contextOperatingRoom, detail.contextOperatingRoomError)}
   \${contextOperatingPageHtml(detail.contextOperatingPage)}
   \${entityClaimSectionHtml("Active claims", detail.activeClaims)}
   \${entityClaimSectionHtml("Staged claims", detail.stagedClaims)}
@@ -4831,14 +4846,15 @@ function entityBriefLinksHtml(detail) {
 
   const target = detail.id ?? detail.path;
   const label = detail.type === "person" ? "Before meeting brief" : "Context status brief";
-  const contextDashboardButton = detail.type === "context"
-    ? \`<button type="button" class="secondary context-dashboard-load" data-context-id="\${escapeHtml(target)}">Open context dashboard</button>\`
+  const contextButtons = detail.type === "context"
+    ? \`<button type="button" class="secondary context-room-load" data-context-id="\${escapeHtml(target)}">Context room</button>
+      <button type="button" class="secondary context-dashboard-load" data-context-id="\${escapeHtml(target)}">Open context dashboard</button>\`
     : "";
 
   return \`<div class="action-row">
     \${briefLinkButtonHtml(detail.type, detail.type, target, label)}
     \${briefLinkButtonHtml("recent", detail.type, target, "Recent changes")}
-    \${contextDashboardButton}
+    \${contextButtons}
   </div>\`;
 }
 
@@ -4866,6 +4882,75 @@ function contextDashboardHtml(dashboard) {
   \${entityListSectionHtml("Dashboard FollowUps", dashboard.followups ?? [], (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
   \${entityListSectionHtml("Dashboard ReviewItems", dashboard.review_items ?? [], (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
   \${entityListSectionHtml("Dashboard source Events", dashboard.evidence_events ?? [], (event) => \`\${event.id} · \${event.path}\`)}\`;
+}
+
+function contextOperatingRoomHtml(room, errorMessage = "") {
+  if (errorMessage) {
+    return \`<article class="item"><h3>Context operating room</h3><p class="meta">\${escapeHtml(errorMessage)}</p></article>\`;
+  }
+
+  if (!room) {
+    return "";
+  }
+
+  const target = room.context?.id ?? room.context?.path ?? "";
+  const ownerRoleClaims = uniqueClaims([
+    ...(room.owners ?? []),
+    ...(room.currentState ?? []).filter((claim) => /\\b(role|manager|reports to|owner|owns|lead|cto|dba|responsible)\\b/i.test(claim.statement ?? ""))
+  ]);
+  const sourceTimeline = [
+    ...(room.citations?.event_ids ?? []).map((id) => \`Event: \${id}\`),
+    ...(room.citations?.review_item_ids ?? []).map((id) => \`ReviewItem: \${id}\`),
+    ...(room.citations?.followup_ids ?? []).map((id) => \`FollowUp: \${id}\`)
+  ];
+  const briefActions = \`<div class="action-row">
+    \${briefLinkButtonHtml("context", "context", target, "Context status brief")}
+    \${briefLinkButtonHtml("recent", "context", target, "Recent changes")}
+    \${briefLinkButtonHtml("review", "context", target, "Review-risk brief")}
+    \${briefLinkButtonHtml("followups", "context", target, "Follow-up brief")}
+  </div>\`;
+  const quickActions = (room.quickActions ?? []).map((action) => {
+    if (action.action_id === "capture_context_note") {
+      return \`<button type="button" class="secondary focus-context-note">Capture context note</button>\`;
+    }
+
+    if (action.action_id === "stage_context_correction") {
+      return \`<button type="button" class="secondary focus-context-correction">Stage context correction</button>\`;
+    }
+
+    if (action.action_id === "context_status_brief") {
+      return briefLinkButtonHtml("context", "context", target, action.label);
+    }
+
+    return \`<button type="button" class="secondary context-room-review-risks">\${escapeHtml(action.label)}</button>\`;
+  }).join("");
+
+  return \`<article class="item context-room">
+    <h3>Context operating room</h3>
+    \${detailListHtml([
+      ["Context", target],
+      ["Current facts", String(room.currentState?.length ?? 0)],
+      ["Owners", String(room.owners?.length ?? 0)],
+      ["Systems", String(room.systems?.length ?? 0)],
+      ["Decisions", String(room.decisions?.length ?? 0)],
+      ["Open questions", String(room.openQuestions?.length ?? 0)],
+      ["Review risks", String(room.risks?.length ?? 0)]
+    ])}
+    <div class="action-row">\${quickActions}</div>
+    \${plainListHtml("Missing memory prompts", room.missingMemoryPrompts ?? [])}
+    \${plainListHtml("Answerable questions", room.answerableQuestions ?? [])}
+    \${plainListHtml("Warnings", room.warnings ?? [])}
+  </article>
+  \${entityClaimSectionHtml("Current state", room.currentState ?? [])}
+  \${entityListSectionHtml("Owners and roles", ownerRoleClaims, (claim) => \`\${claim.claim_id}: \${claim.statement} [events: \${claim.evidence.join(", ") || "none"}]\`)}
+  \${entityClaimSectionHtml("Systems", room.systems ?? [])}
+  \${entityClaimSectionHtml("Decisions", room.decisions ?? [])}
+  \${entityClaimSectionHtml("Open questions", room.openQuestions ?? [])}
+  \${entityListSectionHtml("Review risks", room.risks ?? [], (risk) => \`\${risk.severity}: \${risk.message} [\${(risk.evidence ?? []).join(", ") || "no evidence"}]\`)}
+  \${entityListSectionHtml("Follow-up queue", room.followupQueue ?? [], (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
+  \${entityListSectionHtml("Review queue", room.reviewQueue ?? [], (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
+  \${entityListSectionHtml("Source timeline", sourceTimeline, (item) => item)}
+  <article class="item"><h3>Cited briefs</h3>\${briefActions}</article>\`;
 }
 
 function contextOperatingPageHtml(page) {
@@ -4914,6 +4999,24 @@ function entityListSectionBody(items, renderItem) {
     : '<p class="meta">None.</p>';
 
   return body;
+}
+
+function uniqueClaims(claims) {
+  const seen = new Set();
+  const result = [];
+
+  for (const claim of claims) {
+    const key = claim.claim_id ?? \`\${claim.page_path}:\${claim.statement}\`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(claim);
+  }
+
+  return result;
 }
 
 function entityReviewLaneOptions() {
@@ -4968,7 +5071,7 @@ function bindEntityActions() {
     button.addEventListener("click", async () => {
       const requestedId = button.dataset.entityId;
       const requestedKind = entityKind;
-      const loadedDetail = await fetchJson(\`/api/entities/stewardship/detail?id=\${encodeURIComponent(requestedId)}\`);
+      const loadedDetail = await loadEntityDetailWithRoom(requestedId);
 
       if (activeTab !== "entities" || requestedKind !== entityKind || requestedId !== button.dataset.entityId) {
         return;
@@ -4976,6 +5079,22 @@ function bindEntityActions() {
 
       entityDetail = loadedDetail;
       renderEntityExplorer();
+    });
+  }
+
+  for (const button of document.querySelectorAll(".context-room-load")) {
+    button.addEventListener("click", async () => {
+      const output = document.querySelector("#entity-action-output");
+      output.innerHTML = "<pre>Loading context room</pre>";
+
+      try {
+        const room = await fetchJson(\`/api/contexts/operating-room?id=\${encodeURIComponent(button.dataset.contextId)}\`);
+        output.innerHTML = contextOperatingRoomHtml(room);
+        bindBriefLinks();
+        bindContextRoomShortcuts();
+      } catch (error) {
+        output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+      }
     });
   }
 
@@ -5052,6 +5171,27 @@ function bindEntityActions() {
         note: form.elements.note.value,
         noteType: form.elements.noteType.value
       });
+    });
+  }
+
+  bindContextRoomShortcuts();
+}
+
+function bindContextRoomShortcuts() {
+  for (const button of document.querySelectorAll(".focus-context-note, .focus-context-correction")) {
+    button.addEventListener("click", () => {
+      const form = document.querySelector(".entity-context-note-form");
+
+      if (!form) {
+        return;
+      }
+
+      if (button.classList.contains("focus-context-correction")) {
+        form.elements.noteType.value = "correction";
+      }
+
+      form.elements.note.focus();
+      form.scrollIntoView({ block: "center" });
     });
   }
 }
@@ -6098,6 +6238,7 @@ function pageSummaryHtml(page) {
     ? \`<div class="action-row">
       \${briefLinkButtonHtml(targetType, targetType, page.id ?? page.path, targetType === "person" ? "Before meeting brief" : "Context status brief")}
       \${briefLinkButtonHtml("recent", targetType, page.id ?? page.path, "Recent changes")}
+      \${targetType === "context" ? \`<button type="button" class="secondary ask-open-entity" data-entity-kind="context" data-entity-target="\${escapeHtml(page.id ?? page.path)}">Open context room</button>\` : ""}
     </div>\`
     : "";
   return \`<article class="item ask-card">
@@ -6227,8 +6368,8 @@ function bindAskRepairActions() {
 
       try {
         const [loadedEntities, loadedDetail] = await Promise.all([
-          fetchJson(\`/api/entities?kind=\${encodeURIComponent(requestedKind)}\`),
-          fetchJson(\`/api/entities/detail?id=\${encodeURIComponent(requestedTarget)}\`)
+          fetchJson(\`/api/entities/stewardship?kind=\${encodeURIComponent(requestedKind)}\`),
+          loadEntityDetailWithRoom(requestedTarget)
         ]);
 
         if (activeTab !== "entities" || entityKind !== requestedKind) {
