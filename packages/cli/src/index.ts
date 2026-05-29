@@ -9,6 +9,7 @@ import {
   buildActivationStatusResult,
   buildDailyQueueResult,
   buildDogfoodHomeResult,
+  buildContextDashboardResult,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
   readDailySession,
@@ -124,6 +125,10 @@ export async function main(
 
     if (command === "mode") {
       return await commandMode(parsed.root, rest, io);
+    }
+
+    if (command === "context") {
+      return await commandContext(parsed.root, rest, io);
     }
 
     if (command === "activate") {
@@ -688,6 +693,48 @@ async function commandMode(root: string, args: string[], io: CliIo): Promise<num
     io.stdout("\nSuggested captures\n");
     for (const capture of result.suggested_captures) {
       io.stdout(`- ${capture}\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function commandContext(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand, target, ...rest] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm context dashboard <id|path> [--json]\n");
+    return 0;
+  }
+
+  if (subcommand !== "dashboard" || !target) {
+    throw new Error("Usage: wm context dashboard <id|path> [--json]");
+  }
+
+  if (rest.some((arg) => arg !== "--json") || rest.filter((arg) => arg === "--json").length > 1) {
+    throw new Error("Usage: wm context dashboard <id|path> [--json]");
+  }
+
+  const result = await buildContextDashboardResult(root, target, { now: io.now });
+
+  if (rest.includes("--json")) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Context dashboard: ${result.context.name} (${result.generated_at})\n`);
+  io.stdout(`Active facts: ${result.active_facts.length}\n`);
+  io.stdout(`Role claims: ${result.role_claims.length}\n`);
+  io.stdout(`Decisions: ${result.decision_claims.length}\n`);
+  io.stdout(`Open questions: ${result.open_question_claims.length}\n`);
+  io.stdout(`Open follow-ups: ${result.followups.length}\n`);
+  io.stdout(`Review items: ${result.review_items.length}\n`);
+  io.stdout(`Evidence Events: ${result.evidence_events.length}\n`);
+
+  if (result.suggested_actions.length > 0) {
+    io.stdout("\nSuggested actions\n");
+    for (const action of result.suggested_actions) {
+      io.stdout(`- ${action}\n`);
     }
   }
 
@@ -1554,6 +1601,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] daily session [--json]",
       "  wm [--root <path>] mode <morning|end-day|meeting|after-meeting> [id|path] [--json]",
+      "  wm [--root <path>] context dashboard <id|path> [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",

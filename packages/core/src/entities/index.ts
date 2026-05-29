@@ -99,6 +99,48 @@ export interface ContextOperatingPage {
   suggestedActions: string[];
 }
 
+export interface ContextDashboardResult {
+  generated_at: string;
+  context: {
+    id?: string;
+    path: string;
+    type: "context";
+    name: string;
+    aliases: string[];
+  };
+  active_facts: EntityClaimSummary[];
+  role_claims: EntityClaimSummary[];
+  decision_claims: EntityClaimSummary[];
+  open_question_claims: EntityClaimSummary[];
+  owner_claims: EntityClaimSummary[];
+  recent_changes: EntityClaimSummary[];
+  stale_claims: EntityClaimSummary[];
+  followups: EntityLinkedFollowUp[];
+  review_items: EntityLinkedReviewItem[];
+  evidence_events: EntityEvidenceEvent[];
+  related_people: EntityRelatedPage[];
+  related_topics: EntityRelatedPage[];
+  quick_briefs: ContextDashboardQuickBrief[];
+  suggested_actions: string[];
+  citations: ContextDashboardCitations;
+  warnings: string[];
+}
+
+export interface ContextDashboardQuickBrief {
+  kind: "context" | "recent" | "review" | "followups";
+  label: string;
+  target_kind?: "context";
+  target?: string;
+}
+
+export interface ContextDashboardCitations {
+  claim_ids: string[];
+  event_ids: string[];
+  page_paths: string[];
+  review_item_ids: string[];
+  followup_ids: string[];
+}
+
 export interface EntityDetailResult extends EntitySummary {
   source_events: string[];
   related: string[];
@@ -224,6 +266,68 @@ export async function getEntityDetail(root: string, idOrPath: string): Promise<E
     contextOperatingPage,
     warnings: ["Entity detail is derived from markdown; no canonical memory files were written."]
   };
+}
+
+export async function buildContextDashboardResult(
+  root: string,
+  idOrPath: string,
+  options: EntityStewardshipOptions = {}
+): Promise<ContextDashboardResult> {
+  const generatedAt = options.now ?? new Date().toISOString();
+  const detail = await getEntityDetail(root, idOrPath);
+
+  if (detail.type !== "context" || !detail.contextOperatingPage) {
+    throw new Error(`Context dashboard target must be a Context: ${idOrPath}`);
+  }
+
+  const page = detail.contextOperatingPage;
+  const target = detail.id ?? detail.path;
+  const result: ContextDashboardResult = {
+    generated_at: generatedAt,
+    context: {
+      id: detail.id,
+      path: detail.path,
+      type: "context",
+      name: detail.name,
+      aliases: detail.aliases
+    },
+    active_facts: page.activeFacts,
+    role_claims: page.roleClaims,
+    decision_claims: page.decisionClaims,
+    open_question_claims: page.openQuestionClaims,
+    owner_claims: page.ownerClaims,
+    recent_changes: page.recentChanges,
+    stale_claims: staleDashboardClaims(page.recentChanges, generatedAt),
+    followups: page.openFollowUps,
+    review_items: page.linkedReviewItems,
+    evidence_events: page.evidenceEvents,
+    related_people: page.relatedPeople,
+    related_topics: page.relatedTopics,
+    quick_briefs: [
+      { kind: "context", label: "Context status brief", target_kind: "context", target },
+      { kind: "recent", label: "Recent context changes", target_kind: "context", target },
+      { kind: "review", label: "Review-risk brief" },
+      { kind: "followups", label: "Follow-up review" }
+    ],
+    suggested_actions: [
+      ...page.suggestedActions,
+      "Use stage correction or capture context note actions for durable changes; this dashboard is read-only."
+    ],
+    citations: {
+      claim_ids: [],
+      event_ids: [],
+      page_paths: [],
+      review_item_ids: [],
+      followup_ids: []
+    },
+    warnings: [
+      "Context dashboard is a derived view; no canonical memory files were written.",
+      "Generated summaries are disposable and must be routed through capture/review before becoming memory."
+    ]
+  };
+
+  result.citations = contextDashboardCitations(result);
+  return result;
 }
 
 export async function createEntityAliasTransaction(
@@ -800,6 +904,52 @@ async function evidenceEvents(root: string, ids: Set<string>): Promise<EntityEvi
   }
 
   return events.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function staleDashboardClaims(claims: EntityClaimSummary[], now: string): EntityClaimSummary[] {
+  const currentDate = now.slice(0, 10);
+
+  return claims.filter((claim) => {
+    if (claim.claim_state === "superseded" || claim.claim_state === "rejected") {
+      return true;
+    }
+
+    return typeof claim.valid_to === "string" && claim.valid_to.length > 0 && claim.valid_to <= currentDate;
+  });
+}
+
+function contextDashboardCitations(result: ContextDashboardResult): ContextDashboardCitations {
+  const claimGroups = [
+    result.active_facts,
+    result.role_claims,
+    result.decision_claims,
+    result.open_question_claims,
+    result.owner_claims,
+    result.recent_changes,
+    result.stale_claims
+  ];
+  const claims = claimGroups.flat();
+
+  return {
+    claim_ids: uniqueSorted(claims.map((claim) => claim.claim_id)),
+    event_ids: uniqueSorted([
+      ...claims.flatMap((claim) => claim.evidence),
+      ...result.followups.flatMap((followup) => followup.source_events),
+      ...result.review_items.flatMap((item) => item.source_events),
+      ...result.evidence_events.map((event) => event.id)
+    ]),
+    page_paths: uniqueSorted([
+      result.context.path,
+      ...claims.map((claim) => claim.page_path),
+      ...result.followups.map((followup) => followup.path),
+      ...result.review_items.map((item) => item.path),
+      ...result.evidence_events.map((event) => event.path),
+      ...result.related_people.map((page) => page.path),
+      ...result.related_topics.map((page) => page.path)
+    ]),
+    review_item_ids: uniqueSorted(result.review_items.map((item) => item.id)),
+    followup_ids: uniqueSorted(result.followups.map((followup) => followup.id))
+  };
 }
 
 function relatedPages(index: VaultIndex, related: string[]): EntityRelatedPage[] {
