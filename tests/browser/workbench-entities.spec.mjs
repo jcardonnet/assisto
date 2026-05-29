@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { readdir, rm } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { makeTempVault, readVaultFile } from "../helpers/temp-vault.mjs";
+import { makeTempVault, readVaultFile, writeVaultFile } from "../helpers/temp-vault.mjs";
 import { loadTsModule } from "../ts-module-loader.mjs";
 import { writeWorkbenchFixture } from "../workbench.mjs";
 
@@ -13,21 +13,65 @@ test("entities tab shows evidence and stages stewardship transactions without ca
 
   try {
     await writeWorkbenchFixture(root);
+    await writeVaultFile(
+      root,
+      "memory/people/jeffrey.md",
+      `---
+id: per_jeffrey
+type: person
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+  - Jeff
+source_events:
+  - ev_2026_05_21_001
+related: []
+summary_generated_from:
+  - clm_jeffrey_reports
+---
+
+# Jeffrey
+
+## Active claims
+
+- claim_id: clm_jeffrey_reports
+  statement: Jeffrey reports to Dana.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+    );
     const beforePersonPage = await readVaultFile(root, "memory/people/jeff.md");
     const beforePendingTransactions = await pendingTransactionFiles(root);
     server = await workbench.startWorkbenchServer({ root, host: "127.0.0.1", port: 0 });
 
     await page.goto(server.url);
     await page.getByRole("button", { name: "People/Topics/Contexts" }).click();
-    await expect(page.getByRole("heading", { name: "People, Topics, Contexts" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Entity stewardship" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Risk lanes" })).toBeVisible();
+    await page.getByRole("button", { name: /Identity ambiguity/ }).click();
 
-    const jeffCard = page.locator("article.item").filter({ hasText: "per_jeff" }).first();
+    const jeffCard = page.locator("article.item").filter({ hasText: /per_jeff\b/ }).first();
     await expect(jeffCard.getByRole("heading", { name: "Jeff" })).toBeVisible();
+    await expect(jeffCard.getByText("Identity ambiguity")).toBeVisible();
     await jeffCard.getByRole("button", { name: "Open detail" }).click();
 
     const detailPanel = page.locator("#entity-detail");
     await expect(detailPanel.getByRole("heading", { name: "Jeff" })).toBeVisible();
-    await expect(detailPanel.getByText("clm_jeff_manager")).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Stewardship risk" })).toBeVisible();
+    await expect(detailPanel.getByText("Near duplicates")).toBeVisible();
+    await expect(detailPanel.getByText("Jeffrey · per_jeffrey")).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Reporting history" })).toBeVisible();
+    await expect(detailPanel.locator("li").filter({ hasText: "clm_jeff_manager" }).first()).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "ev_2026_05_21_001 · memory/events" })).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "fu_ask_jeff" })).toBeVisible();
 
@@ -40,7 +84,7 @@ test("entities tab shows evidence and stages stewardship transactions without ca
     await expect(detailPanel.getByRole("heading", { name: "Jeff" })).toBeVisible();
 
     const aliasForm = detailPanel.locator(".entity-alias-form");
-    await aliasForm.getByPlaceholder("New alias").fill("Jeffrey");
+    await aliasForm.getByPlaceholder("New alias").fill("J Cardon");
     await aliasForm.getByRole("button", { name: "Preview alias" }).click();
 
     await expect(page.getByRole("heading", { name: "Preview only" })).toBeVisible();
@@ -48,13 +92,13 @@ test("entities tab shows evidence and stages stewardship transactions without ca
     assert.deepEqual(await pendingTransactionFiles(root), beforePendingTransactions);
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
 
-    await aliasForm.getByPlaceholder("New alias").fill("Jeffrey");
+    await aliasForm.getByPlaceholder("New alias").fill("J Cardon");
     await aliasForm.getByRole("button", { name: "Stage alias" }).click();
 
     await expect(page.getByRole("heading", { name: "Pending transaction created" })).toBeVisible();
     await expect(page.locator("#entity-action-output .pill", { hasText: "stage entity alias" })).toBeVisible();
     assert.notDeepEqual(await pendingTransactionFiles(root), beforePendingTransactions);
-    assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_24_001.md"), /Stage alias "Jeffrey"/);
+    assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_24_001.md"), /Stage alias "J Cardon"/);
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
   } finally {
     await server?.close();
