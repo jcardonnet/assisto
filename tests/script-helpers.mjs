@@ -32,6 +32,7 @@ export async function runScriptHelperTests() {
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /Usage: pnpm check:memory-data/);
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /memory\/events/);
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /memory\/transactions/);
+  assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /untracked_user_memory_paths/);
   assert.match(readFileSync("scripts/agent-pr.mjs", "utf8"), /Usage: pnpm agent:pr status/);
   assert.match(readFileSync("scripts/agent-ci-local.mjs", "utf8"), /Usage: pnpm agent:ci-local --plan/);
   assert.match(readFileSync("scripts/agent-map.mjs", "utf8"), /Usage: pnpm agent:map build/);

@@ -307,7 +307,7 @@ Repo-local Git email was set to the GitHub noreply address to avoid push rejecti
 
 - Do not run destructive Git commands such as `git reset --hard`.
 - Do not delete `memory/` files unless explicitly approved.
-- Run `pnpm check:memory-data` before merge to catch accidental edits under `memory/events/**` or `memory/transactions/**`.
+- Run `pnpm check:memory-data` before merge to catch staged, modified, or committed edits under `memory/events/**` or `memory/transactions/**`. Untracked files in those folders are reported as local dogfood user data; do not stage them during product PRs.
 - Do not commit local runtime caches, `.codex/`, `.agents/`, `node_modules/`, or Pi runtime cache/session folders.
 - `.gitignore` is intended to keep caches out while preserving `.pi/skills`, `.pi/prompts`, and `.pi/extensions`.
 - If Pi reports extension-loader or autocomplete issues, inspect `.pi/extensions/work-memory/index.ts` and `packages/pi-extension/src/index.ts` before changing core semantics.

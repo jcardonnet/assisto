@@ -251,6 +251,7 @@ Useful environment and PR workflow helpers:
 ```bash
 pnpm env:doctor
 pnpm check:memory-data
+wm doctor memory-data
 pnpm pr:review-wait <pr-number-or-url>
 pnpm pr:closeout <pr-number-or-url>
 pnpm agent:pr status <pr-number-or-url>
@@ -259,7 +260,7 @@ pnpm agent:map query workbench
 pnpm agent:workbench serve
 ```
 
-`pnpm env:doctor` checks local Node/pnpm/temp/GitHub/Mixedbread/Playwright/localhost readiness. `pnpm check:memory-data` fails if a branch accidentally changes `memory/events/**` or `memory/transactions/**` unless `ASSISTO_ALLOW_MEMORY_DATA_CHANGES=1` or `--allow` is used. `pnpm pr:closeout` delegates to the Agent Control Plane PR state machine: it performs the delayed review-thread check, records review snapshots, verifies mergeability, CI, validation state, and memory-data guard status, and can merge/sync/refresh Mixedbread only when called with explicit merge flags.
+`pnpm env:doctor` checks local Node/pnpm/temp/GitHub/Mixedbread/Playwright/localhost readiness. `pnpm check:memory-data` fails if a branch accidentally stages, modifies, or commits `memory/events/**` or `memory/transactions/**` unless `ASSISTO_ALLOW_MEMORY_DATA_CHANGES=1` or `--allow` is used. Untracked Event/Transaction files are reported separately as dogfood user data. `wm doctor memory-data` is a read-only CLI wrapper for the same guard, and [Dogfood Vault Hygiene](docs/dogfood-vault-hygiene.md) explains the dev repo vs personal vault boundary. `pnpm pr:closeout` delegates to the Agent Control Plane PR state machine: it performs the delayed review-thread check, records review snapshots, verifies mergeability, CI, validation state, and memory-data guard status, and can merge/sync/refresh Mixedbread only when called with explicit merge flags.
 
 Use `pnpm agent:validate` for fast policy-selected local confidence. Use `pnpm agent:ci-local --plan` before large PRs or after sandbox/browser failures to see the Docker/devcontainer CI capsule; `pnpm agent:ci-local` builds the Node 22/pnpm 9.15.4 capsule, installs Playwright Chromium, passes through GitHub/Mixedbread/OpenAI credentials, and runs `pnpm validate:ci-parity`. GitHub Actions remains the authoritative remote CI gate.
 
@@ -387,6 +388,8 @@ Before merge, run:
 ```bash
 pnpm check:memory-data
 ```
+
+The guard blocks staged, unstaged, and committed guarded memory changes. Untracked `memory/events/**` and `memory/transactions/**` files are shown as local dogfood data so they can be preserved without being staged into product PRs.
 
 After merge, refresh Mixedbread with compact output:
 
