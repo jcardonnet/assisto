@@ -36,6 +36,33 @@ export async function runCoreEntityTests() {
     assert.equal(contextDetail.contextOperatingPage.openFollowUps.some((followup) => followup.id === "fu_ask_jeff"), true);
     assert.equal(contextDetail.contextOperatingPage.recentChanges.some((claim) => claim.claim_id === "clm_inventory_decision_mysql"), true);
 
+    const dashboard = await entities.buildContextDashboardResult(root, "ctx_inventory_project", {
+      now: "2026-05-24T13:00:00-03:00"
+    });
+
+    assert.equal(dashboard.context.id, "ctx_inventory_project");
+    assert.equal(dashboard.context.path, "memory/contexts/inventory-project.md");
+    assert.equal(dashboard.active_facts.some((claim) => claim.claim_id === "clm_inventory_uses_mysql"), true);
+    assert.equal(dashboard.role_claims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(dashboard.decision_claims.some((claim) => claim.claim_id === "clm_inventory_decision_mysql"), true);
+    assert.equal(dashboard.open_question_claims.some((claim) => claim.claim_id === "clm_inventory_open_question"), true);
+    assert.equal(dashboard.owner_claims.some((claim) => claim.claim_id === "clm_inventory_owner"), true);
+    assert.equal(dashboard.stale_claims.some((claim) => claim.claim_id === "clm_inventory_old_owner"), true);
+    assert.equal(dashboard.followups.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.equal(dashboard.review_items.some((item) => item.id === "rev_inventory_context_risk"), true);
+    assert.equal(dashboard.evidence_events.some((event) => event.id === "ev_2026_05_21_003"), true);
+    assert.equal(dashboard.related_people.some((page) => page.id === "per_jeff"), true);
+    assert.equal(dashboard.related_topics.some((page) => page.id === "top_mysql"), true);
+    assert.equal(dashboard.quick_briefs.some((brief) => brief.kind === "context" && brief.target === "ctx_inventory_project"), true);
+    assert.equal(dashboard.citations.event_ids.includes("ev_2026_05_21_003"), true);
+    assert.equal(dashboard.citations.page_paths.includes("memory/contexts/inventory-project.md"), true);
+    assert.match(dashboard.warnings.join("\n"), /derived/);
+
+    await assert.rejects(
+      () => entities.buildContextDashboardResult(root, "per_jeff"),
+      /Context dashboard target must be a Context/
+    );
+
     const beforeContext = await readVaultFile(root, "memory/contexts/inventory-project.md");
     const contextNote = await entities.createContextNoteTransaction(root, "ctx_inventory_project", "Inventory Project uses PostgreSQL for reporting.", {
       now: "2026-05-24T12:00:00-03:00",
@@ -225,6 +252,19 @@ async function writeContextOperatingFixtures(root) {
   observed_at: 2026-05-22
   valid_from: null
   valid_to: null
+
+- claim_id: clm_inventory_old_owner
+  statement: Joe previously owned Inventory Project coordination.
+  claim_kind: fact
+  claim_state: superseded
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_003]
+  recorded_at: 2026-05-20T10:10:00-03:00
+  observed_at: 2026-05-20
+  valid_from: null
+  valid_to: 2026-05-21
 `
   );
   await writeVaultFile(
@@ -252,6 +292,29 @@ transactions: []
 ## Raw text
 
 Decision: Inventory Project will keep MySQL. Open question: confirm dashboard owner. Jeff owns coordination.
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/review/inventory-context-risk.md",
+    `---
+id: rev_inventory_context_risk
+type: review_item
+object_state: active
+review_state: staged
+review_reason: context_open_question
+created_at: 2026-05-22T11:00:00-03:00
+updated_at: 2026-05-22T11:00:00-03:00
+source_events:
+  - ev_2026_05_21_003
+affected_files:
+  - contexts/inventory-project.md
+linked_transaction: tx_inventory_context_risk
+---
+
+# Review rev_inventory_context_risk
+
+Inventory Project has an open question that should be resolved before relying on the dashboard as complete.
 `
   );
 }

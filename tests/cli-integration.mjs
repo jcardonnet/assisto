@@ -91,6 +91,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /daily queue/);
   assert.match(help.stdout, /daily session/);
   assert.match(help.stdout, /mode <morning\|end-day\|meeting\|after-meeting>/);
+  assert.match(help.stdout, /context dashboard/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
@@ -546,6 +547,14 @@ export async function runCliIntegrationTests() {
     const afterMeetingModeJson = JSON.parse(afterMeetingModeJsonResult.stdout);
     assert.equal(afterMeetingModeJson.mode, "after-meeting");
     assert.equal(afterMeetingModeJson.target.id, "ctx_inventory_project");
+
+    const contextDashboard = await runWm(todayRoot, ["context", "dashboard", "ctx_inventory_project"]);
+    assert.match(contextDashboard.stdout, /Context dashboard: Inventory Project/);
+    assert.match(contextDashboard.stdout, /Active facts:/);
+
+    const contextDashboardJsonResult = await runWm(todayRoot, ["context", "dashboard", "ctx_inventory_project", "--json"]);
+    const contextDashboardJson = JSON.parse(contextDashboardJsonResult.stdout);
+    assert.equal(contextDashboardJson.context.id, "ctx_inventory_project");
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }

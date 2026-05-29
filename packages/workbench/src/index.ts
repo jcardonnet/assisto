@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   applyTransaction,
   buildActivationStatusResult,
+  buildContextDashboardResult,
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
@@ -593,6 +594,22 @@ export async function handleWorkbenchRoute(
 
     try {
       return jsonRoute(200, await getEntityDetail(root, target));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = /^Entity not found:/.test(message) ? 404 : 400;
+      return jsonRoute(status, { error: message });
+    }
+  }
+
+  if (requestUrl.pathname === "/api/contexts/dashboard") {
+    const target = optionalTarget(requestUrl);
+
+    if (!target) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    try {
+      return jsonRoute(200, await buildContextDashboardResult(root, target));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const status = /^Entity not found:/.test(message) ? 404 : 400;
@@ -4267,11 +4284,41 @@ function entityBriefLinksHtml(detail) {
 
   const target = detail.id ?? detail.path;
   const label = detail.type === "person" ? "Before meeting brief" : "Context status brief";
+  const contextDashboardButton = detail.type === "context"
+    ? \`<button type="button" class="secondary context-dashboard-load" data-context-id="\${escapeHtml(target)}">Open context dashboard</button>\`
+    : "";
 
   return \`<div class="action-row">
     \${briefLinkButtonHtml(detail.type, detail.type, target, label)}
     \${briefLinkButtonHtml("recent", detail.type, target, "Recent changes")}
+    \${contextDashboardButton}
   </div>\`;
+}
+
+function contextDashboardHtml(dashboard) {
+  if (!dashboard) {
+    return "";
+  }
+
+  return \`<article class="item">
+    <h3>Context dashboard</h3>
+    \${detailListHtml([
+      ["Context", dashboard.context.id ?? dashboard.context.path],
+      ["Active facts", String(dashboard.active_facts?.length ?? 0)],
+      ["Review items", String(dashboard.review_items?.length ?? 0)],
+      ["Evidence Events", String(dashboard.evidence_events?.length ?? 0)]
+    ])}
+    \${plainListHtml("Quick briefs", (dashboard.quick_briefs ?? []).map((brief) => brief.label))}
+    \${plainListHtml("Suggested manual actions", dashboard.suggested_actions ?? [])}
+  </article>
+  \${entityClaimSectionHtml("Dashboard active facts", dashboard.active_facts ?? [])}
+  \${entityClaimSectionHtml("Dashboard roles", dashboard.role_claims ?? [])}
+  \${entityClaimSectionHtml("Dashboard decisions", dashboard.decision_claims ?? [])}
+  \${entityClaimSectionHtml("Dashboard open questions", dashboard.open_question_claims ?? [])}
+  \${entityClaimSectionHtml("Dashboard stale claims", dashboard.stale_claims ?? [])}
+  \${entityListSectionHtml("Dashboard FollowUps", dashboard.followups ?? [], (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
+  \${entityListSectionHtml("Dashboard ReviewItems", dashboard.review_items ?? [], (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
+  \${entityListSectionHtml("Dashboard source Events", dashboard.evidence_events ?? [], (event) => \`\${event.id} · \${event.path}\`)}\`;
 }
 
 function contextOperatingPageHtml(page) {
@@ -4335,6 +4382,21 @@ function bindEntityActions() {
 
       entityDetail = loadedDetail;
       renderEntityExplorer();
+    });
+  }
+
+  for (const button of document.querySelectorAll(".context-dashboard-load")) {
+    button.addEventListener("click", async () => {
+      const output = document.querySelector("#entity-action-output");
+      output.innerHTML = "<pre>Loading context dashboard</pre>";
+
+      try {
+        const dashboard = await fetchJson(\`/api/contexts/dashboard?id=\${encodeURIComponent(button.dataset.contextId)}\`);
+        output.innerHTML = contextDashboardHtml(dashboard);
+        bindBriefLinks();
+      } catch (error) {
+        output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+      }
     });
   }
 

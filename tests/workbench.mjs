@@ -114,6 +114,7 @@ source_events:
   - ev_2026_05_21_001
 related:
   - per_jeff
+  - ctx_inventory_project
 ---
 
 # Follow-up: Ask Jeff
@@ -746,6 +747,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/daily\/session/);
     assert.match(client.body, /\/api\/modes\/morning/);
     assert.match(client.body, /\/api\/modes\/meeting/);
+    assert.match(client.body, /\/api\/contexts\/dashboard/);
     assert.match(client.body, /renderActivationWizard/);
     assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
@@ -1683,6 +1685,20 @@ export async function runWorkbenchTests() {
     );
     assert.equal(contextEntityDetail.contextOperatingPage.context_id, "ctx_inventory_project");
     assert.equal(contextEntityDetail.contextOperatingPage.roleClaims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+
+    const contextDashboard = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/contexts/dashboard?id=ctx_inventory_project" })).body
+    );
+    assert.equal(contextDashboard.context.id, "ctx_inventory_project");
+    assert.equal(contextDashboard.role_claims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(contextDashboard.followups.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.equal(contextDashboard.citations.page_paths.includes("memory/contexts/inventory-project.md"), true);
+
+    const unknownContextDashboard = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/contexts/dashboard?id=ctx_missing"
+    });
+    assert.equal(unknownContextDashboard.status, 404);
 
     const entityAliasPreview = JSON.parse(
       (
