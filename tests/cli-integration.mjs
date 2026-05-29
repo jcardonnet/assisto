@@ -95,6 +95,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
+  assert.match(help.stdout, /capture feedback/);
 
   const doctorRoot = await makeTempVault();
 
@@ -237,6 +238,41 @@ export async function runCliIntegrationTests() {
     await expectMissing(frictionRoot, "memory/topics/friction.md");
   } finally {
     await rm(frictionRoot, { recursive: true, force: true });
+  }
+
+  const captureFeedbackRoot = await makeTempVault();
+
+  try {
+    await writeWorkbenchFixture(captureFeedbackRoot);
+    const captureFeedback = await runWm(captureFeedbackRoot, [
+      "capture",
+      "feedback",
+      "--kind",
+      "wrong_person",
+      "--note",
+      "Extraction linked this note to the wrong person.",
+      "--event",
+      "ev_2026_05_21_001",
+      "--transaction",
+      "tx_2026_05_21_001"
+    ]);
+
+    assert.match(captureFeedback.stdout, /Capture feedback event: ev_2026_05_20_001/);
+    assert.match(captureFeedback.stdout, /Pending capture feedback transaction: tx_2026_05_20_001/);
+    assert.match(captureFeedback.stdout, /Kind: wrong_person/);
+    assert.match(captureFeedback.stdout, /Validation: passed/);
+    assert.match(
+      await readVaultFile(captureFeedbackRoot, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_label: capture_feedback:wrong_person/
+    );
+    assert.match(
+      await readVaultFile(captureFeedbackRoot, "memory/transactions/pending/tx_2026_05_20_001.md"),
+      /NOOP/
+    );
+    await expectMissing(captureFeedbackRoot, "memory/review/capture-feedback.md");
+    await expectMissing(captureFeedbackRoot, "memory/topics/capture-feedback.md");
+  } finally {
+    await rm(captureFeedbackRoot, { recursive: true, force: true });
   }
 
   const seedRoot = await makeTempVault();

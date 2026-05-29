@@ -17,6 +17,7 @@ import {
   buildSessionBrief,
   buildTodayWorkbenchResult,
   createCaptureNote,
+  createCaptureFeedback,
   createFrictionLog,
   createHealthReviewTransaction,
   createImportNotes,
@@ -42,6 +43,7 @@ import {
   getEntityDetail,
   transactionFilePaths,
   previewCaptureNote,
+  previewCaptureFeedback,
   previewFrictionLog,
   previewImportNotes,
   previewImportTriage,
@@ -53,6 +55,8 @@ import {
   type AnswerDraftResult,
   type ActivationStatusResult,
   type CaptureCreateResult,
+  type CaptureFeedbackCreateResult,
+  type CaptureFeedbackPreviewResult,
   type CaptureInboxResult,
   type CapturePreviewResult,
   type ContextPackResult,
@@ -678,6 +682,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createCapturePreview(root, input, true));
     }
 
+    if (pathname === "/api/capture/feedback/preview") {
+      return jsonRoute(200, await createCaptureFeedbackPreview(root, input, false));
+    }
+
+    if (pathname === "/api/capture/feedback") {
+      return jsonRoute(200, await createCaptureFeedbackPreview(root, input, true));
+    }
+
     if (pathname === "/api/seed/preview") {
       return jsonRoute(200, await createSeedPreview(root, input, false));
     }
@@ -1222,6 +1234,21 @@ async function createFrictionLogPreview(
   };
 
   return created ? createFrictionLog(root, frictionInput) : previewFrictionLog(root, frictionInput);
+}
+
+async function createCaptureFeedbackPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<CaptureFeedbackPreviewResult | CaptureFeedbackCreateResult> {
+  const feedbackInput = {
+    kind: requiredStringInput(input, "kind"),
+    note: requiredStringInput(input, "note"),
+    event: optionalStringInput(input, "event") ?? undefined,
+    transaction: optionalStringInput(input, "transaction") ?? undefined
+  };
+
+  return created ? createCaptureFeedback(root, feedbackInput) : previewCaptureFeedback(root, feedbackInput);
 }
 
 async function createDogfoodEvalRun(root: string, input: Record<string, unknown>): Promise<PersonalDogfoodEvalResult> {
@@ -3238,6 +3265,7 @@ function renderDogfoodHome(result, queue, tomorrow, session) {
   \${todayStaleNoopsHtml(result.stale_noop_events)}
   \${todayFollowupsHtml(result.open_followups)}
   \${todayFrictionLogsHtml(result.recent_friction_logs ?? [])}
+  \${todayCaptureFeedbackHtml(result.recent_capture_feedback ?? [])}
   \${todayEventsHtml(result.recent_events)}
   \${todayRecentTransactionsHtml(result.recent_transactions)}
   \${todayTextListSection("Health warnings", result.health_warnings, "No health warnings.")}
@@ -3572,6 +3600,25 @@ function todayFrictionLogsHtml(logs) {
   );
 }
 
+function todayCaptureFeedbackHtml(items) {
+  return todaySectionHtml(
+    "Recent capture feedback",
+    items,
+    (item) => \`<article class="item">
+      <h3>\${escapeHtml(item.kind)}</h3>
+      <p class="pill">\${escapeHtml(item.source_label ?? "capture feedback")}</p>
+      \${detailListHtml([
+        ["Event", \`\${item.id} · \${item.path}\`],
+        ["Recorded", item.recorded_at ?? "unknown"],
+        ["Linked Event", item.linked_event ?? "none"],
+        ["Linked Transaction", item.linked_transaction ?? "none"],
+        ["Note", item.note]
+      ])}
+    </article>\`,
+    "No recent capture feedback."
+  );
+}
+
 function todayRecentTransactionsHtml(transactions) {
   return todaySectionHtml(
     "Recent Decisions",
@@ -3773,6 +3820,27 @@ async function renderCapture() {
     </form>
   </article>
   <article class="item">
+    <h2>Capture feedback</h2>
+    <form id="capture-feedback-form" class="capture-form">
+      <label class="field" for="capture-feedback-kind"><span>Feedback kind</span><select id="capture-feedback-kind" name="kind">
+        <option value="wrong_person">wrong person</option>
+        <option value="missing_context">missing context</option>
+        <option value="bad_followup">bad follow-up</option>
+        <option value="bad_role_reporting">bad role/reporting</option>
+        <option value="other_extraction_issue">other extraction issue</option>
+      </select></label>
+      <label class="field" for="capture-feedback-note"><span>Feedback note</span><textarea id="capture-feedback-note" name="note" rows="4" placeholder="What did capture or extraction get wrong?"></textarea></label>
+      <div class="action-row">
+        <label class="field" for="capture-feedback-event"><span>Linked Event</span><input id="capture-feedback-event" name="event" placeholder="ev_..." /></label>
+        <label class="field" for="capture-feedback-transaction"><span>Linked Transaction</span><input id="capture-feedback-transaction" name="transaction" placeholder="tx_..." /></label>
+      </div>
+      <div class="action-row">
+        <button type="submit" name="mode" value="preview" class="secondary">Preview feedback</button>
+        <button type="submit" name="mode" value="create">Log feedback</button>
+      </div>
+    </form>
+  </article>
+  <article class="item">
     <h2>Personal Seed Kit</h2>
     <form id="seed-kit-form" class="capture-form">
       <label class="field" for="seed-my-role"><span>My role</span><textarea id="seed-my-role" name="myRole" rows="3" placeholder="I am an AI Engineer at SmartEquip."></textarea></label>
@@ -3803,6 +3871,18 @@ async function renderCapture() {
     });
   });
   bindCaptureInboxActions(captureInbox);
+  document.querySelector("#capture-feedback-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submitter = event.submitter;
+    const preview = submitter?.value === "preview";
+    await runAction(preview ? "/api/capture/feedback/preview" : "/api/capture/feedback", {
+      kind: form.elements.kind.value,
+      note: form.elements.note.value,
+      event: form.elements.event.value,
+      transaction: form.elements.transaction.value
+    });
+  });
   document.querySelector("#seed-kit-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;

@@ -803,8 +803,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/ask\/draft\/preview/);
     assert.match(client.body, /\/api\/friction\/log\/preview/);
     assert.match(client.body, /\/api\/friction\/log/);
+    assert.match(client.body, /\/api\/capture\/feedback\/preview/);
+    assert.match(client.body, /\/api\/capture\/feedback/);
     assert.match(client.body, /Draft answer/);
     assert.match(client.body, /ask-friction-log-form/);
+    assert.match(client.body, /capture-feedback-form/);
     assert.match(client.body, /Log retrieval miss/);
     assert.match(client.body, /renderAskResult/);
     assert.match(client.body, /retrievalPlanHtml/);
@@ -1550,6 +1553,62 @@ export async function runWorkbenchTests() {
       assert.equal(frictionHome.recent_friction_logs[0].question, "What is the Neptune deploy key?");
     } finally {
       await rm(frictionCreateRoot, { recursive: true, force: true });
+    }
+
+    const feedbackPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/capture/feedback/preview",
+          body: JSON.stringify({
+            kind: "bad_role_reporting",
+            note: "The detector missed a reporting-line correction.",
+            event: "ev_2026_05_21_001",
+            transaction: "tx_2026_05_21_001"
+          })
+        })
+      ).body
+    );
+    assert.equal(feedbackPreview.action, "log_capture_feedback");
+    assert.equal(feedbackPreview.created, false);
+    assert.equal(feedbackPreview.kind, "bad_role_reporting");
+    assert.deepEqual(feedbackPreview.operations, ["NOOP"]);
+    assert.equal(feedbackPreview.validation.passed, true);
+    await assert.rejects(() => readVaultFile(root, feedbackPreview.event_path), /ENOENT/);
+
+    const feedbackCreateRoot = await makeTempVault("assisto-workbench-feedback-route-");
+
+    try {
+      await writeWorkbenchFixture(feedbackCreateRoot);
+      const feedbackCreate = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(feedbackCreateRoot, {
+            method: "POST",
+            url: "/api/capture/feedback",
+            body: JSON.stringify({
+              kind: "missing_context",
+              note: "Capture needed a project Context suggestion.",
+              event: "ev_2026_05_21_001",
+              transaction: "tx_2026_05_21_001"
+            })
+          })
+        ).body
+      );
+      assert.equal(feedbackCreate.action, "log_capture_feedback");
+      assert.equal(feedbackCreate.created, true);
+      assert.equal(feedbackCreate.kind, "missing_context");
+      assert.match(await readVaultFile(feedbackCreateRoot, feedbackCreate.event_path), /source_label: capture_feedback:missing_context/);
+      assert.match(await readVaultFile(feedbackCreateRoot, feedbackCreate.transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(feedbackCreateRoot, "memory/review/capture-feedback.md"), /ENOENT/);
+
+      const feedbackHome = JSON.parse(
+        (await workbench.handleWorkbenchRoute(feedbackCreateRoot, { method: "GET", url: "/api/dogfood/home" })).body
+      );
+      assert.equal(feedbackHome.recent_capture_feedback.length, 1);
+      assert.equal(feedbackHome.recent_capture_feedback[0].kind, "missing_context");
+      assert.equal(feedbackHome.recent_capture_feedback[0].linked_event, "ev_2026_05_21_001");
+    } finally {
+      await rm(feedbackCreateRoot, { recursive: true, force: true });
     }
 
     const oldOpenAiKey = process.env.OPENAI_API_KEY;

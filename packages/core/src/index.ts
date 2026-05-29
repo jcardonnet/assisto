@@ -8,6 +8,7 @@ export * from "./policies";
 export * from "./ingest";
 export * from "./extraction";
 export * from "./capture";
+export * from "./capture-feedback";
 export * from "./review";
 export * from "./retrieval";
 export * from "./health";
