@@ -140,6 +140,42 @@ export interface ImportLikelyCounts {
   skipped: number;
 }
 
+export interface ImportAssistantResult {
+  generated_at: string;
+  recipe: ImportAssistantRecipe;
+  session_count: number;
+  recent_sessions: ImportAssistantSessionSummary[];
+  duplicate_groups: ImportDuplicateGroup[];
+  review_load_forecast: ImportReviewLoadForecast;
+  likely_counts: ImportLikelyCounts;
+  suggested_next_batch_size: number;
+  suggested_actions: string[];
+  warnings: string[];
+}
+
+export interface ImportAssistantRecipe {
+  title: "Import 10 curated notes";
+  steps: string[];
+  recommended_first_batch_size: number;
+}
+
+export interface ImportAssistantSessionSummary {
+  session_id: string;
+  created_at?: string;
+  created: boolean;
+  units_total: number;
+  units_kept: number;
+  units_skipped: number;
+  likely_counts: ImportLikelyCounts;
+  estimated_review_load: ImportEstimatedReviewLoad;
+}
+
+export interface ImportReviewLoadForecast extends ImportEstimatedReviewLoad {
+  level: "empty" | "light" | "moderate" | "high";
+  estimated_review_minutes: number;
+  message: string;
+}
+
 const defaultGlob = "*.md,*.txt";
 
 export async function previewImportNotes(
@@ -180,6 +216,31 @@ export async function createImportTriage(
 ): Promise<ImportTriageCreateResult> {
   const result = await runImportTriage(root, input, options, true);
   return result as ImportTriageCreateResult;
+}
+
+export async function buildImportAssistantResult(
+  root: string,
+  options: { now?: string } = {}
+): Promise<ImportAssistantResult> {
+  const sessions = await readImportAssistantSessions(root);
+  const results = sessions.map((session) => session.result);
+  const likely = sumLikelyCounts(results.map((result) => result.likely_counts));
+  const reviewLoad = sumReviewLoad(results.map((result) => result.estimated_review_load));
+  const forecast = reviewLoadForecast(reviewLoad, sessions.length);
+  const duplicates = mergeDuplicateGroups(results.flatMap((result) => result.duplicate_groups ?? []));
+
+  return {
+    generated_at: options.now ?? new Date().toISOString(),
+    recipe: importAssistantRecipe(),
+    session_count: sessions.length,
+    recent_sessions: sessions.map(importAssistantSessionSummary).slice(0, 5),
+    duplicate_groups: duplicates,
+    review_load_forecast: forecast,
+    likely_counts: likely,
+    suggested_next_batch_size: suggestedImportBatchSize(forecast, likely),
+    suggested_actions: importAssistantSuggestedActions(forecast, likely, duplicates.length),
+    warnings: importAssistantWarnings(sessions)
+  };
 }
 
 export async function collectImportSourceUnits(input: ImportNotesInput): Promise<ImportSourceUnit[]> {
@@ -692,6 +753,243 @@ function likelyCounts(units: ImportTriageUnitResult[]): ImportLikelyCounts {
     duplicates: units.filter((unit) => unit.extraction_summary.likely_outcome === "duplicate").length,
     skipped: units.filter((unit) => unit.extraction_summary.likely_outcome === "skipped").length
   };
+}
+
+interface ImportAssistantSessionRecord {
+  session_id: string;
+  created_at?: string;
+  result: ImportTriagePreviewResult | ImportTriageCreateResult;
+}
+
+async function readImportAssistantSessions(root: string): Promise<ImportAssistantSessionRecord[]> {
+  const sessionDir = path.join(root, ".assisto-local", "import-sessions");
+  let entries: string[];
+
+  try {
+    entries = await readdir(sessionDir);
+  } catch {
+    return [];
+  }
+
+  const sessions: ImportAssistantSessionRecord[] = [];
+
+  for (const entry of entries.filter((value) => value.endsWith(".json")).sort()) {
+    try {
+      const parsed = JSON.parse(await readFile(path.join(sessionDir, entry), "utf8")) as Partial<ImportAssistantSessionRecord>;
+
+      if (parsed.result?.action !== "import_triage") {
+        continue;
+      }
+
+      sessions.push({
+        session_id: parsed.session_id ?? parsed.result.session_id ?? entry.replace(/\.json$/, ""),
+        created_at: parsed.created_at,
+        result: normalizeImportTriageResult(parsed.result)
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return sessions.sort((left, right) => (right.created_at ?? "").localeCompare(left.created_at ?? ""));
+}
+
+function normalizeImportTriageResult(
+  result: Partial<ImportTriagePreviewResult | ImportTriageCreateResult>
+): ImportTriagePreviewResult | ImportTriageCreateResult {
+  return {
+    action: "import_triage",
+    created: Boolean(result.created),
+    session_id: result.session_id,
+    units_total: numberValue(result.units_total),
+    units_kept: numberValue(result.units_kept),
+    units_skipped: numberValue(result.units_skipped),
+    provider_name: typeof result.provider_name === "string" ? result.provider_name : "unknown",
+    units: Array.isArray(result.units) ? result.units as ImportTriageUnitResult[] : [],
+    duplicate_groups: Array.isArray(result.duplicate_groups) ? result.duplicate_groups as ImportDuplicateGroup[] : [],
+    estimated_review_load: normalizeReviewLoad(result.estimated_review_load),
+    likely_counts: normalizeLikelyCounts(result.likely_counts)
+  } as ImportTriagePreviewResult | ImportTriageCreateResult;
+}
+
+function normalizeReviewLoad(value: unknown): ImportEstimatedReviewLoad {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+  return {
+    units_needing_review: numberValue(record.units_needing_review),
+    staged_review_items: numberValue(record.staged_review_items),
+    conflict_units: numberValue(record.conflict_units),
+    duplicate_units: numberValue(record.duplicate_units)
+  };
+}
+
+function normalizeLikelyCounts(value: unknown): ImportLikelyCounts {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+
+  return {
+    safe: numberValue(record.safe),
+    staged: numberValue(record.staged),
+    conflicts: numberValue(record.conflicts),
+    duplicates: numberValue(record.duplicates),
+    skipped: numberValue(record.skipped)
+  };
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function importAssistantRecipe(): ImportAssistantRecipe {
+  return {
+    title: "Import 10 curated notes",
+    recommended_first_batch_size: 10,
+    steps: [
+      "Pick 10 high-signal Markdown or text notes from one project or week.",
+      "Run a dry-run import or Workbench triage preview before creating anything.",
+      "Skip duplicates and weak notes before creating Event plus pending Transaction records.",
+      "Review the resulting pending Transactions before importing the next batch."
+    ]
+  };
+}
+
+function importAssistantSessionSummary(session: ImportAssistantSessionRecord): ImportAssistantSessionSummary {
+  const result = session.result;
+
+  return {
+    session_id: session.session_id,
+    created_at: session.created_at,
+    created: result.created,
+    units_total: result.units_total,
+    units_kept: result.units_kept,
+    units_skipped: result.units_skipped,
+    likely_counts: result.likely_counts,
+    estimated_review_load: result.estimated_review_load
+  };
+}
+
+function sumLikelyCounts(values: ImportLikelyCounts[]): ImportLikelyCounts {
+  return values.reduce(
+    (sum, value) => ({
+      safe: sum.safe + value.safe,
+      staged: sum.staged + value.staged,
+      conflicts: sum.conflicts + value.conflicts,
+      duplicates: sum.duplicates + value.duplicates,
+      skipped: sum.skipped + value.skipped
+    }),
+    { safe: 0, staged: 0, conflicts: 0, duplicates: 0, skipped: 0 }
+  );
+}
+
+function sumReviewLoad(values: ImportEstimatedReviewLoad[]): ImportEstimatedReviewLoad {
+  return values.reduce(
+    (sum, value) => ({
+      units_needing_review: sum.units_needing_review + value.units_needing_review,
+      staged_review_items: sum.staged_review_items + value.staged_review_items,
+      conflict_units: sum.conflict_units + value.conflict_units,
+      duplicate_units: sum.duplicate_units + value.duplicate_units
+    }),
+    {
+      units_needing_review: 0,
+      staged_review_items: 0,
+      conflict_units: 0,
+      duplicate_units: 0
+    }
+  );
+}
+
+function reviewLoadForecast(load: ImportEstimatedReviewLoad, sessionCount: number): ImportReviewLoadForecast {
+  const estimatedReviewMinutes = load.units_needing_review * 2 + load.conflict_units * 4 + load.duplicate_units;
+  const level =
+    sessionCount === 0
+      ? "empty"
+      : load.units_needing_review >= 10 || load.staged_review_items >= 15 || load.conflict_units >= 2
+        ? "high"
+        : load.units_needing_review >= 4 || load.staged_review_items >= 6 || load.conflict_units > 0
+          ? "moderate"
+          : "light";
+  const messages = {
+    empty: "No import triage sessions yet. Start with a small curated batch.",
+    light: "Review load is light enough for another curated batch.",
+    moderate: "Review load is building. Keep the next batch small and review before importing more.",
+    high: "Review load is high. Pause broad imports and work down staged reviews first."
+  } satisfies Record<ImportReviewLoadForecast["level"], string>;
+
+  return {
+    ...load,
+    level,
+    estimated_review_minutes: estimatedReviewMinutes,
+    message: messages[level]
+  };
+}
+
+function suggestedImportBatchSize(forecast: ImportReviewLoadForecast, likely: ImportLikelyCounts): number {
+  if (forecast.level === "high") {
+    return 5;
+  }
+
+  if (likely.duplicates >= 2 || forecast.level === "moderate") {
+    return 10;
+  }
+
+  if (forecast.level === "empty") {
+    return 10;
+  }
+
+  return 20;
+}
+
+function importAssistantSuggestedActions(
+  forecast: ImportReviewLoadForecast,
+  likely: ImportLikelyCounts,
+  duplicateGroupCount: number
+): string[] {
+  const actions: string[] = [];
+
+  if (forecast.level === "empty") {
+    actions.push("Import 10 curated notes with dry-run or Workbench triage before creating pending Transactions.");
+  } else if (forecast.level === "high") {
+    actions.push("Use a smaller next batch and review staged/conflict items before importing more.");
+  } else {
+    actions.push("Import the next curated batch after previewing likely safe, staged, conflict, and duplicate counts.");
+  }
+
+  if (duplicateGroupCount > 0 || likely.duplicates > 0) {
+    actions.push("Prune duplicate groups before creating imports so review time goes to new memory.");
+  }
+
+  if (likely.conflicts > 0) {
+    actions.push("Resolve conflict-heavy import units one at a time; do not batch-apply role or reporting changes.");
+  }
+
+  return actions;
+}
+
+function importAssistantWarnings(sessions: ImportAssistantSessionRecord[]): string[] {
+  if (sessions.length === 0) {
+    return ["No local import triage sessions found under .assisto-local/import-sessions/."];
+  }
+
+  return [];
+}
+
+function mergeDuplicateGroups(groups: ImportDuplicateGroup[]): ImportDuplicateGroup[] {
+  const merged = new Map<string, ImportDuplicateGroup>();
+
+  for (const group of groups) {
+    const existing = merged.get(group.source_hash) ?? {
+      source_hash: group.source_hash,
+      unit_ids: [],
+      existing_event_id: group.existing_event_id,
+      existing_event_path: group.existing_event_path
+    };
+
+    existing.unit_ids = [...new Set([...existing.unit_ids, ...group.unit_ids])].sort();
+    existing.existing_event_id ??= group.existing_event_id;
+    existing.existing_event_path ??= group.existing_event_path;
+    merged.set(group.source_hash, existing);
+  }
+
+  return [...merged.values()].sort((left, right) => left.source_hash.localeCompare(right.source_hash));
 }
 
 interface GlobPattern {

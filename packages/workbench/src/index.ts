@@ -9,6 +9,7 @@ import {
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
+  buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
   readDailySession,
@@ -554,6 +555,10 @@ export async function handleWorkbenchRoute(
     }
 
     return jsonRoute(200, await readImportSession(root, sessionId));
+  }
+
+  if (requestUrl.pathname === "/api/import/assistant") {
+    return jsonRoute(200, await buildImportAssistantResult(root));
   }
 
   if (requestUrl.pathname === "/api/review") {
@@ -4175,7 +4180,10 @@ function bindCaptureInboxActions(inbox) {
 }
 
 function renderImport() {
-  view.innerHTML = \`<article class="item">
+  view.innerHTML = \`<section id="import-assistant-section">
+    <article class="item"><h2>Import assistant</h2><p class="meta">Loading import guidance.</p></article>
+  </section>
+  <article class="item">
     <h2>Import notes</h2>
     <form id="import-form" class="capture-form">
       <label class="field" for="import-text"><span>Batch text</span><textarea id="import-text" name="text" rows="8" placeholder="Paste Markdown or text notes. Put --- on its own line between notes."></textarea></label>
@@ -4200,6 +4208,7 @@ function renderImport() {
   </article>
   <section id="import-triage-section"></section>
   <div id="import-output" class="action-output"></div>\`;
+  void loadImportAssistant();
   document.querySelector("#import-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -4224,6 +4233,7 @@ function renderImport() {
       if (mode === "triage") {
         importTriageUnits = triageUnitsFromResult(result);
         renderImportTriageEditor(result);
+        void loadImportAssistant();
         output.innerHTML = "";
       } else {
         output.innerHTML = renderImportResult(result);
@@ -4232,6 +4242,48 @@ function renderImport() {
       output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
     }
   });
+}
+
+async function loadImportAssistant() {
+  const section = document.querySelector("#import-assistant-section");
+
+  if (!section) {
+    return;
+  }
+
+  try {
+    renderImportAssistant(await fetchJson("/api/import/assistant"));
+  } catch (error) {
+    section.innerHTML = \`<article class="item"><h2>Import assistant</h2><pre>\${escapeHtml(error.message)}</pre></article>\`;
+  }
+}
+
+function renderImportAssistant(result) {
+  const section = document.querySelector("#import-assistant-section");
+
+  if (!section) {
+    return;
+  }
+
+  section.innerHTML = \`<article class="item">
+    <h2>Import assistant</h2>
+    <p class="pill">\${escapeHtml(result.recipe?.title ?? "Import 10 curated notes")}</p>
+    \${detailListHtml([
+      ["Suggested next batch size", String(result.suggested_next_batch_size ?? 10)],
+      ["Local sessions", String(result.session_count ?? 0)],
+      ["Review load", result.review_load_forecast?.level ?? "empty"],
+      ["Review load message", result.review_load_forecast?.message ?? "No import sessions yet."],
+      ["Estimated review minutes", String(result.review_load_forecast?.estimated_review_minutes ?? 0)],
+      ["Likely safe", String(result.likely_counts?.safe ?? 0)],
+      ["Likely staged", String(result.likely_counts?.staged ?? 0)],
+      ["Likely conflicts", String(result.likely_counts?.conflicts ?? 0)],
+      ["Duplicates", String(result.likely_counts?.duplicates ?? 0)]
+    ])}
+    \${plainListHtml("Recipe", result.recipe?.steps ?? [])}
+    \${plainListHtml("Suggested actions", result.suggested_actions ?? [])}
+    \${plainListHtml("Duplicate groups", (result.duplicate_groups ?? []).map((group) => \`\${group.source_hash.slice(0, 12)}: \${group.unit_ids.join(", ")}\`))}
+    \${plainListHtml("Warnings", result.warnings ?? [])}
+  </article>\`;
 }
 
 function triageUnitsFromResult(result) {
@@ -4328,6 +4380,7 @@ function bindImportTriageActions() {
       });
       importTriageUnits = triageUnitsFromResult(result);
       renderImportTriageEditor(result);
+      void loadImportAssistant();
       output.innerHTML = renderImportTriageResult(result);
     } catch (error) {
       output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
@@ -4342,6 +4395,7 @@ function bindImportTriageActions() {
         const session = await fetchJson(\`/api/import/session?id=\${encodeURIComponent(button.dataset.sessionId ?? "")}\`);
         importTriageUnits = triageUnitsFromResult(session.result);
         renderImportTriageEditor(session.result);
+        void loadImportAssistant();
         output.innerHTML = renderImportTriageResult(session.result);
       } catch (error) {
         output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;

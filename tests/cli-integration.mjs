@@ -350,6 +350,14 @@ export async function runCliIntegrationTests() {
     assert.match(duplicate.stdout, /Imported: 0/);
     assert.match(duplicate.stdout, /Skipped: 1/);
     assert.match(duplicate.stdout, /Skipped duplicate source_hash/);
+
+    const assistant = await runWm(importRoot, ["import", "assistant"]);
+    assert.match(assistant.stdout, /Import assistant/);
+    assert.match(assistant.stdout, /Import 10 curated notes/);
+    assert.match(assistant.stdout, /Suggested next batch size:\s+10/);
+
+    const assistantJson = await runWm(importRoot, ["import", "assistant", "--json"]);
+    assert.equal(JSON.parse(assistantJson.stdout).suggested_next_batch_size, 10);
   } finally {
     await rm(importRoot, { recursive: true, force: true });
   }

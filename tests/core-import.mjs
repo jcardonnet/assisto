@@ -182,4 +182,132 @@ export async function runCoreImportTests() {
   } finally {
     await rm(triageCreateRoot, { recursive: true, force: true });
   }
+
+  const assistantEmptyRoot = await makeTempVault("assisto-import-assistant-empty-");
+
+  try {
+    const assistant = await importModule.buildImportAssistantResult(assistantEmptyRoot, {
+      now: "2026-05-25T09:00:00-03:00"
+    });
+
+    assert.equal(assistant.generated_at, "2026-05-25T09:00:00-03:00");
+    assert.equal(assistant.session_count, 0);
+    assert.equal(assistant.recipe.title, "Import 10 curated notes");
+    assert.equal(assistant.suggested_next_batch_size, 10);
+    assert.equal(assistant.review_load_forecast.level, "empty");
+    assert.equal(assistant.likely_counts.safe, 0);
+    await assert.rejects(() => readVaultFile(assistantEmptyRoot, "memory/events/2026/2026-05/2026-05-25-001.md"), /ENOENT/);
+  } finally {
+    await rm(assistantEmptyRoot, { recursive: true, force: true });
+  }
+
+  const assistantDuplicateRoot = await makeTempVault("assisto-import-assistant-duplicate-");
+
+  try {
+    await writeImportAssistantSession(assistantDuplicateRoot, "imp_duplicate", {
+      action: "import_triage",
+      created: false,
+      units_total: 4,
+      units_kept: 2,
+      units_skipped: 2,
+      provider_name: "rule-based",
+      units: [],
+      duplicate_groups: [
+        {
+          source_hash: "a".repeat(64),
+          unit_ids: ["unit_1", "unit_3"],
+          existing_event_id: "ev_existing",
+          existing_event_path: "memory/events/2026/2026-05/2026-05-20-001.md"
+        }
+      ],
+      estimated_review_load: {
+        units_needing_review: 1,
+        staged_review_items: 1,
+        conflict_units: 0,
+        duplicate_units: 2
+      },
+      likely_counts: {
+        safe: 1,
+        staged: 1,
+        conflicts: 0,
+        duplicates: 2,
+        skipped: 0
+      }
+    });
+
+    const assistant = await importModule.buildImportAssistantResult(assistantDuplicateRoot, {
+      now: "2026-05-25T09:00:00-03:00"
+    });
+
+    assert.equal(assistant.session_count, 1);
+    assert.equal(assistant.duplicate_groups.length, 1);
+    assert.deepEqual(assistant.duplicate_groups[0].unit_ids, ["unit_1", "unit_3"]);
+    assert.equal(assistant.review_load_forecast.duplicate_units, 2);
+    assert.equal(assistant.review_load_forecast.level, "light");
+    assert.equal(assistant.suggested_next_batch_size, 10);
+    assert.match(assistant.suggested_actions.join("\n"), /Prune duplicate/);
+  } finally {
+    await rm(assistantDuplicateRoot, { recursive: true, force: true });
+  }
+
+  const assistantHighLoadRoot = await makeTempVault("assisto-import-assistant-high-");
+
+  try {
+    await writeImportAssistantSession(assistantHighLoadRoot, "imp_high_load", {
+      action: "import_triage",
+      created: false,
+      units_total: 16,
+      units_kept: 16,
+      units_skipped: 0,
+      provider_name: "rule-based",
+      units: [],
+      duplicate_groups: [],
+      estimated_review_load: {
+        units_needing_review: 12,
+        staged_review_items: 18,
+        conflict_units: 2,
+        duplicate_units: 0
+      },
+      likely_counts: {
+        safe: 4,
+        staged: 10,
+        conflicts: 2,
+        duplicates: 0,
+        skipped: 0
+      }
+    });
+
+    const assistant = await importModule.buildImportAssistantResult(assistantHighLoadRoot, {
+      now: "2026-05-25T09:00:00-03:00"
+    });
+
+    assert.equal(assistant.review_load_forecast.level, "high");
+    assert.equal(assistant.review_load_forecast.units_needing_review, 12);
+    assert.equal(assistant.likely_counts.conflicts, 2);
+    assert.equal(assistant.suggested_next_batch_size, 5);
+    assert.match(assistant.suggested_actions.join("\n"), /Use a smaller next batch/);
+  } finally {
+    await rm(assistantHighLoadRoot, { recursive: true, force: true });
+  }
+}
+
+async function writeImportAssistantSession(root, sessionId, result) {
+  const sessionDir = path.join(root, ".assisto-local", "import-sessions");
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(
+    path.join(sessionDir, `${sessionId}.json`),
+    `${JSON.stringify(
+      {
+        session_id: sessionId,
+        created_at: "2026-05-25T09:00:00-03:00",
+        result: {
+          ...result,
+          session_id: sessionId
+        }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
 }

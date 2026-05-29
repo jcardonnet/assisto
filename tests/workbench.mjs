@@ -778,7 +778,9 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/import\/session/);
     assert.match(client.body, /\/api\/import\/triage\/preview/);
     assert.match(client.body, /\/api\/import\/triage/);
+    assert.match(client.body, /\/api\/import\/assistant/);
     assert.match(client.body, /import-triage-form/);
+    assert.match(client.body, /renderImportAssistant/);
     assert.match(client.body, /Split unit/);
     assert.match(client.body, /Merge next/);
     assert.match(client.body, /renderImportResult/);
@@ -1229,6 +1231,26 @@ export async function runWorkbenchTests() {
     assert.equal(importSession.session_id, importTriagePreview.session_id);
     assert.equal(importSession.result.units_total, 2);
     assert.equal(importSession.result.created, false);
+
+    const importAssistant = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/import/assistant"
+        })
+      ).body
+    );
+    assert.equal(importAssistant.session_count, 1);
+    assert.equal(importAssistant.recipe.title, "Import 10 curated notes");
+    assert.equal(importAssistant.likely_counts.safe, 1);
+    assert.equal(importAssistant.likely_counts.skipped, 1);
+    assert.equal(importAssistant.suggested_next_batch_size, 20);
+    assert.match(importAssistant.suggested_actions.join("\n"), /Import the next curated batch/);
+    const importAssistantReadOnly = await workbench.handleWorkbenchRoute(root, {
+      method: "POST",
+      url: "/api/import/assistant"
+    });
+    assert.equal(importAssistantReadOnly.status, 405);
 
     const importTriageCreateRoot = await makeTempVault("assisto-workbench-import-triage-route-");
 
