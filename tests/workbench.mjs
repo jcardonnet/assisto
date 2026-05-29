@@ -818,13 +818,15 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /retrievalPlanHtml/);
     assert.match(client.body, /copy-derived-text/);
     assert.match(client.body, /Retrieval plan/);
-    assert.match(client.body, /Answer candidates/);
+    assert.match(client.body, /What memory can say/);
     assert.match(client.body, /Supporting claims/);
-    assert.match(client.body, /Suggested manual actions/);
+    assert.match(client.body, /Conflicts or stale facts/);
+    assert.match(client.body, /Repair actions/);
     assert.match(client.body, /Suggested next questions/);
     assert.match(client.body, /Linked ReviewItems/);
     assert.match(client.body, /Linked FollowUps/);
     assert.match(client.body, /Matched pages/);
+    assert.match(client.body, /Cited answer export/);
     assert.match(client.body, /Context pack/);
     assert.match(client.body, /Derived text only; not saved/);
     assert.match(client.body, /data-copy-target="#context-pack-text"/);

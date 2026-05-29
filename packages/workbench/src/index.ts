@@ -5422,38 +5422,32 @@ function answerDraftHtml(result) {
 
 function renderAskResult(result, session = null) {
   clearCopyOutput();
-  const cannotConfirm = [
-    ...(result.missingInformation ?? []).map((item) => ({
-      title: item.code,
-      badge: "missing information",
-      body: item.message,
-      details: []
-    })),
-    ...(result.warnings ?? []).map((warning) => ({
-      title: "warning",
-      badge: "retrieval warning",
-      body: warning,
-      details: []
-    }))
+  const cannotConfirm = answerCannotConfirmItems(result);
+  const conflictOrStaleItems = [
+    ...(result.conflicts ?? []).map((item) => ({ ...item, item_type: "conflict" })),
+    ...(result.staleSignals ?? []).map((item) => ({ ...item, item_type: "stale" }))
   ];
+  const repairActions = result.repairActions ?? result.manualActions ?? [];
   const sections = [
     pinnedQuestionsHtml(session ?? { query: result.query, pinned_questions: [] }),
     retrievalPlanHtml(result),
-    askSectionHtml("Answer candidates", result.answerCandidates ?? [], answerCandidateHtml, "No active answer candidates found."),
+    askSectionHtml("What memory can say", result.directAnswers ?? [], directAnswerHtml, "No direct answers found in active memory."),
     askSectionHtml("Supporting claims", result.supportingClaims ?? [], claimHtml, "No active supporting claims were loaded."),
     citationExplorerHtml(session?.citation_explorer ?? citationExplorerFromBasis(result)),
     askSectionHtml("Matched page preview", session?.matched_page_previews ?? [], matchedPagePreviewHtml, "No matched page previews."),
     askSectionHtml("Source Event preview", session?.source_event_previews ?? [], sourceEventPreviewHtml, "No source Event previews."),
     askSectionHtml("What memory cannot confirm", cannotConfirm, missingInfoHtml, "No missing information detected for loaded active claims."),
+    askSectionHtml("Conflicts or stale facts", conflictOrStaleItems, conflictOrStaleHtml, "No conflicts or stale facts surfaced."),
     askSectionHtml("Uncertainty", result.uncertainClaims ?? [], uncertainClaimHtml, "No staged, partial, superseded, rejected, or contested claims were loaded."),
     askSectionHtml("Evidence Events", result.evidenceEvents ?? [], eventHtml, "No cited Event pages were loaded."),
     askSectionHtml("Linked ReviewItems", result.linkedReviewItems ?? [], linkedItemHtml, "No linked ReviewItems."),
     askSectionHtml("Linked FollowUps", result.linkedFollowUps ?? [], linkedItemHtml, "No linked FollowUps."),
-    askSectionHtml("Suggested manual actions", result.manualActions ?? [], manualActionHtml, "No suggested manual actions."),
+    askSectionHtml("Repair actions", repairActions, manualActionHtml, "No repair actions suggested."),
     missingMemoryActionHtml(result, session),
     askFrictionLogHtml(result),
     askSectionHtml("Suggested next questions", (result.suggestedNextQuestions ?? []).map((question) => ({ question })), nextQuestionHtml, "No suggested next questions."),
     askSectionHtml("Matched pages", result.matchedPages ?? [], pageSummaryHtml, "No matched people, topics, or contexts."),
+    answerContractExportHtml(result),
     contextPackHtml(result.contextPack)
   ];
 
@@ -5462,6 +5456,7 @@ function renderAskResult(result, session = null) {
   bindAskPinQuestion(session ?? { query: result.query, pinned_questions: [] });
   bindAskMissingMemory(result);
   bindAskFrictionLog(result);
+  bindAskRepairActions();
   bindBriefLinks();
 }
 
@@ -5486,13 +5481,18 @@ function pinnedQuestionsBodyHtml(pinned) {
 }
 
 function citationExplorerFromBasis(result) {
+  const citationMap = result.citationMap ?? {};
   const claimIds = [
+    ...Object.keys(citationMap.claims ?? {}),
     ...(result.answerCandidates ?? []).map((candidate) => candidate.claim_id),
+    ...(result.directAnswers ?? []).flatMap((answer) => answer.citations?.claim_ids ?? []),
     ...(result.supportingClaims ?? []).map((claim) => claim.claim_id),
     ...(result.uncertainClaims ?? []).map((claim) => claim.claim_id)
   ];
   const eventIds = [
+    ...Object.keys(citationMap.events ?? {}),
     ...(result.evidenceEvents ?? []).map((event) => event.id),
+    ...(result.directAnswers ?? []).flatMap((answer) => answer.citations?.event_ids ?? []),
     ...(result.answerCandidates ?? []).flatMap((candidate) => candidate.evidence ?? []),
     ...(result.supportingClaims ?? []).flatMap((claim) => claim.evidence ?? [])
   ];
@@ -5501,7 +5501,9 @@ function citationExplorerFromBasis(result) {
     claim_ids: uniqueClientStrings(claimIds),
     event_ids: uniqueClientStrings(eventIds),
     page_paths: uniqueClientStrings([
+      ...Object.keys(citationMap.pages ?? {}),
       ...(result.matchedPages ?? []).map((page) => page.path),
+      ...(result.directAnswers ?? []).flatMap((answer) => answer.citations?.page_paths ?? []),
       ...(result.answerCandidates ?? []).map((candidate) => candidate.page_path),
       ...(result.supportingClaims ?? []).map((claim) => claim.page_path)
     ]),
@@ -5685,6 +5687,51 @@ function askSectionHtml(label, items, renderItem, emptyText) {
   return \`<section data-ask-section="\${escapeHtml(sectionSlug(label))}"><h2>\${escapeHtml(label)}</h2>\${body}</section>\`;
 }
 
+function answerCannotConfirmItems(result) {
+  if ((result.cannotConfirm ?? []).length) {
+    return result.cannotConfirm.map((item) => ({
+      title: item.code,
+      badge: "cannot confirm",
+      body: item.message,
+      citations: item.citations
+    }));
+  }
+
+  return [
+    ...(result.missingInformation ?? []).map((item) => ({
+      title: item.code,
+      badge: "missing information",
+      body: item.message,
+      citations: null
+    })),
+    ...(result.warnings ?? []).map((warning) => ({
+      title: "warning",
+      badge: "retrieval warning",
+      body: warning,
+      citations: null
+    }))
+  ];
+}
+
+function directAnswerHtml(answer) {
+  const lines = answerCitationLines(answer);
+  const entityKind = entityKindForPagePath(answer.page_path);
+  const entityButton = entityKind
+    ? \`<button type="button" class="secondary ask-open-entity" data-entity-kind="\${escapeHtml(entityKind)}" data-entity-target="\${escapeHtml(answer.page_path)}">Open \${entityKind === "person" ? "Person" : "Context"} page</button>\`
+    : "";
+
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(answer.answer_id ?? answer.claim_id)}</h3>
+    <p>\${escapeHtml(answer.answer ?? answer.statement)}</p>
+    <p class="pill">\${escapeHtml(answer.basis ?? "active_claim")} · \${escapeHtml(answer.scope_state ?? "unknown")}</p>
+    \${citationLinesHtml(lines)}
+    <div class="action-row">
+      <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy cited basis</button>
+      \${entityButton}
+    </div>
+  </article>\`;
+}
+
 function answerCandidateHtml(candidate) {
   const lines = claimCitationLines(candidate);
   return \`<article class="item ask-card">
@@ -5755,7 +5802,10 @@ function linkedItemHtml(item) {
       ["Staged claims", stagedClaims],
       ["Why included", item.why_included ?? "linked to retrieved memory"]
     ])}
-    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+    <div class="action-row">
+      <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy citation</button>
+      \${linkedItemActionButtonHtml(item)}
+    </div>
   </article>\`;
 }
 
@@ -5784,10 +5834,12 @@ function pageSummaryHtml(page) {
 }
 
 function missingInfoHtml(item) {
+  const lines = item.citations ? citationSetLines(item.citations) : [];
   return \`<article class="item ask-card">
     <h3>\${escapeHtml(item.title)}</h3>
     <p class="pill">\${escapeHtml(item.badge)}</p>
     <p>\${escapeHtml(item.body)}</p>
+    \${citationLinesHtml(lines)}
   </article>\`;
 }
 
@@ -5799,6 +5851,24 @@ function manualActionHtml(action) {
       ["Reason", action.reason],
       ["Target", action.target ?? "none"]
     ])}
+    \${manualActionButtonHtml(action)}
+  </article>\`;
+}
+
+function conflictOrStaleHtml(item) {
+  const lines = citationSetLines(item.citations ?? {
+    claim_ids: item.claim_id ? [item.claim_id] : [],
+    event_ids: item.evidence ?? [],
+    page_paths: item.page_path ? [item.page_path] : []
+  });
+
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(item.claim_id ?? item.code)}</h3>
+    <p>\${escapeHtml(item.statement ?? item.message)}</p>
+    <p class="pill">\${escapeHtml(item.item_type)} · \${escapeHtml(item.claim_state ?? item.code)} · \${escapeHtml(item.scope_state ?? "scope unknown")}</p>
+    <p class="meta">\${escapeHtml(item.message ?? "")}</p>
+    \${citationLinesHtml(lines)}
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy cited basis</button>
   </article>\`;
 }
 
@@ -5862,11 +5932,126 @@ function bindAskFrictionLog(result) {
   });
 }
 
+function bindAskRepairActions() {
+  for (const button of document.querySelectorAll(".ask-open-entity")) {
+    button.addEventListener("click", async () => {
+      const requestedKind = button.dataset.entityKind;
+      const requestedTarget = button.dataset.entityTarget;
+      if (!requestedKind || !requestedTarget) {
+        return;
+      }
+
+      entityKind = requestedKind;
+      entityList = null;
+      entityDetail = null;
+      selectWorkbenchTab("entities");
+      view.innerHTML = '<article class="item"><h2>Loading entity</h2><p class="meta">Opening cited memory page.</p></article>';
+
+      try {
+        const [loadedEntities, loadedDetail] = await Promise.all([
+          fetchJson(\`/api/entities?kind=\${encodeURIComponent(requestedKind)}\`),
+          fetchJson(\`/api/entities/detail?id=\${encodeURIComponent(requestedTarget)}\`)
+        ]);
+
+        if (activeTab !== "entities" || entityKind !== requestedKind) {
+          return;
+        }
+
+        entityList = loadedEntities;
+        entityDetail = loadedDetail;
+        renderEntityExplorer();
+      } catch (error) {
+        view.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+      }
+    });
+  }
+
+  for (const button of document.querySelectorAll(".ask-repair-action")) {
+    button.addEventListener("click", () => {
+      const action = button.dataset.action;
+
+      if (action === "capture_note") {
+        void openQuickCapture();
+        return;
+      }
+
+      if (action === "log_friction") {
+        const field = document.querySelector("#ask-friction-note");
+        field?.focus();
+        field?.scrollIntoView({ block: "center" });
+        return;
+      }
+
+      if (action === "review_item") {
+        activateTab("review");
+        return;
+      }
+
+      if (action === "open_followups" || action === "open_today") {
+        activateTab("today");
+        return;
+      }
+
+      if (action === "inspect_entity") {
+        activateTab("entities");
+        return;
+      }
+
+      if (action === "run_health_check") {
+        activateTab("health");
+      }
+    });
+  }
+}
+
 function nextQuestionHtml(item) {
   return \`<article class="item ask-card">
     <h3>Suggested question</h3>
     <p>\${escapeHtml(item.question)}</p>
   </article>\`;
+}
+
+function answerContractExportHtml(result) {
+  const text = answerContractExportText(result);
+  return \`<section data-ask-section="cited-answer-export">
+    <h2>Cited answer export</h2>
+    <details class="context-pack">
+      <summary>Show derived answer basis</summary>
+      <pre id="answer-contract-export-text">\${escapeHtml(text)}</pre>
+    </details>
+    <button type="button" class="copy-derived-text" data-copy-target="#answer-contract-export-text">Copy cited answer basis</button>
+  </section>\`;
+}
+
+function answerContractExportText(result) {
+  const lines = [
+    "# Cited answer basis",
+    \`Question: \${result.query ?? ""}\`,
+    "",
+    "## What memory can say",
+    ...listOrEmpty((result.directAnswers ?? []).map((answer) => {
+      const citations = answerCitationLines(answer).join("; ");
+      return \`- \${answer.answer ?? answer.statement} [\${citations}]\`;
+    })),
+    "",
+    "## What memory cannot confirm",
+    ...listOrEmpty((result.cannotConfirm ?? []).map((item) => \`- \${item.code}: \${item.message}\`)),
+    "",
+    "## Conflicts or stale facts",
+    ...listOrEmpty([
+      ...(result.conflicts ?? []).map((item) => \`- conflict \${item.claim_id}: \${item.message}\`),
+      ...(result.staleSignals ?? []).map((item) => \`- stale \${item.claim_id}: \${item.message}\`)
+    ]),
+    "",
+    "## Repair actions",
+    ...listOrEmpty((result.repairActions ?? result.manualActions ?? []).map((action) => \`- \${action.label}: \${action.reason}\`))
+  ];
+
+  return lines.join("\\n");
+}
+
+function listOrEmpty(items) {
+  return items.length ? items : ["- none"];
 }
 
 function contextPackHtml(contextPack) {
@@ -5888,6 +6073,71 @@ function claimCitationLines(claim) {
     \`scope: \${claim.scope ?? "null"}\`,
     \`scope_state: \${claim.scope_state ?? "unknown"}\`
   ];
+}
+
+function answerCitationLines(answer) {
+  return [
+    \`claim_id: \${answer.claim_id}\`,
+    \`page: \${answer.page_path}\`,
+    \`events: \${(answer.citations?.event_ids ?? []).join(", ") || "none"}\`,
+    \`scope: \${answer.scope ?? "null"}\`,
+    \`scope_state: \${answer.scope_state ?? "unknown"}\`
+  ];
+}
+
+function citationSetLines(citations) {
+  if (!citations) {
+    return [];
+  }
+
+  return [
+    \`claims: \${(citations.claim_ids ?? []).join(", ") || "none"}\`,
+    \`events: \${(citations.event_ids ?? []).join(", ") || "none"}\`,
+    \`pages: \${(citations.page_paths ?? []).join(", ") || "none"}\`
+  ];
+}
+
+function entityKindForPagePath(pagePath) {
+  if (/^memory\\/people\\//.test(pagePath ?? "")) {
+    return "person";
+  }
+
+  if (/^memory\\/contexts\\//.test(pagePath ?? "")) {
+    return "context";
+  }
+
+  return "";
+}
+
+function linkedItemActionButtonHtml(item) {
+  if (item.type === "review_item") {
+    return '<button type="button" class="secondary ask-repair-action" data-action="review_item">Open Review</button>';
+  }
+
+  if (item.type === "followup") {
+    return '<button type="button" class="secondary ask-repair-action" data-action="open_followups">Open FollowUps</button>';
+  }
+
+  return "";
+}
+
+function manualActionButtonHtml(action) {
+  const labels = {
+    capture_note: "Capture missing memory",
+    inspect_entity: "Open entities",
+    review_item: "Open Review",
+    open_followups: "Open FollowUps",
+    open_today: "Open Today",
+    run_health_check: "Open Health",
+    log_friction: "Log retrieval miss"
+  };
+  const label = labels[action.action];
+
+  if (!label) {
+    return "";
+  }
+
+  return \`<button type="button" class="secondary ask-repair-action" data-action="\${escapeHtml(action.action)}">\${escapeHtml(label)}</button>\`;
 }
 
 function sectionSlug(label) {
