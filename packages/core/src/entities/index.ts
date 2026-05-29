@@ -141,6 +141,40 @@ export interface ContextDashboardCitations {
   followup_ids: string[];
 }
 
+export interface ContextOperatingRoomResult {
+  generated_at: string;
+  context: ContextDashboardResult["context"];
+  currentState: EntityClaimSummary[];
+  owners: EntityClaimSummary[];
+  systems: EntityClaimSummary[];
+  decisions: EntityClaimSummary[];
+  openQuestions: EntityClaimSummary[];
+  risks: ContextOperatingRoomRisk[];
+  recentChanges: EntityClaimSummary[];
+  staleClaims: EntityClaimSummary[];
+  reviewQueue: EntityLinkedReviewItem[];
+  followupQueue: EntityLinkedFollowUp[];
+  answerableQuestions: string[];
+  missingMemoryPrompts: string[];
+  quickActions: ContextOperatingRoomAction[];
+  citations: ContextDashboardCitations;
+  warnings: string[];
+}
+
+export interface ContextOperatingRoomRisk {
+  risk_id: string;
+  severity: "low" | "medium" | "high";
+  message: string;
+  evidence: string[];
+}
+
+export interface ContextOperatingRoomAction {
+  action_id: string;
+  label: string;
+  kind: "capture" | "review" | "brief" | "health";
+  target?: string;
+}
+
 export interface EntityDetailResult extends EntitySummary {
   source_events: string[];
   related: string[];
@@ -425,6 +459,45 @@ export async function buildContextDashboardResult(
 
   result.citations = contextDashboardCitations(result);
   return result;
+}
+
+export async function buildContextOperatingRoomResult(
+  root: string,
+  idOrPath: string,
+  options: EntityStewardshipOptions = {}
+): Promise<ContextOperatingRoomResult> {
+  const dashboard = await buildContextDashboardResult(root, idOrPath, options);
+  const target = dashboard.context.id ?? dashboard.context.path;
+  const systems = dashboard.active_facts.filter((claim) => matchesSystemIntent(claim.statement));
+  const risks = contextOperatingRoomRisks(dashboard);
+
+  return {
+    generated_at: dashboard.generated_at,
+    context: dashboard.context,
+    currentState: dashboard.active_facts,
+    owners: dashboard.owner_claims,
+    systems,
+    decisions: dashboard.decision_claims,
+    openQuestions: dashboard.open_question_claims,
+    risks,
+    recentChanges: dashboard.recent_changes,
+    staleClaims: dashboard.stale_claims,
+    reviewQueue: dashboard.review_items,
+    followupQueue: dashboard.followups,
+    answerableQuestions: contextAnswerableQuestions(dashboard),
+    missingMemoryPrompts: contextMissingMemoryPrompts(dashboard, systems),
+    quickActions: [
+      { action_id: "capture_context_note", label: "Capture context note", kind: "capture", target },
+      { action_id: "stage_context_correction", label: "Stage context correction", kind: "review", target },
+      { action_id: "context_status_brief", label: "Generate context status brief", kind: "brief", target },
+      { action_id: "review_risks", label: "Inspect review risks", kind: "review", target }
+    ],
+    citations: dashboard.citations,
+    warnings: [
+      "Context operating room is a derived view; no canonical memory files were written.",
+      "Durable changes must route through capture or pending Transactions."
+    ]
+  };
 }
 
 export async function buildEntityStewardshipResult(
@@ -1078,6 +1151,12 @@ function matchesOwnerIntent(statement: string): boolean {
   return /\b(owner|owns|responsible|responsibility|dri|accountable)\b/i.test(statement);
 }
 
+function matchesSystemIntent(statement: string): boolean {
+  return /\b(system|systems|service|services|database|db|mysql|postgres|postgresql|redis|solr|search|api|pipeline|platform|tool|tools|queue|warehouse|reporting|dashboard)\b/i.test(
+    statement
+  );
+}
+
 function matchesRoleIntent(statement: string): boolean {
   return /\b(role|manager|reports to|owner|owns|lead|cto|dba|responsible)\b/i.test(statement);
 }
@@ -1504,6 +1583,98 @@ function staleDashboardClaims(claims: EntityClaimSummary[], now: string): Entity
 
     return typeof claim.valid_to === "string" && claim.valid_to.length > 0 && claim.valid_to <= currentDate;
   });
+}
+
+function contextOperatingRoomRisks(result: ContextDashboardResult): ContextOperatingRoomRisk[] {
+  const risks: ContextOperatingRoomRisk[] = [];
+
+  if (result.review_items.length > 0) {
+    risks.push({
+      risk_id: "review_queue",
+      severity: "high",
+      message: `${result.review_items.length} review item(s) need human attention.`,
+      evidence: result.review_items.map((item) => item.id)
+    });
+  }
+
+  if (result.stale_claims.length > 0) {
+    risks.push({
+      risk_id: "stale_claims",
+      severity: "medium",
+      message: `${result.stale_claims.length} stale or ended claim(s) may affect current state.`,
+      evidence: result.stale_claims.map((claim) => claim.claim_id)
+    });
+  }
+
+  if (result.open_question_claims.length > 0) {
+    risks.push({
+      risk_id: "open_questions",
+      severity: "medium",
+      message: `${result.open_question_claims.length} open question(s) are recorded for this Context.`,
+      evidence: result.open_question_claims.map((claim) => claim.claim_id)
+    });
+  }
+
+  if (result.followups.length > 0) {
+    risks.push({
+      risk_id: "open_followups",
+      severity: "low",
+      message: `${result.followups.length} open follow-up(s) are linked to this Context.`,
+      evidence: result.followups.map((followup) => followup.id)
+    });
+  }
+
+  if (risks.length === 0) {
+    risks.push({
+      risk_id: "no_known_risks",
+      severity: "low",
+      message: "No deterministic review, stale-claim, open-question, or follow-up risks found.",
+      evidence: []
+    });
+  }
+
+  return risks;
+}
+
+function contextAnswerableQuestions(result: ContextDashboardResult): string[] {
+  const name = result.context.name;
+  const questions = [
+    `What is the current state of ${name}?`,
+    `Who owns ${name}?`,
+    `What decisions are recorded for ${name}?`,
+    `What open questions exist for ${name}?`,
+    `What follow-ups are open for ${name}?`,
+    `What changed recently for ${name}?`
+  ];
+
+  return uniqueSorted(questions);
+}
+
+function contextMissingMemoryPrompts(result: ContextDashboardResult, systems: EntityClaimSummary[]): string[] {
+  const name = result.context.name;
+  const prompts: string[] = [];
+
+  if (result.owner_claims.length === 0) {
+    prompts.push(`Capture who owns ${name}.`);
+  }
+
+  if (systems.length === 0) {
+    prompts.push(`Capture systems or tools used by ${name}.`);
+  }
+
+  if (result.decision_claims.length === 0) {
+    prompts.push(`Capture key decisions for ${name}.`);
+  }
+
+  if (result.open_question_claims.length === 0) {
+    prompts.push(`Capture known open questions for ${name}.`);
+  }
+
+  if (result.evidence_events.length === 0) {
+    prompts.push(`Capture source Events that support ${name}.`);
+  }
+
+  return prompts;
 }
 
 function contextDashboardCitations(result: ContextDashboardResult): ContextDashboardCitations {

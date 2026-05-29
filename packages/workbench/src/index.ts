@@ -6,6 +6,7 @@ import {
   applyTransaction,
   buildActivationStatusResult,
   buildContextDashboardResult,
+  buildContextOperatingRoomResult,
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
@@ -682,6 +683,22 @@ export async function handleWorkbenchRoute(
 
     try {
       return jsonRoute(200, await buildContextDashboardResult(root, target));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = /^Entity not found:/.test(message) ? 404 : 400;
+      return jsonRoute(status, { error: message });
+    }
+  }
+
+  if (requestUrl.pathname === "/api/contexts/operating-room") {
+    const target = optionalTarget(requestUrl);
+
+    if (!target) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    try {
+      return jsonRoute(200, await buildContextOperatingRoomResult(root, target));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const status = /^Entity not found:/.test(message) ? 404 : 400;

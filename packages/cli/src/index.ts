@@ -10,6 +10,7 @@ import {
   buildDailyQueueResult,
   buildDogfoodHomeResult,
   buildContextDashboardResult,
+  buildContextOperatingRoomResult,
   buildEntityStewardshipResult,
   buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
@@ -776,18 +777,47 @@ async function commandMode(root: string, args: string[], io: CliIo): Promise<num
 
 async function commandContext(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand, target, ...rest] = args;
+  const usage = "Usage: wm context <dashboard|operating-room> <id|path> [--json]";
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    io.stdout("Usage: wm context dashboard <id|path> [--json]\n");
+    io.stdout(`${usage}\n`);
     return 0;
   }
 
-  if (subcommand !== "dashboard" || !target) {
-    throw new Error("Usage: wm context dashboard <id|path> [--json]");
+  if ((subcommand !== "dashboard" && subcommand !== "operating-room") || !target) {
+    throw new Error(usage);
   }
 
   if (rest.some((arg) => arg !== "--json") || rest.filter((arg) => arg === "--json").length > 1) {
-    throw new Error("Usage: wm context dashboard <id|path> [--json]");
+    throw new Error(usage);
+  }
+
+  if (subcommand === "operating-room") {
+    const result = await buildContextOperatingRoomResult(root, target, { now: io.now });
+
+    if (rest.includes("--json")) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    io.stdout(`Context operating room: ${result.context.name} (${result.generated_at})\n`);
+    io.stdout(`Current facts: ${result.currentState.length}\n`);
+    io.stdout(`Owners: ${result.owners.length}\n`);
+    io.stdout(`Systems: ${result.systems.length}\n`);
+    io.stdout(`Decisions: ${result.decisions.length}\n`);
+    io.stdout(`Open questions: ${result.openQuestions.length}\n`);
+    io.stdout(`Risks: ${result.risks.length}\n`);
+    io.stdout(`Open follow-ups: ${result.followupQueue.length}\n`);
+    io.stdout(`Review items: ${result.reviewQueue.length}\n`);
+
+    if (result.quickActions.length > 0) {
+      io.stdout("\nQuick actions\n");
+      for (const action of result.quickActions) {
+        io.stdout(`- ${action.label}\n`);
+      }
+    }
+
+    return 0;
   }
 
   const result = await buildContextDashboardResult(root, target, { now: io.now });
@@ -1769,6 +1799,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] daily session [--json]",
       "  wm [--root <path>] mode <morning|end-day|meeting|after-meeting> [id|path] [--json]",
       "  wm [--root <path>] context dashboard <id|path> [--json]",
+      "  wm [--root <path>] context operating-room <id|path> [--json]",
       "  wm [--root <path>] entities stewardship [--kind person|topic|context] [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
