@@ -105,8 +105,34 @@ export function buildValidationPlan({
   if (full || ciParity) {
     mode = full ? "full" : "ci-parity";
     const fullCommands = ciParity
-      ? ["test:e2e", "test:browser", "eval:mvp", "eval:v2", "eval:v3", "eval:retrieval", "eval:v4", "eval:v5", "eval:v6", "check:memory-data"]
-      : ["test:e2e", "eval:mvp", "eval:v2", "eval:v3", "eval:retrieval", "eval:v4", "eval:v5", "eval:v6", "test:browser", "check:memory-data"];
+      ? [
+          "test:e2e",
+          "test:browser",
+          "eval:mvp",
+          "eval:v2",
+          "eval:v3",
+          "eval:retrieval",
+          "eval:v4",
+          "eval:v5",
+          "eval:v6",
+          "eval:dogfood-local",
+          "eval:v7",
+          "check:memory-data"
+        ]
+      : [
+          "test:e2e",
+          "eval:mvp",
+          "eval:v2",
+          "eval:v3",
+          "eval:retrieval",
+          "eval:v4",
+          "eval:v5",
+          "eval:v6",
+          "eval:dogfood-local",
+          "eval:v7",
+          "test:browser",
+          "check:memory-data"
+        ];
     addCommands(commands, fullCommands.map((name) => command(name, "Full validation requested.")));
   } else if (docsOnly) {
     mode = "docs-process";
@@ -114,25 +140,50 @@ export function buildValidationPlan({
     mode = "eval-test-harness";
     addCommands(
       commands,
-      ["eval:mvp", "eval:v2", "eval:v3", "eval:retrieval", "eval:v4", "eval:v5", "eval:v6", "check:memory-data"].map((name) =>
-        command(name, "Eval/test harness changes require the full eval chain.")
-      )
+      [
+        "eval:mvp",
+        "eval:v2",
+        "eval:v3",
+        "eval:retrieval",
+        "eval:v4",
+        "eval:v5",
+        "eval:v6",
+        "eval:dogfood-local",
+        "eval:v7",
+        "check:memory-data"
+      ].map((name) => command(name, "Eval/test harness changes require the full eval chain."))
     );
   } else if (hasAny(categories, ["workbench"])) {
     mode = "workbench-browser";
     addCommands(
       commands,
-      ["test:e2e", "test:browser", "eval:v4", "eval:v5", "eval:v6", "check:memory-data"].map((name) =>
-        command(name, "Workbench/browser changes require UI and recent eval coverage.")
-      )
+      [
+        "test:e2e",
+        "test:browser",
+        "eval:v4",
+        "eval:v5",
+        "eval:v6",
+        "eval:dogfood-local",
+        "eval:v7",
+        "check:memory-data"
+      ].map((name) => command(name, "Workbench/browser changes require UI and recent eval coverage."))
     );
   } else if (hasAny(categories, ["core", "cli", "pi"])) {
     mode = "core-behavior";
     addCommands(
       commands,
-      ["eval:mvp", "eval:v2", "eval:v3", "eval:retrieval", "eval:v4", "eval:v5", "eval:v6", "check:memory-data"].map((name) =>
-        command(name, "Core/CLI/Pi behavior changes require deterministic eval coverage.")
-      )
+      [
+        "eval:mvp",
+        "eval:v2",
+        "eval:v3",
+        "eval:retrieval",
+        "eval:v4",
+        "eval:v5",
+        "eval:v6",
+        "eval:dogfood-local",
+        "eval:v7",
+        "check:memory-data"
+      ].map((name) => command(name, "Core/CLI/Pi behavior changes require deterministic eval coverage."))
     );
   } else if (hasAny(categories, ["workflow", "tests", "repo"])) {
     mode = "workflow-scripts";

@@ -150,4 +150,4 @@ Once or twice a week:
 - import only the most useful curated notes;
 - reprocess stale NOOP Events when newer detectors can extract better candidates;
 - reject pending Transactions you no longer trust;
-- run `pnpm eval:v6` before relying on a new local build for dogfooding.
+- run `pnpm eval:v7` before relying on a new local build for dogfooding.

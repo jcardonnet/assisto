@@ -1,0 +1,14 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "generatedPersistenceViolationsMax": 0,
+  "autonomousMergesMax": 0,
+  "autonomousSupersessionsMax": 0,
+  "eventRawTextRewritesMax": 0,
+  "memoryDataGuardBypassMax": 0,
+  "dogfoodEvalSuccessMin": 1,
+  "firstDayLoopMin": 1,
+  "citedWorkdayModesMin": 1,
+  "reviewAccelerationFlowMin": 1,
+  "importAssistantFlowMin": 1,
+  "captureFeedbackFlowMin": 1
+}

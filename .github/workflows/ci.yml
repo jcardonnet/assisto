@@ -73,3 +73,9 @@ jobs:
 
       - name: v6 eval
         run: pnpm eval:v6
+
+      - name: Dogfood local eval
+        run: pnpm eval:dogfood-local
+
+      - name: v7 eval
+        run: pnpm eval:v7
