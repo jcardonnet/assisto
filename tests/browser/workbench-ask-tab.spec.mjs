@@ -66,9 +66,10 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await page.locator("#ask-form").getByRole("button", { name: "Ask" }).click();
 
     await expect(page.getByRole("heading", { name: "Retrieval plan" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Answer candidates" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What memory can say" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Supporting claims" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Suggested manual actions" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Conflicts or stale facts" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Repair actions" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Suggested next questions" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Evidence Events" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Linked FollowUps" })).toBeVisible();
@@ -76,10 +77,12 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(page.getByRole("heading", { name: "Citation explorer" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched page preview" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Source Event preview" })).toBeVisible();
-    const answerSection = page.locator('[data-ask-section="answer-candidates"]');
+    await expect(page.getByRole("heading", { name: "Cited answer export" })).toBeVisible();
+    const answerSection = page.locator('[data-ask-section="what-memory-can-say"]');
     const citationSection = page.locator('[data-ask-section="citation-explorer"]');
     const pagePreviewSection = page.locator('[data-ask-section="matched-page-preview"]');
     const eventPreviewSection = page.locator('[data-ask-section="source-event-preview"]');
+    const repairSection = page.locator('[data-ask-section="repair-actions"]');
     const planSection = page.locator('[data-ask-section="retrieval-plan"]');
     await expect(planSection.getByRole("heading", { name: "manager_reporting" })).toBeVisible();
     await expect(planSection.getByRole("heading", { name: "relation_claims" })).toBeVisible();
@@ -87,17 +90,26 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(answerSection.getByText("claim_id: clm_jeff_manager")).toBeVisible();
     await expect(answerSection.getByText("page: memory/people/jeff.md")).toBeVisible();
     await expect(answerSection.getByText("events: ev_2026_05_21_001")).toBeVisible();
+    await expect(answerSection.getByRole("button", { name: "Open Person page" })).toBeVisible();
     await expect(citationSection.getByText("clm_jeff_manager")).toBeVisible();
     await expect(citationSection.getByText("ev_2026_05_21_001")).toBeVisible();
     await expect(pagePreviewSection.getByText("memory/people/jeff.md")).toBeVisible();
     await expect(eventPreviewSection.getByText("Jeff is my manager.")).toBeVisible();
+    await expect(repairSection.getByText("Inspect matched memory pages")).toBeVisible();
+    await expect(repairSection.getByRole("button", { name: "Open entities" })).toBeVisible();
+    await expect(page.locator("#answer-contract-export-text")).toContainText("## What memory can say");
+    await expect(page.locator("#answer-contract-export-text")).toContainText("clm_jeff_manager");
 
     await page.getByRole("button", { name: "Pin question" }).click();
     await expect(page.locator('[data-ask-section="pinned-questions"]').getByText("Who is my manager?")).toBeVisible();
 
-    await page.getByRole("button", { name: "Copy citation" }).first().click();
+    await page.getByRole("button", { name: "Copy cited basis" }).first().click();
     await expect(page.locator("#copy-output")).toContainText("Derived text only; not saved");
     await expect(page.locator("#copy-output")).toContainText("clm_jeff_manager");
+
+    await answerSection.getByRole("button", { name: "Open Person page" }).click();
+    await expect(page.locator('[data-tab="entities"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#entity-detail").getByRole("heading", { name: "Jeff" })).toBeVisible();
 
     await page.getByRole("button", { name: "Before meeting brief" }).first().click();
     await expect(page.locator("#brief-kind")).toHaveValue("person");
@@ -145,14 +157,16 @@ test("ask tab renders no-match guidance without inventing memory", async ({ page
 
     await expect(page.getByRole("heading", { name: "What memory cannot confirm" })).toBeVisible();
     const cannotConfirmSection = page.locator('[data-ask-section="what-memory-cannot-confirm"]');
-    const answerSection = page.locator('[data-ask-section="answer-candidates"]');
-    const manualActionSection = page.locator('[data-ask-section="suggested-manual-actions"]');
+    const answerSection = page.locator('[data-ask-section="what-memory-can-say"]');
+    const manualActionSection = page.locator('[data-ask-section="repair-actions"]');
     await expect(
       cannotConfirmSection.getByText("No deterministic memory page, claim ID, or relation claim matched the question.")
     ).toBeVisible();
-    await expect(answerSection.getByText("No active answer candidates found.")).toBeVisible();
+    await expect(answerSection.getByText("No direct answers found in active memory.")).toBeVisible();
     await expect(manualActionSection.getByText("Capture a note if this should become memory")).toBeVisible();
     await expect(manualActionSection.getByText("Log this retrieval miss")).toBeVisible();
+    await expect(manualActionSection.getByRole("button", { name: "Capture missing memory" })).toBeVisible();
+    await expect(manualActionSection.getByRole("button", { name: "Log retrieval miss" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Log retrieval miss" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Missing-memory action" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Matched pages" })).toBeVisible();
