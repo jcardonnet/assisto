@@ -100,6 +100,19 @@ summary_generated_from:
     assert.notDeepEqual(await pendingTransactionFiles(root), beforePendingTransactions);
     assert.match(await readVaultFile(root, "memory/transactions/pending/tx_2026_05_24_001.md"), /Stage alias "J Cardon"/);
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
+
+    const afterAliasPendingTransactions = await pendingTransactionFiles(root);
+    const roleRepairForm = detailPanel.locator(".entity-repair-form").filter({ hasText: "Role correction" });
+    await roleRepairForm.getByPlaceholder("Jeff is the platform DBA.").fill("Jeff is the platform DBA.");
+    await roleRepairForm.getByPlaceholder("Optional Context id or path").fill("ctx_inventory_project");
+    await roleRepairForm.getByPlaceholder("Optional claim_id to supersede").fill("clm_jeff_manager");
+    await roleRepairForm.getByRole("button", { name: "Preview role" }).click();
+
+    await expect(page.getByRole("heading", { name: "Preview only" })).toBeVisible();
+    await expect(page.locator("#entity-action-output").getByText("SUPERSEDE_CLAIM")).toBeVisible();
+    await expect(page.locator("#entity-action-output").getByText("memory/people/jeff.md")).toBeVisible();
+    assert.deepEqual(await pendingTransactionFiles(root), afterAliasPendingTransactions);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
   } finally {
     await server?.close();
     await rm(root, { recursive: true, force: true });

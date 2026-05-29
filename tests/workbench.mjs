@@ -1973,6 +1973,79 @@ summary_generated_from:
     await assert.rejects(() => readVaultFile(root, contextNotePreview.transaction_path), /ENOENT/);
     assert.equal(await readVaultFile(root, "memory/contexts/inventory-project.md"), beforeContextPage);
 
+    const roleRepairPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/role/preview",
+          body: JSON.stringify({
+            id: "per_jeff",
+            statement: "Jeff is the platform DBA.",
+            context: "ctx_inventory_project",
+            supersede: "clm_jeff_manager"
+          })
+        })
+      ).body
+    );
+    assert.equal(roleRepairPreview.action, "stage_entity_role");
+    assert.equal(roleRepairPreview.created, false);
+    assert.equal(roleRepairPreview.requires_review, true);
+    assert.deepEqual(roleRepairPreview.operations, ["SUPERSEDE_CLAIM", "UPSERT_CLAIM"]);
+    assert.equal(roleRepairPreview.transaction.requires_review, true);
+    assert.match(roleRepairPreview.proposed_file_writes[0].content, /statement: Jeff is the platform DBA\./);
+    await assert.rejects(() => readVaultFile(root, roleRepairPreview.transaction_path), /ENOENT/);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
+
+    const reportingRepairPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/reporting/preview",
+          body: JSON.stringify({ id: "per_jeff", statement: "Jeff reports to Dana." })
+        })
+      ).body
+    );
+    assert.equal(reportingRepairPreview.action, "stage_entity_reporting");
+    assert.deepEqual(reportingRepairPreview.operations, ["UPSERT_CLAIM"]);
+    assert.match(reportingRepairPreview.proposed_file_writes[0].content, /scope_state: unknown/);
+
+    const identityReviewPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/identity-review/preview",
+          body: JSON.stringify({ id: "per_jeff", reason: "Jeff may be duplicated with Jeffrey." })
+        })
+      ).body
+    );
+    assert.equal(identityReviewPreview.action, "stage_entity_identity_review");
+    assert.equal(identityReviewPreview.created, false);
+    assert.equal(identityReviewPreview.requires_review, true);
+    assert.deepEqual(identityReviewPreview.operations, ["STAGE_REVIEW"]);
+    assert.match(identityReviewPreview.proposed_file_writes[0].path, /^memory\/review\/rev_entity_identity_review_/);
+
+    const identityReviewStageRoot = await makeTempVault("assisto-workbench-identity-review-route-");
+
+    try {
+      await writeWorkbenchFixture(identityReviewStageRoot);
+      const beforeIdentityPage = await readVaultFile(identityReviewStageRoot, "memory/people/jeff.md");
+      const identityReviewStage = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(identityReviewStageRoot, {
+            method: "POST",
+            url: "/api/entities/identity-review/stage",
+            body: JSON.stringify({ id: "per_jeff", reason: "Jeff may be duplicated with Jeffrey." })
+          })
+        ).body
+      );
+      assert.equal(identityReviewStage.action, "stage_entity_identity_review");
+      assert.equal(identityReviewStage.created, true);
+      assert.match(await readVaultFile(identityReviewStageRoot, identityReviewStage.transaction_path), /STAGE_REVIEW/);
+      assert.equal(await readVaultFile(identityReviewStageRoot, "memory/people/jeff.md"), beforeIdentityPage);
+    } finally {
+      await rm(identityReviewStageRoot, { recursive: true, force: true });
+    }
+
     const contextNoteRoot = await makeTempVault("assisto-workbench-context-note-route-");
 
     try {
