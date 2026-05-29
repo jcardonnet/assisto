@@ -79,3 +79,6 @@ jobs:
 
       - name: v7 eval
         run: pnpm eval:v7
+
+      - name: Answers eval
+        run: pnpm eval:answers
