@@ -53,6 +53,36 @@ export async function runCoreWorkdayModeTests() {
     assert.equal(endDay.logged_misses.some((miss) => miss.id === "ev_2026_05_21_004"), true);
     assert.equal(endDay.citations.event_ids.includes("ev_2026_05_21_004"), true);
     assert.match(endDay.disclaimer, /derived/);
+
+    const meeting = await workdayModes.buildWorkdayModeResult(root, "meeting", {
+      target: "per_jeff",
+      now: "2026-05-21T08:30:00.000Z"
+    });
+
+    assert.equal(meeting.mode, "meeting");
+    assert.equal(meeting.target.id, "per_jeff");
+    assert.equal(meeting.target.type, "person");
+    assert.match(meeting.brief.contextPack, /# Session brief: Jeff/);
+    assert.equal(meeting.open_followups.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.equal(meeting.missing_memory_prompts.some((prompt) => /What should Assisto know/.test(prompt)), true);
+    assert.equal(meeting.citations.page_paths.includes("memory/people/jeff.md"), true);
+
+    const afterMeeting = await workdayModes.buildWorkdayModeResult(root, "after-meeting", {
+      target: "ctx_inventory_project",
+      now: "2026-05-21T13:00:00.000Z"
+    });
+
+    assert.equal(afterMeeting.mode, "after-meeting");
+    assert.equal(afterMeeting.target.id, "ctx_inventory_project");
+    assert.equal(afterMeeting.target.type, "context");
+    assert.equal(afterMeeting.after_meeting_prompts.some((prompt) => /Capture outcomes/.test(prompt)), true);
+    assert.equal(afterMeeting.suggested_followup_checks.some((prompt) => /explicit follow-up/.test(prompt)), true);
+    assert.match(afterMeeting.brief.contextPack, /# Session brief: Inventory Project/);
+
+    await assert.rejects(
+      () => workdayModes.buildWorkdayModeResult(root, "meeting", { target: "per_missing" }),
+      /Entity not found/
+    );
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
   } finally {
     await rm(root, { recursive: true, force: true });

@@ -90,7 +90,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /seed kit/);
   assert.match(help.stdout, /daily queue/);
   assert.match(help.stdout, /daily session/);
-  assert.match(help.stdout, /mode <morning\|end-day>/);
+  assert.match(help.stdout, /mode <morning\|end-day\|meeting\|after-meeting>/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
@@ -537,6 +537,15 @@ export async function runCliIntegrationTests() {
     const endDayModeJson = JSON.parse(endDayModeJsonResult.stdout);
     assert.equal(endDayModeJson.mode, "end-day");
     assert.equal(endDayModeJson.unresolved_transactions.length, 4);
+
+    const meetingMode = await runWm(todayRoot, ["mode", "meeting", "per_jeff"]);
+    assert.match(meetingMode.stdout, /Workday mode: Meeting/);
+    assert.match(meetingMode.stdout, /Target: Jeff/);
+
+    const afterMeetingModeJsonResult = await runWm(todayRoot, ["mode", "after-meeting", "ctx_inventory_project", "--json"]);
+    const afterMeetingModeJson = JSON.parse(afterMeetingModeJsonResult.stdout);
+    assert.equal(afterMeetingModeJson.mode, "after-meeting");
+    assert.equal(afterMeetingModeJson.target.id, "ctx_inventory_project");
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }
