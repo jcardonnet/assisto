@@ -10,6 +10,7 @@ import {
   buildDailyQueueResult,
   buildDogfoodHomeResult,
   buildUseAssistoTomorrowResult,
+  buildWorkdayModeResult,
   readDailySession,
   runPersonalDogfoodEval,
   buildSessionBrief,
@@ -119,6 +120,10 @@ export async function main(
 
     if (command === "daily") {
       return await commandDaily(parsed.root, rest, io);
+    }
+
+    if (command === "mode") {
+      return await commandMode(parsed.root, rest, io);
     }
 
     if (command === "activate") {
@@ -627,6 +632,48 @@ async function commandUseTomorrow(root: string, args: string[], io: CliIo): Prom
     io.stdout("\nWarnings\n");
     for (const warning of result.warnings) {
       io.stdout(`- ${warning}\n`);
+    }
+  }
+
+  return 0;
+}
+
+async function commandMode(root: string, args: string[], io: CliIo): Promise<number> {
+  const [mode, ...rest] = args;
+
+  if (!mode || mode === "--help" || mode === "-h") {
+    io.stdout("Usage: wm mode <morning|end-day> [--json]\n");
+    return 0;
+  }
+
+  if (mode !== "morning" && mode !== "end-day") {
+    throw new Error("Usage: wm mode <morning|end-day> [--json]");
+  }
+
+  if (rest.some((arg) => arg !== "--json")) {
+    throw new Error("Usage: wm mode <morning|end-day> [--json]");
+  }
+
+  const result = await buildWorkdayModeResult(root, mode, { now: io.now });
+
+  if (rest.includes("--json")) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Workday mode: ${result.title} (${result.generated_at})\n`);
+  io.stdout(`${result.summary}\n`);
+  io.stdout(`Next queue item: ${result.next_queue_item?.label ?? "none"}\n`);
+  io.stdout(`Pinned questions: ${result.pinned_questions.length}\n`);
+  io.stdout(`Open follow-ups: ${result.open_followups.length}\n`);
+  io.stdout(`Unresolved transactions: ${result.unresolved_transactions.length}\n`);
+  io.stdout(`Logged misses: ${result.logged_misses.length}\n`);
+  io.stdout(`Health warnings: ${result.health_warnings.length}\n`);
+
+  if (result.suggested_captures.length > 0) {
+    io.stdout("\nSuggested captures\n");
+    for (const capture of result.suggested_captures) {
+      io.stdout(`- ${capture}\n`);
     }
   }
 
@@ -1492,6 +1539,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] daily session [--json]",
+      "  wm [--root <path>] mode <morning|end-day> [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",

@@ -16,6 +16,7 @@ import { runCoreDogfoodEvalTests } from "./core-dogfood-eval.mjs";
 import { runCoreActivationTests } from "./core-activation.mjs";
 import { runCoreDailyTests } from "./core-daily.mjs";
 import { runCoreUseTomorrowTests } from "./core-use-tomorrow.mjs";
+import { runCoreWorkdayModeTests } from "./core-workday-modes.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -35,6 +36,7 @@ export async function runUnitTests() {
   await runCoreActivationTests();
   await runCoreDailyTests();
   await runCoreUseTomorrowTests();
+  await runCoreWorkdayModeTests();
 }
 
 export function assertRequiredPaths() {
