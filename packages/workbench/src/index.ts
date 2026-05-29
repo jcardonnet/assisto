@@ -187,6 +187,15 @@ export interface WorkbenchReviewTurbo {
   items: WorkbenchReviewTurboItem[];
 }
 
+export interface WorkbenchReviewNext {
+  generated_at: string;
+  total: number;
+  position: number;
+  item: WorkbenchReviewTurboItem | null;
+  previous_item_id: string | null;
+  next_item_id: string | null;
+}
+
 export interface WorkbenchReviewLane {
   lane_id: WorkbenchReviewLaneId;
   label: string;
@@ -198,7 +207,18 @@ export interface WorkbenchReviewLane {
 export interface WorkbenchReviewTurboItem extends WorkbenchReviewItem {
   lane_id: WorkbenchReviewLaneId;
   lane_label: string;
+  review_priority: number;
+  evidence_summary: string[];
+  target_suggestions: string[];
+  context_suggestions: string[];
+  preview_actions: WorkbenchReviewPreviewAction[];
   staged_claims: WorkbenchReviewStagedClaim[];
+}
+
+export interface WorkbenchReviewPreviewAction {
+  label: string;
+  endpoint: string;
+  note: string;
 }
 
 export interface WorkbenchReviewStagedClaim {
@@ -542,6 +562,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/review/turbo") {
     return jsonRoute(200, await collectReviewTurbo(root));
+  }
+
+  if (requestUrl.pathname === "/api/review/next") {
+    return jsonRoute(200, await collectReviewNext(root));
   }
 
   if (requestUrl.pathname === "/api/transactions") {
@@ -1538,10 +1562,26 @@ async function collectReviewTurbo(root: string): Promise<WorkbenchReviewTurbo> {
     items.push(item);
   }
 
+  items.sort(compareReviewTurboItems);
+
   return {
     generated_at: new Date().toISOString(),
     lanes: reviewTurboLanes(items),
     items
+  };
+}
+
+async function collectReviewNext(root: string): Promise<WorkbenchReviewNext> {
+  const turbo = await collectReviewTurbo(root);
+  const item = turbo.items[0] ?? null;
+
+  return {
+    generated_at: turbo.generated_at,
+    total: turbo.items.length,
+    position: item ? 1 : 0,
+    item,
+    previous_item_id: null,
+    next_item_id: turbo.items[1]?.id ?? null
   };
 }
 
@@ -1600,6 +1640,11 @@ async function enrichReviewTurboItem(root: string, summary: ReviewItemSummary): 
     ...base,
     lane_id: lane.lane_id,
     lane_label: lane.label,
+    review_priority: reviewPriorityFor(lane.lane_id),
+    evidence_summary: reviewEvidenceSummary(base, stagedClaims),
+    target_suggestions: reviewTargetSuggestions(base),
+    context_suggestions: reviewContextSuggestions(base, stagedClaims),
+    preview_actions: reviewPreviewActions(lane.lane_id),
     staged_claims: stagedClaims,
     suggested_action: lane.suggested_action
   };
@@ -1860,6 +1905,110 @@ function reviewLaneDefinition(laneId: WorkbenchReviewLaneId): Omit<WorkbenchRevi
   }
 
   return lane;
+}
+
+function compareReviewTurboItems(left: WorkbenchReviewTurboItem, right: WorkbenchReviewTurboItem): number {
+  return (
+    left.review_priority - right.review_priority ||
+    left.path.localeCompare(right.path) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function reviewPriorityFor(laneId: WorkbenchReviewLaneId): number {
+  switch (laneId) {
+    case "safe_apply":
+      return 10;
+    case "needs_context":
+      return 20;
+    case "conflict_or_change":
+      return 30;
+    case "identity_ambiguity":
+      return 40;
+    case "stale_noop":
+      return 50;
+    case "other":
+      return 60;
+  }
+}
+
+function reviewEvidenceSummary(
+  item: WorkbenchReviewItem,
+  stagedClaims: WorkbenchReviewStagedClaim[]
+): string[] {
+  const evidence = uniqueSorted([
+    ...item.source_events,
+    ...stagedClaims.flatMap((claim) => claim.evidence)
+  ]);
+
+  if (!evidence.length) {
+    return ["No source Event evidence found on this ReviewItem."];
+  }
+
+  return evidence.map((eventId) => `Evidence Event: ${eventId}`);
+}
+
+function reviewTargetSuggestions(item: WorkbenchReviewItem): string[] {
+  return uniqueSorted(item.affected_files.map(memoryFileSuggestion));
+}
+
+function reviewContextSuggestions(
+  item: WorkbenchReviewItem,
+  stagedClaims: WorkbenchReviewStagedClaim[]
+): string[] {
+  const claimScopes = stagedClaims
+    .filter((claim) => claim.scope_state === "complete" && claim.scope)
+    .map((claim) => claim.scope as string);
+  const contextPaths = item.affected_files
+    .map(memoryFileSuggestion)
+    .filter((file) => file.startsWith("memory/contexts/"));
+
+  return uniqueSorted([...claimScopes, ...contextPaths]);
+}
+
+function reviewPreviewActions(laneId: WorkbenchReviewLaneId): WorkbenchReviewPreviewAction[] {
+  const actions: WorkbenchReviewPreviewAction[] = [
+    {
+      label: "Preview staged apply",
+      endpoint: "/api/review/apply-staged/preview",
+      note:
+        laneId === "needs_context"
+          ? "Requires an explicit Context or created Context before a pending Transaction is created."
+          : "Shows the pending review-apply Transaction before writing it."
+    },
+    {
+      label: "Preview mark reviewed",
+      endpoint: "/api/review/mark/preview",
+      note: "Shows the mark-reviewed Transaction before writing it."
+    },
+    {
+      label: "Preview mark contested",
+      endpoint: "/api/review/mark/preview",
+      note: "Shows the mark-contested Transaction before writing it."
+    }
+  ];
+
+  if (laneId === "conflict_or_change") {
+    actions[0] = {
+      ...actions[0],
+      note: "Requires explicit supersession when replacing an old role/reporting claim."
+    };
+  }
+
+  if (laneId === "stale_noop") {
+    actions.unshift({
+      label: "Preview Event reprocess",
+      endpoint: "/api/events/reprocess/preview",
+      note: "Reuses the original Event evidence and stages only a pending Transaction."
+    });
+  }
+
+  return actions;
+}
+
+function memoryFileSuggestion(file: string): string {
+  const normalized = normalizeWorkbenchPath(file);
+  return normalized.startsWith("memory/") ? normalized : `memory/${normalized}`;
 }
 
 function stagedClaimSummaries(body: string): WorkbenchReviewStagedClaim[] {
@@ -2480,6 +2629,34 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.review-queue-navigator {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+
+.review-queue-navigator p {
+  margin: 0;
+}
+
+.review-queue-card[data-review-selected="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(45 108 223 / 16%);
+}
+
+.review-suggestion-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .ask-result {
   display: grid;
   gap: 14px;
@@ -2741,6 +2918,7 @@ let activationStatus = null;
 let activeTab = "today";
 let reviewReasonFilter = "all";
 let reviewLaneFilter = "all";
+let reviewQueueIndex = 0;
 let reviewTurbo = null;
 let transactionStateFilter = "pending";
 let transactionDetail = null;
@@ -2814,6 +2992,29 @@ document.addEventListener("keydown", (event) => {
       ? Math.min(dailyQueueIndex + 1, dailyQueue.items.length - 1)
       : Math.max(dailyQueueIndex - 1, 0);
   renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (activeTab !== "review" || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+    return;
+  }
+
+  const active = document.activeElement;
+  if (active && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)) {
+    return;
+  }
+
+  const items = filteredReviewItems();
+  if (!items.length) {
+    return;
+  }
+
+  event.preventDefault();
+  reviewQueueIndex =
+    event.key === "ArrowDown" || event.key === "ArrowRight"
+      ? Math.min(reviewQueueIndex + 1, items.length - 1)
+      : Math.max(reviewQueueIndex - 1, 0);
+  renderReviewTurbo(reviewTurbo);
 });
 
 async function openQuickCapture() {
@@ -4726,16 +4927,15 @@ async function renderReview() {
 }
 
 function renderReviewTurbo(turbo) {
-  const items = turbo.items.filter((item) =>
-    (reviewReasonFilter === "all" || item.review_reason === reviewReasonFilter) &&
-    (reviewLaneFilter === "all" || item.lane_id === reviewLaneFilter)
-  );
+  const items = filteredReviewItems();
+  reviewQueueIndex = Math.min(reviewQueueIndex, Math.max(items.length - 1, 0));
   const cards = items.length
-    ? items.map((item) => reviewCardHtml(item)).join("")
+    ? items.map((item, index) => reviewCardHtml(item, index)).join("")
     : '<article class="item"><h2>Empty</h2><p class="meta">No matching memory objects.</p></article>';
 
   view.innerHTML = \`\${reviewLaneSummaryHtml(turbo)}
   \${reviewSummaryHtml(snapshot.review)}
+  \${reviewQueueNavigatorHtml(items)}
   <article class="item">
     <h2>Event reprocess</h2>
     <form id="event-reprocess-form" class="action-row">
@@ -4748,6 +4948,35 @@ function renderReviewTurbo(turbo) {
   <div id="action-output" class="action-output"></div>\`;
   bindReviewFilters();
   bindReviewActions();
+}
+
+function filteredReviewItems() {
+  return (reviewTurbo?.items ?? []).filter((item) =>
+    (reviewReasonFilter === "all" || item.review_reason === reviewReasonFilter) &&
+    (reviewLaneFilter === "all" || item.lane_id === reviewLaneFilter)
+  );
+}
+
+function reviewQueueNavigatorHtml(items) {
+  if (!items.length) {
+    return \`<section class="review-queue-navigator" data-next-endpoint="/api/review/next">
+      <p><strong>Review queue</strong></p>
+      <p class="meta">0 / 0</p>
+    </section>\`;
+  }
+
+  const item = items[reviewQueueIndex] ?? items[0];
+
+  return \`<section class="review-queue-navigator" data-next-endpoint="/api/review/next">
+    <div>
+      <p><strong>Review queue</strong></p>
+      <p class="meta">\${escapeHtml(String(reviewQueueIndex + 1))} / \${escapeHtml(String(items.length))} · next up: \${escapeHtml(item.id)}</p>
+    </div>
+    <div class="action-row">
+      <button type="button" class="secondary review-queue-prev" \${reviewQueueIndex <= 0 ? "disabled" : ""}>Previous</button>
+      <button type="button" class="secondary review-queue-next" \${reviewQueueIndex >= items.length - 1 ? "disabled" : ""}>Next</button>
+    </div>
+  </section>\`;
 }
 
 function reviewLaneSummaryHtml(turbo) {
@@ -4797,6 +5026,7 @@ function bindReviewFilters() {
   for (const button of document.querySelectorAll("[data-review-lane]")) {
     button.addEventListener("click", () => {
       reviewLaneFilter = button.dataset.reviewLane ?? "all";
+      reviewQueueIndex = 0;
       renderReviewTurbo(reviewTurbo);
     });
   }
@@ -4804,14 +5034,16 @@ function bindReviewFilters() {
   for (const button of document.querySelectorAll("[data-review-reason]")) {
     button.addEventListener("click", () => {
       reviewReasonFilter = button.dataset.reviewReason ?? "all";
+      reviewQueueIndex = 0;
       renderReviewTurbo(reviewTurbo);
     });
   }
 }
 
-function reviewCardHtml(item) {
+function reviewCardHtml(item, index) {
   const defaultTarget = item.affected_files[0] ? memoryPath(item.affected_files[0]) : "";
   const details = [
+    ["Priority", String(item.review_priority ?? "unknown")],
     ["Review path", item.path],
     ["Source Events", item.source_events.join(", ") || "none"],
     ["Affected files", item.affected_files.join(", ") || "none"],
@@ -4819,11 +5051,13 @@ function reviewCardHtml(item) {
     ["Staged claims", item.staged_claim_ids.join(", ") || "none"],
     ["Suggested action", item.suggested_action]
   ];
+  const selected = index === reviewQueueIndex;
 
-  return \`<article class="item">
+  return \`<article class="item review-queue-card" data-review-index="\${escapeHtml(String(index))}" data-review-selected="\${String(selected)}">
     <h2>\${escapeHtml(item.id)}</h2>
     <p class="pill">\${escapeHtml(item.lane_label ? \`\${item.lane_label} · \` : "")}\${escapeHtml(item.review_reason)} · \${escapeHtml(item.review_state)}</p>
     \${detailListHtml(details)}
+    \${reviewSuggestionsHtml(item)}
     \${reviewClaimDiffCardsHtml(item.staged_claims ?? [])}
     <div class="action-stack">
       <form class="review-apply-form" data-review-id="\${escapeHtml(item.id)}">
@@ -4857,13 +5091,23 @@ function reviewCardHtml(item) {
   </article>\`;
 }
 
+function reviewSuggestionsHtml(item) {
+  return \`<section class="review-suggestion-list">
+    \${plainListHtml("Target suggestions", item.target_suggestions ?? [])}
+    \${plainListHtml("Context suggestions", item.context_suggestions ?? [])}
+    \${plainListHtml("Evidence summary", item.evidence_summary ?? [])}
+    \${plainListHtml("Preview-first actions", (item.preview_actions ?? []).map((action) => \`\${action.label}: \${action.endpoint} - \${action.note}\`))}
+  </section>\`;
+}
+
 function reviewClaimDiffCardsHtml(claims) {
   if (!claims.length) {
     return '<p class="meta">No staged claim block found. Mark, contest, archive, or inspect the source ReviewItem manually.</p>';
   }
 
   return \`<section class="claim-diff-list">
-    <h3>Staged claim summary</h3>
+    <h3>Staged claim diff</h3>
+    <p class="meta">Applying, superseding, or assigning context remains an explicit human action.</p>
     \${claims.map((claim) => \`<div class="claim-diff-card">
       <p><strong>\${escapeHtml(claim.claim_id)}</strong></p>
       <p>\${escapeHtml(claim.statement || "No statement text.")}</p>
@@ -4874,6 +5118,17 @@ function reviewClaimDiffCardsHtml(claims) {
 }
 
 function bindReviewActions() {
+  document.querySelector(".review-queue-prev")?.addEventListener("click", () => {
+    reviewQueueIndex = Math.max(reviewQueueIndex - 1, 0);
+    renderReviewTurbo(reviewTurbo);
+  });
+
+  document.querySelector(".review-queue-next")?.addEventListener("click", () => {
+    const items = filteredReviewItems();
+    reviewQueueIndex = Math.min(reviewQueueIndex + 1, Math.max(items.length - 1, 0));
+    renderReviewTurbo(reviewTurbo);
+  });
+
   document.querySelector("#event-reprocess-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;

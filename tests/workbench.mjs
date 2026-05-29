@@ -748,6 +748,9 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/modes\/morning/);
     assert.match(client.body, /\/api\/modes\/meeting/);
     assert.match(client.body, /\/api\/contexts\/dashboard/);
+    assert.match(client.body, /\/api\/review\/next/);
+    assert.match(client.body, /reviewQueueNavigatorHtml/);
+    assert.match(client.body, /review-queue-next/);
     assert.match(client.body, /renderActivationWizard/);
     assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
@@ -896,6 +899,12 @@ export async function runWorkbenchTests() {
         ["rev_jeff_role"]
       );
       assert.equal(turbo.items.find((item) => item.id === "rev_safe_apply").lane_id, "safe_apply");
+      assert.equal(turbo.items[0].id, "rev_safe_apply");
+      assert.equal(turbo.items[0].review_priority, 10);
+      assert.deepEqual(turbo.items[0].target_suggestions, ["memory/topics/mysql.md"]);
+      assert.deepEqual(turbo.items[0].context_suggestions, ["ctx_inventory_project"]);
+      assert.match(turbo.items[0].evidence_summary[0], /ev_2026_05_21_002/);
+      assert.equal(turbo.items[0].preview_actions[0].endpoint, "/api/review/apply-staged/preview");
       assert.equal(turbo.items.find((item) => item.id === "rev_alias_ambiguous").lane_id, "identity_ambiguity");
       assert.equal(turbo.items.find((item) => item.id === "rev_stale_noop").lane_id, "stale_noop");
       assert.equal(turbo.items.find((item) => item.id === "rev_other").lane_id, "other");
@@ -905,8 +914,18 @@ export async function runWorkbenchTests() {
       );
       assert.match(turbo.items.find((item) => item.id === "rev_safe_apply").suggested_action, /Preview apply one item/);
 
+      const nextReview = JSON.parse((await workbench.handleWorkbenchRoute(turboRoot, { method: "GET", url: "/api/review/next" })).body);
+      assert.equal(nextReview.total, 6);
+      assert.equal(nextReview.position, 1);
+      assert.equal(nextReview.item.id, "rev_safe_apply");
+      assert.equal(nextReview.next_item_id, "rev_mysql_scope");
+      assert.equal(nextReview.previous_item_id, null);
+      assert.equal(nextReview.item.preview_actions.some((action) => action.label === "Preview mark contested"), true);
+
       const turboReadOnly = await workbench.handleWorkbenchRoute(turboRoot, { method: "POST", url: "/api/review/turbo" });
       assert.equal(turboReadOnly.status, 405);
+      const nextReadOnly = await workbench.handleWorkbenchRoute(turboRoot, { method: "POST", url: "/api/review/next" });
+      assert.equal(nextReadOnly.status, 405);
       await assert.rejects(() => readVaultFile(turboRoot, "memory/topics/mysql.md"), /ENOENT/);
     } finally {
       await rm(turboRoot, { recursive: true, force: true });
