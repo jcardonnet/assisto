@@ -11,6 +11,7 @@ import {
   buildDogfoodHomeResult,
   buildContextDashboardResult,
   buildUseAssistoTomorrowResult,
+  createCaptureFeedback,
   buildWorkdayModeResult,
   readDailySession,
   runPersonalDogfoodEval,
@@ -23,6 +24,7 @@ import {
   createImportNotes,
   createSeedKit,
   previewCaptureNote,
+  previewCaptureFeedback,
   previewFrictionLog,
   previewImportNotes,
   previewSeedKit,
@@ -345,6 +347,10 @@ async function commandIngest(root: string, args: string[], io: CliIo): Promise<n
 }
 
 async function commandCapture(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  if (args[0] === "feedback") {
+    return await commandCaptureFeedback(root, args.slice(1), io);
+  }
+
   const dryRun = args.includes("--dry-run");
   const note = await captureNoteFromArgs(args, io, cwd);
   const provider = captureProvider(optionValue(args, "--provider") ?? "rule");
@@ -381,6 +387,52 @@ async function commandCapture(root: string, args: string[], io: CliIo, cwd: stri
 
   if (result.proposed_file_writes.length > 0) {
     io.stdout(`Proposed file writes: ${result.proposed_file_writes.map((write) => write.path).join(", ")}\n`);
+  }
+
+  return result.validation.passed ? 0 : 1;
+}
+
+async function commandCaptureFeedback(root: string, args: string[], io: CliIo): Promise<number> {
+  const kind = optionValue(args, "--kind");
+  const note = optionValue(args, "--note");
+  const dryRun = args.includes("--dry-run");
+
+  if (!kind || !note) {
+    throw new Error(
+      'Usage: wm capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]'
+    );
+  }
+
+  const result = dryRun
+    ? await previewCaptureFeedback(root, {
+        kind,
+        note,
+        event: optionValue(args, "--event") ?? undefined,
+        transaction: optionValue(args, "--transaction") ?? undefined
+      })
+    : await createCaptureFeedback(root, {
+        kind,
+        note,
+        event: optionValue(args, "--event") ?? undefined,
+        transaction: optionValue(args, "--transaction") ?? undefined
+      });
+
+  if (dryRun) {
+    io.stdout(`Dry run. No changes written to ${root}.\n`);
+  }
+
+  io.stdout(`Capture feedback event: ${result.event_id} (${result.event_path})\n`);
+  io.stdout(`Pending capture feedback transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+  io.stdout(`Kind: ${result.kind}\n`);
+  io.stdout(`Validation: ${result.validation.passed ? "passed" : "failed"}\n`);
+  io.stdout(`Operations: ${result.operations.join(", ") || "NOOP"}\n`);
+
+  if (result.linked_event) {
+    io.stdout(`Linked Event: ${result.linked_event}\n`);
+  }
+
+  if (result.linked_transaction) {
+    io.stdout(`Linked Transaction: ${result.linked_transaction}\n`);
   }
 
   return result.validation.passed ? 0 : 1;
@@ -1595,6 +1647,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx reject <id> --reason <text>",
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
+      '  wm [--root <path>] capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]',
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
