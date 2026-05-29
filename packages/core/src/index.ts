@@ -14,6 +14,7 @@ export * from "./health";
 export * from "./briefs";
 export * from "./today";
 export * from "./dogfood";
+export * from "./dogfood-eval";
 export * from "./activation";
 export * from "./daily";
 export * from "./seed";

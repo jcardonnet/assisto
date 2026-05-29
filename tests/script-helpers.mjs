@@ -11,6 +11,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["pr:closeout"], "node scripts/agent-pr.mjs closeout");
   assert.equal(packageJson.scripts["mxbai:upload"], "bash scripts/mxbai-upload.sh");
   assert.equal(packageJson.scripts["mxbai:smoke"], "bash scripts/mxbai-smoke.sh");
+  assert.equal(packageJson.scripts["eval:dogfood-local"], "node tests/scenarios/run-dogfood-local.mjs");
   assert.equal(packageJson.scripts["agent:start"], "node scripts/agent-control.mjs start");
   assert.equal(packageJson.scripts["agent:status"], "node scripts/agent-control.mjs status");
   assert.equal(packageJson.scripts["agent:handoff"], "node scripts/agent-control.mjs handoff");

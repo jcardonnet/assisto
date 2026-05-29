@@ -222,6 +222,7 @@ pnpm eval:retrieval
 pnpm eval:v4
 pnpm eval:v5
 pnpm eval:v6
+pnpm eval:dogfood-local
 pnpm test:browser
 ```
 
@@ -269,6 +270,15 @@ Use `pnpm agent:map build` and `pnpm agent:map query "<area>"` to map source are
 Use `pnpm agent:workbench serve` for a local-only development control surface over agent run state, validation, diagnostics, PR state, repo map, and handoff. It is separate from the product Workbench and does not write product memory.
 
 The current implementation includes deterministic ingestion, a first-run Activation Wizard, a Personal Seed Kit, a Capture Console for daily note entry, curated Markdown/text backfill import with `source_hash` dedupe and Workbench triage, a Today Home daily loop, a candidate extraction pipeline, optional OpenAI-compatible extraction/drafting that still stays behind deterministic policy, transaction-backed review item state changes, Event reprocessing, safe claim upserts, People/Topics/Contexts stewardship, Context operating pages, retrieval intent planning, lexical retrieval, derived session briefs, deterministic memory health checks, CLI and Pi adapters, a local Workbench, Playwright browser coverage, and MVP/v2/v3/retrieval/v4/v5/v6 deterministic evals. `packages/core` owns deterministic memory semantics, `packages/cli` wraps those semantics for local commands, `packages/pi-extension` remains a thin runtime adapter, and `packages/workbench` exposes a local browser UI over derived markdown snapshots.
+
+For personal dogfooding, add local questions to `.assisto-local/eval/questions.json` and run:
+
+```bash
+wm dogfood eval --json
+pnpm eval:dogfood-local
+```
+
+The question file is noncanonical local state. It can include expected claim IDs, Event IDs, page paths, ReviewItem IDs, FollowUp IDs, and tags; the evaluator scores deterministic retrieval against those expectations without writing to `memory/`.
 
 ## Workbench
 

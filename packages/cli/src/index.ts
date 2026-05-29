@@ -9,6 +9,7 @@ import {
   buildActivationStatusResult,
   buildDailyQueueResult,
   buildDogfoodHomeResult,
+  runPersonalDogfoodEval,
   buildSessionBrief,
   buildTodayWorkbenchResult,
   checkMemoryHealth,
@@ -558,12 +559,42 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   const [subcommand] = args;
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    io.stdout("Usage: wm dogfood status [--json]\n");
+    io.stdout("Usage: wm dogfood <status|eval> [--questions <path>] [--json]\n");
+    return 0;
+  }
+
+  if (subcommand === "eval") {
+    const questionsPath = optionValue(args, "--questions");
+    const result = await runPersonalDogfoodEval(root, {
+      questionsPath: questionsPath ? path.resolve(root, questionsPath) : undefined
+    });
+
+    if (args.includes("--json")) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    io.stdout(`Dogfood eval (${result.generated_at})\n`);
+    io.stdout(`Questions: ${result.metrics.total_questions}\n`);
+    io.stdout(`Answerability: ${formatPercent(result.metrics.answerability)}\n`);
+    io.stdout(`Citation coverage: ${formatPercent(result.metrics.citation_coverage)}\n`);
+    io.stdout(`Irrelevant inclusions: ${result.metrics.irrelevant_inclusion_count}\n`);
+    io.stdout(`Missing-memory guidance: ${result.metrics.missing_memory_guidance_count}\n`);
+    io.stdout(`Review/follow-up surfacing: ${result.metrics.review_followup_surfacing_count}\n`);
+    io.stdout(`Generated persistence violations: ${result.metrics.generated_persistence_violations}\n`);
+
+    if (result.warnings.length > 0) {
+      io.stdout("\nWarnings\n");
+      for (const warning of result.warnings) {
+        io.stdout(`- ${warning}\n`);
+      }
+    }
+
     return 0;
   }
 
   if (subcommand !== "status") {
-    throw new Error("Usage: wm dogfood status [--json]");
+    throw new Error("Usage: wm dogfood <status|eval> [--questions <path>] [--json]");
   }
 
   const home = await buildDogfoodHomeResult(root);
@@ -1145,6 +1176,10 @@ function parsePort(value: string): number {
   return parsed;
 }
 
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
 function parseOptionalPositiveInt(value: string | null, optionName: string): number | undefined {
   if (value === null) {
     return undefined;
@@ -1380,6 +1415,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] dogfood status [--json]",
+      "  wm [--root <path>] dogfood eval [--questions <path>] [--json]",
       "  wm [--root <path>] doctor memory-data [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',

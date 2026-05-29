@@ -447,6 +447,31 @@ export async function runCliIntegrationTests() {
     assert.equal(dogfoodJson.next_recommended_action.action, "review_pending_transaction");
     assert.equal(dogfoodJson.daily_progress.open_items, 7);
 
+    await writeVaultFile(
+      todayRoot,
+      ".assisto-local/eval/questions.json",
+      JSON.stringify({
+        questions: [
+          {
+            question: "Who is my manager?",
+            expected_claim_ids: ["clm_jeff_manager"],
+            expected_event_ids: ["ev_2026_05_21_001"],
+            expected_page_paths: ["memory/people/jeff.md"],
+            tags: ["manager"]
+          },
+          {
+            question: "What is the Neptune deploy key?",
+            tags: ["no_match"]
+          }
+        ]
+      })
+    );
+    const dogfoodEvalResult = await runWm(todayRoot, ["dogfood", "eval", "--json"]);
+    const dogfoodEvalJson = JSON.parse(dogfoodEvalResult.stdout);
+    assert.equal(dogfoodEvalJson.metrics.total_questions, 2);
+    assert.equal(dogfoodEvalJson.metrics.answerability, 1);
+    assert.equal(dogfoodEvalJson.metrics.generated_persistence_violations, 0);
+
     const activation = await runWm(todayRoot, ["activate", "status"]);
     assert.match(activation.stdout, /Activation/);
     assert.match(activation.stdout, /State: active/);
