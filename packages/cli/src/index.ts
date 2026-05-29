@@ -10,6 +10,7 @@ import {
   buildDailyQueueResult,
   buildDogfoodHomeResult,
   buildContextDashboardResult,
+  buildEntityStewardshipResult,
   buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
   createCaptureFeedback,
@@ -133,6 +134,10 @@ export async function main(
 
     if (command === "context") {
       return await commandContext(parsed.root, rest, io);
+    }
+
+    if (command === "entities") {
+      return await commandEntities(parsed.root, rest, io);
     }
 
     if (command === "activate") {
@@ -806,6 +811,50 @@ async function commandContext(root: string, args: string[], io: CliIo): Promise<
     for (const action of result.suggested_actions) {
       io.stdout(`- ${action}\n`);
     }
+  }
+
+  return 0;
+}
+
+async function commandEntities(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand, ...rest] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm entities stewardship [--kind person|topic|context] [--json]\n");
+    return 0;
+  }
+
+  if (subcommand !== "stewardship") {
+    throw new Error("Usage: wm entities stewardship [--kind person|topic|context] [--json]");
+  }
+
+  const kind = optionValue(rest, "--kind") ?? "person";
+  const json = rest.includes("--json");
+  const allowed = new Set(["person", "topic", "context"]);
+  const allowedArgs = new Set(["--kind", kind, "--json"]);
+
+  if (!allowed.has(kind) || rest.some((arg) => !allowedArgs.has(arg))) {
+    throw new Error("Usage: wm entities stewardship [--kind person|topic|context] [--json]");
+  }
+
+  const result = await buildEntityStewardshipResult(root, kind as "person" | "topic" | "context", { now: io.now });
+
+  if (json) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Entity stewardship: ${result.kind} (${result.generated_at})\n`);
+  io.stdout(`Total: ${result.summary.total}\n`);
+  io.stdout(`High risk: ${result.summary.high_risk}\n`);
+  io.stdout(`Medium risk: ${result.summary.medium_risk}\n`);
+  io.stdout(`Identity ambiguity: ${result.summary.identity_ambiguity}\n`);
+  io.stdout(`Conflict/change: ${result.summary.conflict_change}\n`);
+
+  for (const item of result.items.slice(0, 10)) {
+    io.stdout(
+      `- ${item.name} (${item.id ?? item.path}): ${item.identityRisk.level} risk, lane ${item.recommendedReviewLane}\n`
+    );
   }
 
   return 0;
@@ -1720,6 +1769,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] daily session [--json]",
       "  wm [--root <path>] mode <morning|end-day|meeting|after-meeting> [id|path] [--json]",
       "  wm [--root <path>] context dashboard <id|path> [--json]",
+      "  wm [--root <path>] entities stewardship [--kind person|topic|context] [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",

@@ -611,6 +611,7 @@ wm review inbox
 wm ask --pack-context "<question>"
 wm ask --answer-basis "<question>"
 wm ask --answer-contract "<question>"
+wm entities stewardship [--kind person|topic|context] [--json]
 wm health check
 wm health check --stage-review --note "<text>"
 wm brief <today|person|context|review|followups|recent> [id|path]
@@ -635,6 +636,7 @@ Commands:
 - wm ask --pack-context "<question>"
 - wm ask --answer-basis "<question>"
 - wm ask --answer-contract "<question>"
+- wm entities stewardship [--kind person|topic|context] [--json]
 - wm brief <today|person|context|review|followups|recent> [id|path]
 - wm brief recent [person|context] [id|path]
 - wm today [--json]

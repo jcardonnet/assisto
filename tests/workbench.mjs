@@ -1811,6 +1811,76 @@ export async function runWorkbenchTests() {
     assert.equal(contextDashboard.followups.some((followup) => followup.id === "fu_ask_jeff"), true);
     assert.equal(contextDashboard.citations.page_paths.includes("memory/contexts/inventory-project.md"), true);
 
+    const riskRoot = await makeTempVault("assisto-workbench-entity-risk-route-");
+
+    try {
+      await writeWorkbenchFixture(riskRoot);
+      await writeVaultFile(
+        riskRoot,
+        "memory/people/jeffrey.md",
+        `---
+id: per_jeffrey
+type: person
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+  - Jeff
+source_events:
+  - ev_2026_05_21_001
+related: []
+summary_generated_from:
+  - clm_jeffrey_reports
+---
+
+# Jeffrey
+
+## Active claims
+
+- claim_id: clm_jeffrey_reports
+  statement: Jeffrey reports to Dana.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+      );
+
+      const stewardship = JSON.parse(
+        (await workbench.handleWorkbenchRoute(riskRoot, { method: "GET", url: "/api/entities/stewardship?kind=person" })).body
+      );
+      assert.equal(stewardship.kind, "person");
+      assert.equal(stewardship.summary.identity_ambiguity >= 1, true);
+      const jeffRisk = stewardship.items.find((item) => item.id === "per_jeff");
+      assert.equal(jeffRisk.recommendedReviewLane, "identity_ambiguity");
+      assert.equal(jeffRisk.nearDuplicates.some((item) => item.id === "per_jeffrey"), true);
+      assert.equal(jeffRisk.reportingChanges.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+      const jeffreyRisk = stewardship.items.find((item) => item.id === "per_jeffrey");
+      assert.equal(jeffreyRisk.aliasConflicts.some((item) => item.alias === "Jeff"), true);
+
+      const riskDetail = JSON.parse(
+        (await workbench.handleWorkbenchRoute(riskRoot, { method: "GET", url: "/api/entities/detail?id=per_jeff" })).body
+      );
+      assert.equal(riskDetail.identityRisk.level, "high");
+      assert.equal(riskDetail.recommendedReviewLane, "identity_ambiguity");
+      assert.equal(riskDetail.nearDuplicates.some((item) => item.path === "memory/people/jeffrey.md"), true);
+
+      const stewardshipWithoutKind = await workbench.handleWorkbenchRoute(riskRoot, {
+        method: "GET",
+        url: "/api/entities/stewardship"
+      });
+      assert.equal(stewardshipWithoutKind.status, 400);
+    } finally {
+      await rm(riskRoot, { recursive: true, force: true });
+    }
+
     const unknownContextDashboard = await workbench.handleWorkbenchRoute(root, {
       method: "GET",
       url: "/api/contexts/dashboard?id=ctx_missing"

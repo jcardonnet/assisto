@@ -147,11 +147,88 @@ export interface EntityDetailResult extends EntitySummary {
   activeClaims: EntityClaimSummary[];
   stagedClaims: EntityClaimSummary[];
   supersededClaims: EntityClaimSummary[];
+  identityRisk: EntityRiskSummary;
+  nearDuplicates: EntityNearDuplicate[];
+  aliasConflicts: EntityAliasConflict[];
+  roleChanges: EntityClaimSummary[];
+  reportingChanges: EntityClaimSummary[];
+  ownershipChanges: EntityClaimSummary[];
+  staleClaims: EntityClaimSummary[];
+  conflictingClaims: EntityClaimSummary[];
+  recommendedReviewLane: EntityReviewLane;
   evidenceEvents: EntityEvidenceEvent[];
   linkedReviewItems: EntityLinkedReviewItem[];
   linkedFollowUps: EntityLinkedFollowUp[];
   relatedPages: EntityRelatedPage[];
   contextOperatingPage?: ContextOperatingPage;
+  warnings: string[];
+}
+
+export type EntityReviewLane =
+  | "low_risk"
+  | "needs_context"
+  | "identity_ambiguity"
+  | "conflict_change"
+  | "review_backlog";
+
+export interface EntityRiskSummary {
+  level: "low" | "medium" | "high";
+  score: number;
+  reasons: string[];
+}
+
+export interface EntityNearDuplicate {
+  id?: string;
+  path: string;
+  type?: string;
+  name: string;
+  aliases: string[];
+  reason: string;
+}
+
+export interface EntityAliasConflict {
+  alias: string;
+  conflicts_with: {
+    id?: string;
+    path: string;
+    type?: string;
+    name: string;
+  };
+}
+
+export interface EntityRiskSignals {
+  identityRisk: EntityRiskSummary;
+  nearDuplicates: EntityNearDuplicate[];
+  aliasConflicts: EntityAliasConflict[];
+  roleChanges: EntityClaimSummary[];
+  reportingChanges: EntityClaimSummary[];
+  ownershipChanges: EntityClaimSummary[];
+  staleClaims: EntityClaimSummary[];
+  conflictingClaims: EntityClaimSummary[];
+  recommendedReviewLane: EntityReviewLane;
+}
+
+export interface EntityStewardshipItem extends EntitySummary, EntityRiskSignals {
+  source_events: string[];
+  related: string[];
+  linked_review_items: EntityLinkedReviewItem[];
+  linked_followups: EntityLinkedFollowUp[];
+}
+
+export interface EntityStewardshipResult {
+  generated_at: string;
+  kind: EntityKind;
+  items: EntityStewardshipItem[];
+  summary: {
+    total: number;
+    high_risk: number;
+    medium_risk: number;
+    low_risk: number;
+    identity_ambiguity: number;
+    conflict_change: number;
+    needs_context: number;
+    review_backlog: number;
+  };
   warnings: string[];
 }
 
@@ -240,6 +317,8 @@ export async function getEntityDetail(root: string, idOrPath: string): Promise<E
   const supersededClaims = claimsByState(page, "superseded");
   const reviewItems = await linkedReviewItems(root, page);
   const followUps = await linkedFollowUps(root, page);
+  const peerPages = await loadAllEntityPages(root);
+  const riskSignals = entityRiskSignals(page, peerPages, [...activeClaims, ...stagedClaims, ...supersededClaims], reviewItems);
   const contextOperatingPage = type === "context" ? await buildContextOperatingPage(root, index, page, reviewItems, followUps) : undefined;
   const eventIds = new Set([
     ...sourceEvents,
@@ -259,6 +338,7 @@ export async function getEntityDetail(root: string, idOrPath: string): Promise<E
     activeClaims,
     stagedClaims,
     supersededClaims,
+    ...riskSignals,
     evidenceEvents: await evidenceEvents(root, eventIds),
     linkedReviewItems: reviewItems,
     linkedFollowUps: followUps,
@@ -328,6 +408,63 @@ export async function buildContextDashboardResult(
 
   result.citations = contextDashboardCitations(result);
   return result;
+}
+
+export async function buildEntityStewardshipResult(
+  root: string,
+  kind: EntityKind,
+  options: EntityStewardshipOptions = {}
+): Promise<EntityStewardshipResult> {
+  const generatedAt = options.now ?? new Date().toISOString();
+  const pages = await loadAllEntityPages(root);
+  const items: EntityStewardshipItem[] = [];
+
+  for (const page of pages.filter((item) => stringValue(item.frontmatter.type) === kind)) {
+    const summary = entitySummary(page);
+    const sourceEvents = stringArrayValue(page.frontmatter.source_events);
+    const related = stringArrayValue(page.frontmatter.related);
+    const claims = page.claims.map((claim) => claimSummary(page, claim));
+    const reviewItems = await linkedReviewItems(root, page);
+    const followUps = await linkedFollowUps(root, page);
+    const riskSignals = entityRiskSignals(page, pages, claims, reviewItems);
+
+    items.push({
+      ...summary,
+      source_events: sourceEvents,
+      related,
+      linked_review_items: reviewItems,
+      linked_followups: followUps,
+      ...riskSignals
+    });
+  }
+
+  items.sort(
+    (left, right) =>
+      riskLevelRank(right.identityRisk.level) - riskLevelRank(left.identityRisk.level) ||
+      right.identityRisk.score - left.identityRisk.score ||
+      left.name.localeCompare(right.name) ||
+      left.path.localeCompare(right.path)
+  );
+
+  return {
+    generated_at: generatedAt,
+    kind,
+    items,
+    summary: {
+      total: items.length,
+      high_risk: items.filter((item) => item.identityRisk.level === "high").length,
+      medium_risk: items.filter((item) => item.identityRisk.level === "medium").length,
+      low_risk: items.filter((item) => item.identityRisk.level === "low").length,
+      identity_ambiguity: items.filter((item) => item.recommendedReviewLane === "identity_ambiguity").length,
+      conflict_change: items.filter((item) => item.recommendedReviewLane === "conflict_change").length,
+      needs_context: items.filter((item) => item.recommendedReviewLane === "needs_context").length,
+      review_backlog: items.filter((item) => item.recommendedReviewLane === "review_backlog").length
+    },
+    warnings: [
+      "Entity stewardship risk is a derived deterministic view; no canonical memory files were written.",
+      "Merge, split, delete, and autonomous identity resolution remain out of scope."
+    ]
+  };
 }
 
 export async function createEntityAliasTransaction(
@@ -710,6 +847,199 @@ function matchesRoleIntent(statement: string): boolean {
   return /\b(role|manager|reports to|owner|owns|lead|cto|dba|responsible)\b/i.test(statement);
 }
 
+function entityRiskSignals(
+  page: LoadedEntityPage,
+  allPages: LoadedEntityPage[],
+  claims: EntityClaimSummary[],
+  reviewItems: EntityLinkedReviewItem[]
+): EntityRiskSignals {
+  const nearDuplicates = nearDuplicateEntities(page, allPages);
+  const aliasConflicts = aliasConflictSignals(page, allPages);
+  const roleChanges = claims.filter((claim) => matchesRoleIntent(claim.statement));
+  const reportingChanges = claims.filter((claim) => matchesReportingIntent(claim.statement));
+  const ownershipChanges = claims.filter((claim) => matchesOwnerIntent(claim.statement));
+  const staleClaims = claims.filter(isStaleEntityClaim);
+  const conflictingClaims = claims.filter(isConflictingEntityClaim);
+  const reasons = [
+    nearDuplicates.length > 0 ? "near duplicate entity names or aliases need identity review" : "",
+    aliasConflicts.length > 0 ? "aliases conflict with another entity" : "",
+    reviewItems.length > 0 ? "linked ReviewItems are open or staged" : "",
+    reportingChanges.length > 1 ? "multiple manager/reporting claims may describe a change" : "",
+    ownershipChanges.length > 1 ? "multiple ownership claims may describe a change" : "",
+    staleClaims.length > 0 ? "stale, superseded, rejected, or ended claims are present" : "",
+    conflictingClaims.length > 0 ? "staged, unknown-scope, contested, or non-active claims need review" : ""
+  ].filter(Boolean);
+  const score =
+    nearDuplicates.length * 3 +
+    aliasConflicts.length * 4 +
+    reviewItems.length * 2 +
+    conflictingClaims.length * 2 +
+    staleClaims.length +
+    Math.max(0, reportingChanges.length - 1) +
+    Math.max(0, ownershipChanges.length - 1);
+  const recommendedReviewLane = recommendedLane({
+    nearDuplicates,
+    aliasConflicts,
+    reviewItems,
+    conflictingClaims,
+    staleClaims,
+    claims,
+    reportingChanges,
+    ownershipChanges,
+    score
+  });
+  const level = nearDuplicates.length > 0 || aliasConflicts.length > 0 ? "high" : score >= 1 ? "medium" : "low";
+
+  return {
+    identityRisk: {
+      level,
+      score,
+      reasons: reasons.length ? reasons : ["no deterministic stewardship risks detected"]
+    },
+    nearDuplicates,
+    aliasConflicts,
+    roleChanges,
+    reportingChanges,
+    ownershipChanges,
+    staleClaims,
+    conflictingClaims,
+    recommendedReviewLane
+  };
+}
+
+function matchesReportingIntent(statement: string): boolean {
+  return /\b(manager|reports to|reporting to|direct report|org chart)\b/i.test(statement);
+}
+
+function isStaleEntityClaim(claim: EntityClaimSummary): boolean {
+  return claim.claim_state === "superseded" || claim.claim_state === "rejected" || Boolean(claim.valid_to);
+}
+
+function isConflictingEntityClaim(claim: EntityClaimSummary): boolean {
+  return claim.claim_state !== "active" || claim.scope_state === "unknown" || claim.scope_state === "partial";
+}
+
+function recommendedLane(input: {
+  nearDuplicates: EntityNearDuplicate[];
+  aliasConflicts: EntityAliasConflict[];
+  reviewItems: EntityLinkedReviewItem[];
+  conflictingClaims: EntityClaimSummary[];
+  staleClaims: EntityClaimSummary[];
+  claims: EntityClaimSummary[];
+  reportingChanges: EntityClaimSummary[];
+  ownershipChanges: EntityClaimSummary[];
+  score: number;
+}): EntityReviewLane {
+  if (input.nearDuplicates.length > 0 || input.aliasConflicts.length > 0) {
+    return "identity_ambiguity";
+  }
+
+  if (
+    input.staleClaims.length > 0 ||
+    input.reportingChanges.length > 1 ||
+    input.ownershipChanges.length > 1 ||
+    input.conflictingClaims.some((claim) => claim.claim_state === "superseded" || claim.claim_state === "rejected")
+  ) {
+    return "conflict_change";
+  }
+
+  if (input.claims.some((claim) => claim.scope_state === "unknown" || claim.scope_state === "partial")) {
+    return "needs_context";
+  }
+
+  if (input.reviewItems.length > 0 || input.conflictingClaims.length > 0 || input.score > 0) {
+    return "review_backlog";
+  }
+
+  return "low_risk";
+}
+
+function nearDuplicateEntities(page: LoadedEntityPage, allPages: LoadedEntityPage[]): EntityNearDuplicate[] {
+  const current = entityComparableNames(page);
+  const duplicates: EntityNearDuplicate[] = [];
+
+  for (const candidate of allPages) {
+    if (candidate.path === page.path || stringValue(candidate.frontmatter.type) !== stringValue(page.frontmatter.type)) {
+      continue;
+    }
+
+    const candidateNames = entityComparableNames(candidate);
+    const overlapping = current.find((name) => candidateNames.includes(name));
+    const similar = overlapping ?? current.find((name) => candidateNames.some((candidateName) => namesAreNear(name, candidateName)));
+
+    if (!similar) {
+      continue;
+    }
+
+    duplicates.push({
+      id: stringValue(candidate.frontmatter.id),
+      path: candidate.path,
+      type: stringValue(candidate.frontmatter.type),
+      name: pageName(candidate.path, candidate.body),
+      aliases: stringArrayValue(candidate.frontmatter.aliases),
+      reason: overlapping ? `shared normalized name or alias "${similar}"` : `near normalized name or alias "${similar}"`
+    });
+  }
+
+  return duplicates.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function aliasConflictSignals(page: LoadedEntityPage, allPages: LoadedEntityPage[]): EntityAliasConflict[] {
+  const aliases = stringArrayValue(page.frontmatter.aliases);
+  const conflicts: EntityAliasConflict[] = [];
+
+  for (const alias of aliases) {
+    const normalizedAlias = normalizeComparable(alias);
+    const conflict = allPages.find((candidate) => {
+      if (candidate.path === page.path || stringValue(candidate.frontmatter.type) !== stringValue(page.frontmatter.type)) {
+        return false;
+      }
+
+      return entityComparableNames(candidate).includes(normalizedAlias);
+    });
+
+    if (!conflict) {
+      continue;
+    }
+
+    conflicts.push({
+      alias,
+      conflicts_with: {
+        id: stringValue(conflict.frontmatter.id),
+        path: conflict.path,
+        type: stringValue(conflict.frontmatter.type),
+        name: pageName(conflict.path, conflict.body)
+      }
+    });
+  }
+
+  return conflicts.sort((left, right) => left.alias.localeCompare(right.alias));
+}
+
+function entityComparableNames(page: LoadedEntityPage): string[] {
+  return uniqueSorted([
+    normalizeComparable(pageName(page.path, page.body)),
+    normalizeComparable(stringValue(page.frontmatter.id) ?? ""),
+    ...stringArrayValue(page.frontmatter.aliases).map((alias) => normalizeComparable(alias))
+  ]);
+}
+
+function namesAreNear(left: string, right: string): boolean {
+  if (!left || !right || left === right) {
+    return false;
+  }
+
+  if (left.length < 4 || right.length < 4) {
+    return false;
+  }
+
+  return left.startsWith(right) || right.startsWith(left);
+}
+
+function riskLevelRank(level: EntityRiskSummary["level"]): number {
+  return level === "high" ? 3 : level === "medium" ? 2 : 1;
+}
+
 async function loadResolvedEntity(root: string, index: VaultIndex, idOrPath: string): Promise<LoadedEntityPage> {
   const path = resolveEntityPath(index, idOrPath);
 
@@ -735,6 +1065,29 @@ async function loadEntityPage(root: string, path: string): Promise<LoadedEntityP
     body: parsed.body,
     claims: parseClaimBlockRecords(parsed.body)
   };
+}
+
+async function loadAllEntityPages(root: string): Promise<LoadedEntityPage[]> {
+  const files = uniqueSorted([
+    ...(await listEntityFiles(root, "person")),
+    ...(await listEntityFiles(root, "topic")),
+    ...(await listEntityFiles(root, "context"))
+  ]);
+  const pages: LoadedEntityPage[] = [];
+
+  for (const file of files) {
+    try {
+      const page = await loadEntityPage(root, file);
+
+      if (isEntityKind(stringValue(page.frontmatter.type))) {
+        pages.push(page);
+      }
+    } catch {
+      // Malformed pages are reported by health checks; stewardship skips unreadable pages.
+    }
+  }
+
+  return pages.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 async function listEntityFiles(root: string, kind: EntityKind): Promise<string[]> {

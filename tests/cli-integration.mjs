@@ -92,6 +92,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /daily session/);
   assert.match(help.stdout, /mode <morning\|end-day\|meeting\|after-meeting>/);
   assert.match(help.stdout, /context dashboard/);
+  assert.match(help.stdout, /entities stewardship/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
@@ -615,6 +616,57 @@ export async function runCliIntegrationTests() {
     const contextDashboardJsonResult = await runWm(todayRoot, ["context", "dashboard", "ctx_inventory_project", "--json"]);
     const contextDashboardJson = JSON.parse(contextDashboardJsonResult.stdout);
     assert.equal(contextDashboardJson.context.id, "ctx_inventory_project");
+
+    await writeVaultFile(
+      todayRoot,
+      "memory/people/jeffrey.md",
+      `---
+id: per_jeffrey
+type: person
+object_state: active
+review_state: reviewed
+created_at: 2026-05-21T10:00:00-03:00
+updated_at: 2026-05-21T10:00:00-03:00
+aliases:
+  - Jeff
+source_events:
+  - ev_2026_05_21_001
+related: []
+summary_generated_from:
+  - clm_jeffrey_reports
+---
+
+# Jeffrey
+
+## Active claims
+
+- claim_id: clm_jeffrey_reports
+  statement: Jeffrey reports to Dana.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: ctx_inventory_project
+  scope_state: complete
+  evidence: [ev_2026_05_21_001]
+  recorded_at: 2026-05-21T10:00:00-03:00
+  observed_at: 2026-05-21
+  valid_from: null
+  valid_to: null
+`
+    );
+    const entityStewardship = await runWm(todayRoot, ["entities", "stewardship", "--kind", "person"]);
+    assert.match(entityStewardship.stdout, /Entity stewardship: person/);
+    assert.match(entityStewardship.stdout, /Identity ambiguity: 2/);
+
+    const entityStewardshipJsonResult = await runWm(todayRoot, ["entities", "stewardship", "--kind", "person", "--json"]);
+    const entityStewardshipJson = JSON.parse(entityStewardshipJsonResult.stdout);
+    assert.equal(entityStewardshipJson.summary.identity_ambiguity >= 1, true);
+    assert.equal(
+      entityStewardshipJson.items.some(
+        (item) => item.id === "per_jeff" && item.recommendedReviewLane === "identity_ambiguity"
+      ),
+      true
+    );
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }

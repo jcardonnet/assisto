@@ -9,6 +9,7 @@ import {
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
+  buildEntityStewardshipResult,
   buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
@@ -624,6 +625,16 @@ export async function handleWorkbenchRoute(
     }
 
     return jsonRoute(200, { kind, items: await listEntities(root, kind) });
+  }
+
+  if (requestUrl.pathname === "/api/entities/stewardship") {
+    const kind = optionalEntityKind(requestUrl);
+
+    if (!kind) {
+      return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
+    }
+
+    return jsonRoute(200, await buildEntityStewardshipResult(root, kind));
   }
 
   if (requestUrl.pathname === "/api/entities/detail") {
