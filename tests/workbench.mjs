@@ -743,6 +743,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/activation\/status/);
     assert.match(client.body, /\/api\/use-tomorrow/);
     assert.match(client.body, /\/api\/daily\/queue/);
+    assert.match(client.body, /\/api\/daily\/session/);
     assert.match(client.body, /renderActivationWizard/);
     assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
@@ -951,6 +952,39 @@ export async function runWorkbenchTests() {
     assert.equal(dailyQueue.current_item.item_type, "pending_transaction");
     assert.equal(dailyQueue.current_item.target_id, "tx_2026_05_21_apply");
     assert.equal(dailyQueue.items.some((item) => item.item_type === "review_item"), true);
+
+    const dailySessionInitial = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/daily/session" })).body
+    );
+    assert.equal(dailySessionInitial.exists, false);
+    const dailySessionUpdated = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/daily/session",
+          body: JSON.stringify({
+            dismissed_prompts: ["seed_prompt"],
+            pinned_daily_questions: ["Who is my manager?"],
+            last_selected_mode: "morning",
+            last_completed_derived_step: "pin_question"
+          })
+        })
+      ).body
+    );
+    assert.equal(dailySessionUpdated.exists, true);
+    assert.deepEqual(dailySessionUpdated.state.pinned_daily_questions, ["Who is my manager?"]);
+    assert.match(await readFile(path.join(root, ".assisto-local/daily/session.json"), "utf8"), /pin_question/);
+    const dailySessionReset = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/daily/session",
+          body: JSON.stringify({ reset: true })
+        })
+      ).body
+    );
+    assert.equal(dailySessionReset.exists, false);
+    await assert.rejects(() => readFile(path.join(root, ".assisto-local/daily/session.json"), "utf8"), /ENOENT/);
 
     const captureInbox = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/capture/inbox" })).body);
     assert.equal(captureInbox.recent_events[0].event_id, "ev_2026_05_21_003");

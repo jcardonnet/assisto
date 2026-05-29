@@ -89,6 +89,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /use-tomorrow/);
   assert.match(help.stdout, /seed kit/);
   assert.match(help.stdout, /daily queue/);
+  assert.match(help.stdout, /daily session/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
@@ -502,6 +503,30 @@ export async function runCliIntegrationTests() {
     const dailyQueueJson = JSON.parse(dailyQueueJsonResult.stdout);
     assert.equal(dailyQueueJson.current_item.item_type, "pending_transaction");
     assert.equal(dailyQueueJson.current_item.target_id, "tx_2026_05_21_apply");
+
+    await writeVaultFile(
+      todayRoot,
+      ".assisto-local/daily/session.json",
+      JSON.stringify(
+        {
+          dismissed_prompts: ["seed_prompt"],
+          pinned_daily_questions: ["Who is my manager?"],
+          last_selected_mode: "morning",
+          last_completed_derived_step: "pin_question",
+          updated_at: "2026-05-29T10:00:00.000Z"
+        },
+        null,
+        2
+      )
+    );
+    const dailySession = await runWm(todayRoot, ["daily", "session"]);
+    assert.match(dailySession.stdout, /Daily session/);
+    assert.match(dailySession.stdout, /last_selected_mode\tmorning/);
+
+    const dailySessionJsonResult = await runWm(todayRoot, ["daily", "session", "--json"]);
+    const dailySessionJson = JSON.parse(dailySessionJsonResult.stdout);
+    assert.equal(dailySessionJson.exists, true);
+    assert.equal(dailySessionJson.state.last_completed_derived_step, "pin_question");
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }

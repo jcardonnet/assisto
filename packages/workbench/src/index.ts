@@ -9,6 +9,7 @@ import {
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
   buildUseAssistoTomorrowResult,
+  readDailySession,
   runPersonalDogfoodEval,
   checkMemoryHealth,
   buildSessionBrief,
@@ -43,6 +44,7 @@ import {
   previewImportNotes,
   previewImportTriage,
   previewSeedKit,
+  updateDailySession,
   previewAnswerDraft,
   retrieveContextForAnswer,
   validateTransaction,
@@ -465,6 +467,10 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildDailyQueueResult(root));
   }
 
+  if (requestUrl.pathname === "/api/daily/session") {
+    return jsonRoute(200, await readDailySession(root));
+  }
+
   if (requestUrl.pathname === "/api/dogfood/home") {
     return jsonRoute(200, await buildDogfoodHomeResult(root));
   }
@@ -695,6 +701,10 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/dogfood/eval/run") {
       return jsonRoute(200, await createDogfoodEvalRun(root, input));
+    }
+
+    if (pathname === "/api/daily/session") {
+      return jsonRoute(200, await updateDailySession(root, input));
     }
 
     if (pathname === "/api/entities/alias/preview") {
@@ -2651,6 +2661,7 @@ let dogfoodHome = null;
 let dogfoodEvalResult = null;
 let useTomorrow = null;
 let dailyQueue = null;
+let dailySession = null;
 let dailyQueueIndex = 0;
 let activationStatus = null;
 let activeTab = "today";
@@ -2728,7 +2739,7 @@ document.addEventListener("keydown", (event) => {
     event.key === "ArrowRight"
       ? Math.min(dailyQueueIndex + 1, dailyQueue.items.length - 1)
       : Math.max(dailyQueueIndex - 1, 0);
-  renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow);
+  renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
 });
 
 async function openQuickCapture() {
@@ -3059,17 +3070,19 @@ function percentText(value) {
 }
 
 async function renderToday() {
-  if (!dogfoodHome || !activationStatus || !dailyQueue || !useTomorrow) {
+  if (!dogfoodHome || !activationStatus || !dailyQueue || !dailySession || !useTomorrow) {
     view.innerHTML = '<article class="item"><h2>Loading Dogfood Home</h2><p class="meta">Reading local markdown memory.</p></article>';
-    const [loadedHome, loadedActivationStatus, loadedDailyQueue, loadedUseTomorrow] = await Promise.all([
+    const [loadedHome, loadedActivationStatus, loadedDailyQueue, loadedDailySession, loadedUseTomorrow] = await Promise.all([
       fetchJson("/api/dogfood/home"),
       fetchJson("/api/activation/status"),
       fetchJson("/api/daily/queue"),
+      fetchJson("/api/daily/session"),
       fetchJson("/api/use-tomorrow")
     ]);
     dogfoodHome = loadedHome;
     activationStatus = loadedActivationStatus;
     dailyQueue = loadedDailyQueue;
+    dailySession = loadedDailySession;
     useTomorrow = loadedUseTomorrow;
     dailyQueueIndex = Math.min(dailyQueueIndex, Math.max((dailyQueue.items?.length ?? 1) - 1, 0));
 
@@ -3083,7 +3096,7 @@ async function renderToday() {
   }
 
   renderActivationWizard(activationStatus);
-  renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow);
+  renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
 }
 
 function renderActivationWizard(result) {
@@ -3123,7 +3136,7 @@ function renderActivationWizard(result) {
   }
 }
 
-function renderDogfoodHome(result, queue, tomorrow) {
+function renderDogfoodHome(result, queue, tomorrow, session) {
   const countCards = Object.keys(result.counts).map((key) => \`<article class="item">
     <h3>\${escapeHtml(key.replaceAll("_", " "))}</h3>
     <p class="pill">\${escapeHtml(result.counts[key])}</p>
@@ -3150,6 +3163,7 @@ function renderDogfoodHome(result, queue, tomorrow) {
     </dl>
   </article>
   \${renderUseTomorrow(tomorrow)}
+  \${renderDailySession(session)}
   \${renderDailyQueue(queue)}
   <section><h2>Daily loop</h2><div class="grid">\${countCards}</div></section>
   <section><h2>Brief shortcuts</h2><div class="action-row">
@@ -3171,6 +3185,26 @@ function renderDogfoodHome(result, queue, tomorrow) {
   <div id="today-action-output" class="action-output"></div>\`;
   bindTodayActions();
   bindBriefLinks();
+}
+
+function renderDailySession(result) {
+  if (!result) {
+    return "";
+  }
+
+  return \`<section data-daily-session>
+    <article class="item">
+      <h2>Local daily session</h2>
+      <p class="pill">\${result.exists ? "saved locally" : "empty"}</p>
+      <p class="meta">\${escapeHtml(result.path)} is noncanonical UI state and can be deleted without corrupting memory.</p>
+      <dl class="detail-list">
+        <div><dt>dismissed prompts</dt><dd>\${escapeHtml(result.state.dismissed_prompts.length)}</dd></div>
+        <div><dt>pinned daily questions</dt><dd>\${escapeHtml(result.state.pinned_daily_questions.length)}</dd></div>
+        <div><dt>last selected mode</dt><dd>\${escapeHtml(result.state.last_selected_mode ?? "none")}</dd></div>
+        <div><dt>last completed derived step</dt><dd>\${escapeHtml(result.state.last_completed_derived_step ?? "none")}</dd></div>
+      </dl>
+    </article>
+  </section>\`;
 }
 
 function renderUseTomorrow(result) {
@@ -3479,21 +3513,21 @@ function bindTodayActions() {
   for (const button of document.querySelectorAll(".daily-queue-prev")) {
     button.addEventListener("click", () => {
       dailyQueueIndex = Math.max(dailyQueueIndex - 1, 0);
-      renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow);
+      renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
     });
   }
 
   for (const button of document.querySelectorAll(".daily-queue-next")) {
     button.addEventListener("click", () => {
       dailyQueueIndex = Math.min(dailyQueueIndex + 1, (dailyQueue?.items?.length ?? 1) - 1);
-      renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow);
+      renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
     });
   }
 
   for (const button of document.querySelectorAll(".daily-queue-select")) {
     button.addEventListener("click", () => {
       dailyQueueIndex = Number(button.dataset.index ?? 0);
-      renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow);
+      renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
     });
   }
 
@@ -3590,12 +3624,13 @@ async function refreshTodayAfterAction() {
   health = null;
   dogfoodHome = await fetchJson("/api/dogfood/home");
   dailyQueue = await fetchJson("/api/daily/queue");
+  dailySession = await fetchJson("/api/daily/session");
   useTomorrow = await fetchJson("/api/use-tomorrow");
   dailyQueueIndex = 0;
   reviewTurbo = null;
 
   if (activeTab === "today") {
-    renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow);
+    renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
   }
 }
 
