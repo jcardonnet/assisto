@@ -90,6 +90,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /seed kit/);
   assert.match(help.stdout, /daily queue/);
   assert.match(help.stdout, /daily session/);
+  assert.match(help.stdout, /mode <morning\|end-day>/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
@@ -527,6 +528,15 @@ export async function runCliIntegrationTests() {
     const dailySessionJson = JSON.parse(dailySessionJsonResult.stdout);
     assert.equal(dailySessionJson.exists, true);
     assert.equal(dailySessionJson.state.last_completed_derived_step, "pin_question");
+
+    const morningMode = await runWm(todayRoot, ["mode", "morning"]);
+    assert.match(morningMode.stdout, /Workday mode: Morning/);
+    assert.match(morningMode.stdout, /Next queue item: Review pending transaction/);
+
+    const endDayModeJsonResult = await runWm(todayRoot, ["mode", "end-day", "--json"]);
+    const endDayModeJson = JSON.parse(endDayModeJsonResult.stdout);
+    assert.equal(endDayModeJson.mode, "end-day");
+    assert.equal(endDayModeJson.unresolved_transactions.length, 4);
   } finally {
     await rm(todayRoot, { recursive: true, force: true });
   }

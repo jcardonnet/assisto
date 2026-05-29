@@ -9,6 +9,7 @@ import {
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
   buildUseAssistoTomorrowResult,
+  buildWorkdayModeResult,
   readDailySession,
   runPersonalDogfoodEval,
   checkMemoryHealth,
@@ -469,6 +470,14 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/daily/session") {
     return jsonRoute(200, await readDailySession(root));
+  }
+
+  if (requestUrl.pathname === "/api/modes/morning") {
+    return jsonRoute(200, await buildWorkdayModeResult(root, "morning"));
+  }
+
+  if (requestUrl.pathname === "/api/modes/end-day") {
+    return jsonRoute(200, await buildWorkdayModeResult(root, "end-day"));
   }
 
   if (requestUrl.pathname === "/api/dogfood/home") {
@@ -3172,6 +3181,13 @@ function renderDogfoodHome(result, queue, tomorrow, session) {
     \${briefLinkButtonHtml("followups", "", "", "Follow-up review")}
     \${briefLinkButtonHtml("review", "", "", "Review-risk brief")}
   </div></section>
+  <section><h2>Workday modes</h2>
+    <div class="action-row">
+      <button type="button" class="secondary workday-mode-button" data-mode-route="/api/modes/morning">Morning</button>
+      <button type="button" class="secondary workday-mode-button" data-mode-route="/api/modes/end-day">End of day</button>
+    </div>
+    <div id="workday-mode-output" class="action-output"></div>
+  </section>
   \${todayPendingTransactionsHtml(result.pending_transactions)}
   \${todayReviewGroupsHtml(result.staged_review_groups)}
   \${todayStaleNoopsHtml(result.stale_noop_events)}
@@ -3184,7 +3200,34 @@ function renderDogfoodHome(result, queue, tomorrow, session) {
   \${todayTextListSection("Suggested manual actions", result.suggested_manual_actions, "No suggested manual actions.")}
   <div id="today-action-output" class="action-output"></div>\`;
   bindTodayActions();
+  bindWorkdayModes();
   bindBriefLinks();
+}
+
+function bindWorkdayModes() {
+  for (const button of document.querySelectorAll(".workday-mode-button")) {
+    button.addEventListener("click", async () => {
+      const output = document.querySelector("#workday-mode-output");
+      output.innerHTML = "<pre>Loading</pre>";
+
+      try {
+        output.innerHTML = renderWorkdayMode(await fetchJson(button.dataset.modeRoute));
+      } catch (error) {
+        output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+      }
+    });
+  }
+}
+
+function renderWorkdayMode(result) {
+  return \`<article class="item">
+    <h3>\${escapeHtml(result.title)}</h3>
+    <p class="meta">\${escapeHtml(result.summary)}</p>
+    <p class="meta">Next queue item: \${escapeHtml(result.next_queue_item?.label ?? "none")}</p>
+    <p class="meta">Pinned questions: \${escapeHtml(result.pinned_questions.length)} · open follow-ups: \${escapeHtml(result.open_followups.length)} · logged misses: \${escapeHtml(result.logged_misses.length)}</p>
+    \${plainListHtml("Suggested captures", result.suggested_captures ?? [])}
+    <p class="meta">\${escapeHtml(result.disclaimer)}</p>
+  </article>\`;
 }
 
 function renderDailySession(result) {

@@ -744,6 +744,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/use-tomorrow/);
     assert.match(client.body, /\/api\/daily\/queue/);
     assert.match(client.body, /\/api\/daily\/session/);
+    assert.match(client.body, /\/api\/modes\/morning/);
     assert.match(client.body, /renderActivationWizard/);
     assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
@@ -985,6 +986,16 @@ export async function runWorkbenchTests() {
     );
     assert.equal(dailySessionReset.exists, false);
     await assert.rejects(() => readFile(path.join(root, ".assisto-local/daily/session.json"), "utf8"), /ENOENT/);
+
+    const morningMode = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/modes/morning" })).body);
+    assert.equal(morningMode.mode, "morning");
+    assert.equal(morningMode.next_queue_item.target_id, "tx_2026_05_21_apply");
+    assert.equal(morningMode.open_followups.some((followup) => followup.id === "fu_ask_jeff"), true);
+
+    const endDayMode = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/modes/end-day" })).body);
+    assert.equal(endDayMode.mode, "end-day");
+    assert.equal(endDayMode.recent_changes.some((change) => change.id === "ev_2026_05_21_003"), true);
+    assert.equal(endDayMode.unresolved_transactions.length, 4);
 
     const captureInbox = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/capture/inbox" })).body);
     assert.equal(captureInbox.recent_events[0].event_id, "ev_2026_05_21_003");
