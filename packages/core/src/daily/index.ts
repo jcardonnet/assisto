@@ -1,3 +1,5 @@
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { buildTodayWorkbenchResult, type TodayWorkbenchOptions } from "../today";
 
 export interface DailyQueueResult {
@@ -29,6 +31,29 @@ export interface DailyQueueItem {
   route_hint: string;
   preview_endpoint?: string;
   action_endpoint?: string;
+}
+
+export interface DailySessionState {
+  dismissed_prompts: string[];
+  pinned_daily_questions: string[];
+  last_selected_mode?: string;
+  last_completed_derived_step?: string;
+  updated_at?: string;
+}
+
+export interface DailySessionResult {
+  generated_at: string;
+  exists: boolean;
+  path: ".assisto-local/daily/session.json";
+  state: DailySessionState;
+}
+
+export interface DailySessionUpdateInput {
+  reset?: boolean;
+  dismissed_prompts?: unknown;
+  pinned_daily_questions?: unknown;
+  last_selected_mode?: unknown;
+  last_completed_derived_step?: unknown;
 }
 
 export async function buildDailyQueueResult(
@@ -131,6 +156,82 @@ export async function buildDailyQueueResult(
   };
 }
 
+export async function readDailySession(
+  root: string,
+  options: TodayWorkbenchOptions = {}
+): Promise<DailySessionResult> {
+  const generatedAt = options.now ?? new Date().toISOString();
+
+  try {
+    const parsed = JSON.parse(await readFile(dailySessionAbsolutePath(root), "utf8")) as Record<string, unknown>;
+    return {
+      generated_at: generatedAt,
+      exists: true,
+      path: dailySessionRelativePath,
+      state: sanitizeDailySessionState(parsed)
+    };
+  } catch {
+    return {
+      generated_at: generatedAt,
+      exists: false,
+      path: dailySessionRelativePath,
+      state: emptyDailySessionState()
+    };
+  }
+}
+
+export async function updateDailySession(
+  root: string,
+  input: DailySessionUpdateInput = {},
+  options: TodayWorkbenchOptions = {}
+): Promise<DailySessionResult> {
+  if (input.reset === true) {
+    await rm(dailySessionAbsolutePath(root), { force: true });
+    return readDailySession(root, options);
+  }
+
+  const existing = await readDailySession(root, options);
+  const next: DailySessionState = {
+    ...existing.state,
+    dismissed_prompts:
+      input.dismissed_prompts === undefined ? existing.state.dismissed_prompts : stringArrayInput(input.dismissed_prompts),
+    pinned_daily_questions:
+      input.pinned_daily_questions === undefined
+        ? existing.state.pinned_daily_questions
+        : stringArrayInput(input.pinned_daily_questions),
+    updated_at: options.now ?? new Date().toISOString()
+  };
+  const selectedMode = optionalStringInput(input.last_selected_mode);
+  const completedStep = optionalStringInput(input.last_completed_derived_step);
+
+  if (input.last_selected_mode !== undefined) {
+    if (selectedMode) {
+      next.last_selected_mode = selectedMode;
+    } else {
+      delete next.last_selected_mode;
+    }
+  }
+
+  if (input.last_completed_derived_step !== undefined) {
+    if (completedStep) {
+      next.last_completed_derived_step = completedStep;
+    } else {
+      delete next.last_completed_derived_step;
+    }
+  }
+
+  const filePath = dailySessionAbsolutePath(root);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+
+  return {
+    generated_at: options.now ?? next.updated_at ?? new Date().toISOString(),
+    exists: true,
+    path: dailySessionRelativePath,
+    state: next
+  };
+}
+
 type PendingTransactionSummary = Awaited<ReturnType<typeof buildTodayWorkbenchResult>>["pending_transactions"][number];
 
 function prioritizedPendingTransactions(transactions: PendingTransactionSummary[]): PendingTransactionSummary[] {
@@ -146,4 +247,49 @@ function prioritizedPendingTransactions(transactions: PendingTransactionSummary[
 
 function oldestTransactionFirst(left: PendingTransactionSummary, right: PendingTransactionSummary): number {
   return (left.created_at ?? "").localeCompare(right.created_at ?? "") || left.path.localeCompare(right.path);
+}
+
+const dailySessionRelativePath = ".assisto-local/daily/session.json";
+
+function dailySessionAbsolutePath(root: string): string {
+  return path.join(root, dailySessionRelativePath);
+}
+
+function emptyDailySessionState(): DailySessionState {
+  return {
+    dismissed_prompts: [],
+    pinned_daily_questions: []
+  };
+}
+
+function sanitizeDailySessionState(input: Record<string, unknown>): DailySessionState {
+  const state: DailySessionState = {
+    dismissed_prompts: stringArrayInput(input.dismissed_prompts),
+    pinned_daily_questions: stringArrayInput(input.pinned_daily_questions)
+  };
+  const selectedMode = optionalStringInput(input.last_selected_mode);
+  const completedStep = optionalStringInput(input.last_completed_derived_step);
+  const updatedAt = optionalStringInput(input.updated_at);
+
+  if (selectedMode) {
+    state.last_selected_mode = selectedMode;
+  }
+
+  if (completedStep) {
+    state.last_completed_derived_step = completedStep;
+  }
+
+  if (updatedAt) {
+    state.updated_at = updatedAt;
+  }
+
+  return state;
+}
+
+function stringArrayInput(value: unknown): string[] {
+  return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && item.trim().length > 0))] : [];
+}
+
+function optionalStringInput(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }

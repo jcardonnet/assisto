@@ -10,6 +10,7 @@ import {
   buildDailyQueueResult,
   buildDogfoodHomeResult,
   buildUseAssistoTomorrowResult,
+  readDailySession,
   runPersonalDogfoodEval,
   buildSessionBrief,
   buildTodayWorkbenchResult,
@@ -512,12 +513,35 @@ async function commandDaily(root: string, args: string[], io: CliIo): Promise<nu
   const [subcommand] = args;
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    io.stdout("Usage: wm daily queue [--json]\n");
+    io.stdout("Usage: wm daily <queue|session> [--json]\n");
+    return 0;
+  }
+
+  if (subcommand === "session") {
+    if (args.some((arg, index) => index > 0 && !["--json"].includes(arg))) {
+      throw new Error("Usage: wm daily session [--json]");
+    }
+
+    const session = await readDailySession(root, { now: io.now });
+
+    if (args.includes("--json")) {
+      io.stdout(`${JSON.stringify(session, null, 2)}\n`);
+      return 0;
+    }
+
+    io.stdout(`Daily session (${session.generated_at})\n`);
+    io.stdout(`State: ${session.exists ? "saved" : "empty"}\n`);
+    io.stdout(`Path: ${session.path}\n\n`);
+    io.stdout("Session\n");
+    io.stdout(`dismissed_prompts\t${session.state.dismissed_prompts.length}\n`);
+    io.stdout(`pinned_daily_questions\t${session.state.pinned_daily_questions.length}\n`);
+    io.stdout(`last_selected_mode\t${session.state.last_selected_mode ?? ""}\n`);
+    io.stdout(`last_completed_derived_step\t${session.state.last_completed_derived_step ?? ""}\n`);
     return 0;
   }
 
   if (subcommand !== "queue") {
-    throw new Error("Usage: wm daily queue [--json]");
+    throw new Error("Usage: wm daily <queue|session> [--json]");
   }
 
   const queue = await buildDailyQueueResult(root);
@@ -1467,6 +1491,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",
+      "  wm [--root <path>] daily session [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",
