@@ -1872,6 +1872,25 @@ summary_generated_from:
       assert.equal(riskDetail.recommendedReviewLane, "identity_ambiguity");
       assert.equal(riskDetail.nearDuplicates.some((item) => item.path === "memory/people/jeffrey.md"), true);
 
+      const stewardshipDetail = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(riskRoot, {
+            method: "GET",
+            url: "/api/entities/stewardship/detail?id=per_jeff"
+          })
+        ).body
+      );
+      assert.equal(stewardshipDetail.id, "per_jeff");
+      assert.equal(stewardshipDetail.identityRisk.level, "high");
+      assert.equal(stewardshipDetail.aliasConflicts.length, 0);
+      assert.equal(stewardshipDetail.reportingChanges.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+
+      const stewardshipDetailWithoutId = await workbench.handleWorkbenchRoute(riskRoot, {
+        method: "GET",
+        url: "/api/entities/stewardship/detail"
+      });
+      assert.equal(stewardshipDetailWithoutId.status, 400);
+
       const stewardshipWithoutKind = await workbench.handleWorkbenchRoute(riskRoot, {
         method: "GET",
         url: "/api/entities/stewardship"

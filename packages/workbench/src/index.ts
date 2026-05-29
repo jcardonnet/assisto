@@ -637,6 +637,22 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildEntityStewardshipResult(root, kind));
   }
 
+  if (requestUrl.pathname === "/api/entities/stewardship/detail") {
+    const target = optionalTarget(requestUrl);
+
+    if (!target) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    try {
+      return jsonRoute(200, await getEntityDetail(root, target));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = /^Entity not found:/.test(message) ? 404 : 400;
+      return jsonRoute(status, { error: message });
+    }
+  }
+
   if (requestUrl.pathname === "/api/entities/detail") {
     const target = optionalTarget(requestUrl);
 
@@ -2949,6 +2965,7 @@ let transactionDetail = null;
 let briefTargets = { person: null, context: null };
 let pendingBriefRequest = null;
 let entityKind = "person";
+let entityReviewLaneFilter = "all";
 let entityList = null;
 let entityDetail = null;
 let importTriageUnits = [];
@@ -4537,8 +4554,8 @@ function renderImportTriageResult(result) {
 
 async function renderEntities() {
   const requestedKind = entityKind;
-  view.innerHTML = '<article class="item"><h2>Loading entities</h2><p class="meta">Reading People, Topics, and Contexts.</p></article>';
-  const loadedEntities = await fetchJson(\`/api/entities?kind=\${encodeURIComponent(requestedKind)}\`);
+  view.innerHTML = '<article class="item"><h2>Loading stewardship console</h2><p class="meta">Reading risk lanes, evidence, reviews, and follow-ups.</p></article>';
+  const loadedEntities = await fetchJson(\`/api/entities/stewardship?kind=\${encodeURIComponent(requestedKind)}\`);
 
   if (activeTab !== "entities" || requestedKind !== entityKind) {
     return;
@@ -4549,24 +4566,30 @@ async function renderEntities() {
 }
 
 function renderEntityExplorer() {
-  const filters = ["person", "topic", "context"].map((kind) => \`<button type="button" class="reason-filter" data-entity-kind="\${kind}" aria-pressed="\${String(entityKind === kind)}">
+  const kindFilters = ["person", "topic", "context"].map((kind) => \`<button type="button" class="reason-filter" data-entity-kind="\${kind}" aria-pressed="\${String(entityKind === kind)}">
     <strong>\${kind === "person" ? "People" : kind === "topic" ? "Topics" : "Contexts"}</strong>
-    <span>Inspect evidence, reviews, follow-ups, and stage stewardship changes.</span>
+    <span>Inspect risk lanes, evidence, reviews, follow-ups, and stage stewardship changes.</span>
   </button>\`).join("");
-  const cards = (entityList?.items ?? []).map((item) => \`<article class="item">
-    <h3>\${escapeHtml(item.name)}</h3>
-    <p class="pill">\${escapeHtml(item.id ?? item.path)}</p>
-    \${detailListHtml([
-      ["Path", item.path],
-      ["Aliases", item.aliases.join(", ") || "none"],
-      ["Claims", \`active \${item.active_claims}, staged \${item.staged_claims}, superseded \${item.superseded_claims}\`]
-    ])}
-    <div class="action-row"><button type="button" class="secondary entity-detail-load" data-entity-id="\${escapeHtml(item.id ?? item.path)}">Open detail</button></div>
-  </article>\`).join("");
+  const laneFilters = entityReviewLaneOptions().map((lane) => {
+    const count = lane.id === "all" ? entityList?.summary?.total ?? 0 : entityList?.summary?.[lane.id] ?? 0;
+    return \`<button type="button" class="reason-filter" data-entity-lane="\${lane.id}" aria-pressed="\${String(entityReviewLaneFilter === lane.id)}">
+      <strong>\${escapeHtml(lane.label)} · \${String(count)}</strong>
+      <span>\${escapeHtml(lane.description)}</span>
+    </button>\`;
+  }).join("");
+  const items = (entityList?.items ?? []).filter(
+    (item) => entityReviewLaneFilter === "all" || item.recommendedReviewLane === entityReviewLaneFilter
+  );
+  const cards = items.map(entityStewardshipCardHtml).join("");
 
   view.innerHTML = \`<section>
-    <h2>People, Topics, Contexts</h2>
-    <div class="summary-strip">\${filters}</div>
+    <h2>Entity stewardship</h2>
+    <p class="meta">Risk lanes are deterministic and read-only. Durable corrections still require explicit preview/stage actions.</p>
+    <div class="summary-strip">\${kindFilters}</div>
+  </section>
+  <section>
+    <h2>Risk lanes</h2>
+    <div class="summary-strip">\${laneFilters}</div>
   </section>
   <section class="transaction-layout">
     <div class="grid">\${cards || '<article class="item"><h2>Empty</h2><p class="meta">No matching entities.</p></article>'}</div>
@@ -4575,6 +4598,26 @@ function renderEntityExplorer() {
   <div id="entity-action-output" class="action-output"></div>\`;
   bindEntityActions();
   bindBriefLinks();
+}
+
+function entityStewardshipCardHtml(item) {
+  return \`<article class="item entity-risk-card">
+    <h3>\${escapeHtml(item.name)}</h3>
+    <p class="pill">\${escapeHtml(item.id ?? item.path)}</p>
+    \${detailListHtml([
+      ["Path", item.path],
+      ["Aliases", item.aliases.join(", ") || "none"],
+      ["Identity risk", \`\${item.identityRisk?.level ?? "low"} (\${String(item.identityRisk?.score ?? 0)})\`],
+      ["Review lane", entityReviewLaneLabel(item.recommendedReviewLane)],
+      ["Risk reasons", (item.identityRisk?.reasons ?? []).join("; ") || "none"],
+      ["Duplicate warnings", String((item.nearDuplicates ?? []).length)],
+      ["Alias conflicts", String((item.aliasConflicts ?? []).length)],
+      ["Role/reporting changes", \`\${(item.roleChanges ?? []).length}/\${(item.reportingChanges ?? []).length}\`],
+      ["Linked reviews", String((item.linked_review_items ?? []).length)],
+      ["Linked follow-ups", String((item.linked_followups ?? []).length)]
+    ])}
+    <div class="action-row"><button type="button" class="secondary entity-detail-load" data-entity-id="\${escapeHtml(item.id ?? item.path)}">Open detail</button></div>
+  </article>\`;
 }
 
 function entityDetailHtml(detail) {
@@ -4606,14 +4649,36 @@ function entityDetailHtml(detail) {
       \${entityContextNoteFormHtml(detail)}
     </div>
   </article>
+  \${entityRiskCommandCenterHtml(detail)}
   \${contextOperatingPageHtml(detail.contextOperatingPage)}
   \${entityClaimSectionHtml("Active claims", detail.activeClaims)}
   \${entityClaimSectionHtml("Staged claims", detail.stagedClaims)}
   \${entityClaimSectionHtml("Superseded claims", detail.supersededClaims)}
+  \${entityClaimSectionHtml("Role history", detail.roleChanges)}
+  \${entityClaimSectionHtml("Reporting history", detail.reportingChanges)}
+  \${entityClaimSectionHtml("Ownership history", detail.ownershipChanges)}
+  \${entityClaimSectionHtml("Stale claims", detail.staleClaims)}
+  \${entityClaimSectionHtml("Conflicting claims", detail.conflictingClaims)}
   \${entityListSectionHtml("Evidence Events", detail.evidenceEvents, (event) => \`\${event.id} · \${event.path}\`)}
   \${entityListSectionHtml("Linked ReviewItems", detail.linkedReviewItems, (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
   \${entityListSectionHtml("Linked FollowUps", detail.linkedFollowUps, (item) => \`\${item.id} · \${item.followup_state} · \${item.path}\`)}
   \${entityListSectionHtml("Related pages", detail.relatedPages, (item) => \`\${item.id ?? item.path} · \${item.type ?? "page"} · \${item.path}\`)}\`;
+}
+
+function entityRiskCommandCenterHtml(detail) {
+  const risk = detail.identityRisk ?? { level: "low", score: 0, reasons: [] };
+  return \`<article class="item">
+    <h3>Stewardship risk</h3>
+    \${detailListHtml([
+      ["Identity risk", \`\${risk.level} (\${String(risk.score)})\`],
+      ["Recommended lane", entityReviewLaneLabel(detail.recommendedReviewLane)],
+      ["Risk reasons", (risk.reasons ?? []).join("; ") || "none"],
+      ["Suggested allowed action", entityAllowedAction(detail.recommendedReviewLane)]
+    ])}
+    \${plainListHtml("Near duplicates", (detail.nearDuplicates ?? []).map((item) => \`\${item.name} · \${item.id ?? item.path} · \${item.reason}\`))}
+    \${plainListHtml("Alias conflicts", (detail.aliasConflicts ?? []).map((item) => \`\${item.alias} also appears on \${item.conflicts_with.name} · \${item.conflicts_with.id ?? item.conflicts_with.path}\`))}
+    <p class="meta">Identity ambiguity remains staged; this console does not merge, split, delete, or autonomously resolve people/topics/contexts.</p>
+  </article>\`;
 }
 
 function entityContextNoteFormHtml(detail) {
@@ -4703,24 +4768,71 @@ function contextOperatingPageHtml(page) {
 }
 
 function entityClaimSectionHtml(label, claims) {
-  return entityListSectionHtml(label, claims, (claim) => \`\${claim.claim_id}: \${claim.statement} [events: \${claim.evidence.join(", ") || "none"}]\`);
+  return entityListSectionHtml(
+    label,
+    claims,
+    (claim) =>
+      \`\${claim.claim_id}: \${claim.statement} [kind: \${claim.claim_kind ?? "unknown"}; state: \${claim.claim_state ?? "unknown"}; scope: \${claim.scope ?? "none"}; events: \${claim.evidence.join(", ") || "none"}]\`
+  );
 }
 
 function entityListSectionHtml(label, items, renderItem) {
+  return \`<article class="item"><h3>\${escapeHtml(label)}</h3>\${entityListSectionBody(items, renderItem)}</article>\`;
+}
+
+function entityListSectionBody(items, renderItem) {
   const body = items.length
     ? \`<ul class="plain-list">\${items.map((item) => \`<li>\${escapeHtml(renderItem(item))}</li>\`).join("")}</ul>\`
     : '<p class="meta">None.</p>';
 
-  return \`<article class="item"><h3>\${escapeHtml(label)}</h3>\${body}</article>\`;
+  return body;
+}
+
+function entityReviewLaneOptions() {
+  return [
+    { id: "all", label: "All", description: "Every entity in the selected collection." },
+    { id: "identity_ambiguity", label: "Identity ambiguity", description: "Near duplicates or aliases that could cause false merges." },
+    { id: "conflict_change", label: "Conflict/change", description: "Role, reporting, ownership, stale, or conflicting claim signals." },
+    { id: "needs_context", label: "Needs context", description: "Claims or reviews that need explicit scoping before promotion." },
+    { id: "review_backlog", label: "Review backlog", description: "Linked ReviewItems that still need a human decision." },
+    { id: "low_risk", label: "Low risk", description: "No current high-priority stewardship warnings." }
+  ];
+}
+
+function entityReviewLaneLabel(lane) {
+  return entityReviewLaneOptions().find((item) => item.id === lane)?.label ?? lane ?? "unknown";
+}
+
+function entityAllowedAction(lane) {
+  switch (lane) {
+    case "identity_ambiguity":
+      return "Inspect duplicates/aliases and stage alias or identity review only after human confirmation.";
+    case "conflict_change":
+      return "Inspect claim history and stage a correction only with explicit evidence.";
+    case "needs_context":
+      return "Select an existing Context or stage unresolved context review.";
+    case "review_backlog":
+      return "Open linked ReviewItems and use one-at-a-time preview/apply flows.";
+    default:
+      return "Preview alias or context updates before staging a pending Transaction.";
+  }
 }
 
 function bindEntityActions() {
   for (const button of document.querySelectorAll("[data-entity-kind]")) {
     button.addEventListener("click", () => {
       entityKind = button.dataset.entityKind;
+      entityReviewLaneFilter = "all";
       entityList = null;
       entityDetail = null;
       void renderEntities();
+    });
+  }
+
+  for (const button of document.querySelectorAll("[data-entity-lane]")) {
+    button.addEventListener("click", () => {
+      entityReviewLaneFilter = button.dataset.entityLane;
+      renderEntityExplorer();
     });
   }
 
@@ -4728,7 +4840,7 @@ function bindEntityActions() {
     button.addEventListener("click", async () => {
       const requestedId = button.dataset.entityId;
       const requestedKind = entityKind;
-      const loadedDetail = await fetchJson(\`/api/entities/detail?id=\${encodeURIComponent(requestedId)}\`);
+      const loadedDetail = await fetchJson(\`/api/entities/stewardship/detail?id=\${encodeURIComponent(requestedId)}\`);
 
       if (activeTab !== "entities" || requestedKind !== entityKind || requestedId !== button.dataset.entityId) {
         return;
