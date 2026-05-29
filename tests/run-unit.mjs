@@ -12,6 +12,7 @@ import { runCoreHealthTests } from "./core-health.mjs";
 import { runCoreBriefTests } from "./core-briefs.mjs";
 import { runCoreTodayTests } from "./core-today.mjs";
 import { runCoreDogfoodTests } from "./core-dogfood.mjs";
+import { runCoreDogfoodEvalTests } from "./core-dogfood-eval.mjs";
 import { runCoreActivationTests } from "./core-activation.mjs";
 import { runCoreDailyTests } from "./core-daily.mjs";
 
@@ -29,6 +30,7 @@ export async function runUnitTests() {
   await runCoreBriefTests();
   await runCoreTodayTests();
   await runCoreDogfoodTests();
+  await runCoreDogfoodEvalTests();
   await runCoreActivationTests();
   await runCoreDailyTests();
 }
