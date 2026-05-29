@@ -58,9 +58,19 @@ affected_files:
     await expect(page.getByRole("heading", { name: "Review lanes" })).toBeVisible();
     await expect(page.locator('[data-review-reason="all"]')).toContainText("2 items");
     await expect(page.locator('[data-review-lane="all"]')).toContainText("2 items");
+    await expect(page.locator(".review-queue-navigator")).toContainText("1 / 2");
+    await expect(page.locator('article.item[data-review-selected="true"]')).toContainText("rev_mysql_scope");
+
+    await page.locator(".review-queue-next").click();
+    await expect(page.locator(".review-queue-navigator")).toContainText("2 / 2");
+    await expect(page.locator('article.item[data-review-selected="true"]')).toContainText("rev_jeff_role");
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".review-queue-navigator")).toContainText("1 / 2");
+    await expect(page.locator('article.item[data-review-selected="true"]')).toContainText("rev_mysql_scope");
 
     await page.locator('[data-review-lane="conflict_or_change"]').click();
     await expect(page.locator('[data-review-lane="conflict_or_change"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".review-queue-navigator")).toContainText("1 / 1");
     await expect(page.getByRole("heading", { name: "rev_jeff_role" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "rev_mysql_scope" })).toHaveCount(0);
     await expect(page.locator(".claim-diff-card", { hasText: "clm_jeff_role_change" })).toBeVisible();
