@@ -58,6 +58,25 @@ export async function runCoreEntityTests() {
     assert.equal(dashboard.citations.page_paths.includes("memory/contexts/inventory-project.md"), true);
     assert.match(dashboard.warnings.join("\n"), /derived/);
 
+    const operatingRoom = await entities.buildContextOperatingRoomResult(root, "ctx_inventory_project", {
+      now: "2026-05-24T13:00:00-03:00"
+    });
+
+    assert.equal(operatingRoom.context.id, "ctx_inventory_project");
+    assert.equal(operatingRoom.currentState.some((claim) => claim.claim_id === "clm_inventory_uses_mysql"), true);
+    assert.equal(operatingRoom.owners.some((claim) => claim.claim_id === "clm_inventory_owner"), true);
+    assert.equal(operatingRoom.systems.some((claim) => claim.claim_id === "clm_inventory_decision_mysql"), true);
+    assert.equal(operatingRoom.decisions.some((claim) => claim.claim_id === "clm_inventory_decision_mysql"), true);
+    assert.equal(operatingRoom.openQuestions.some((claim) => claim.claim_id === "clm_inventory_open_question"), true);
+    assert.equal(operatingRoom.staleClaims.some((claim) => claim.claim_id === "clm_inventory_old_owner"), true);
+    assert.equal(operatingRoom.reviewQueue.some((item) => item.id === "rev_inventory_context_risk"), true);
+    assert.equal(operatingRoom.followupQueue.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.equal(operatingRoom.risks.some((risk) => risk.risk_id === "review_queue"), true);
+    assert.equal(operatingRoom.answerableQuestions.some((question) => question.includes("Inventory Project")), true);
+    assert.equal(operatingRoom.quickActions.some((action) => action.action_id === "capture_context_note"), true);
+    assert.equal(operatingRoom.citations.event_ids.includes("ev_2026_05_21_003"), true);
+    assert.match(operatingRoom.warnings.join("\n"), /derived/);
+
     await assert.rejects(
       () => entities.buildContextDashboardResult(root, "per_jeff"),
       /Context dashboard target must be a Context/

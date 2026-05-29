@@ -92,6 +92,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /daily session/);
   assert.match(help.stdout, /mode <morning\|end-day\|meeting\|after-meeting>/);
   assert.match(help.stdout, /context dashboard/);
+  assert.match(help.stdout, /context operating-room/);
   assert.match(help.stdout, /entities stewardship/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
@@ -616,6 +617,21 @@ export async function runCliIntegrationTests() {
     const contextDashboardJsonResult = await runWm(todayRoot, ["context", "dashboard", "ctx_inventory_project", "--json"]);
     const contextDashboardJson = JSON.parse(contextDashboardJsonResult.stdout);
     assert.equal(contextDashboardJson.context.id, "ctx_inventory_project");
+
+    const contextOperatingRoom = await runWm(todayRoot, ["context", "operating-room", "ctx_inventory_project"]);
+    assert.match(contextOperatingRoom.stdout, /Context operating room: Inventory Project/);
+    assert.match(contextOperatingRoom.stdout, /Current facts:/);
+    assert.match(contextOperatingRoom.stdout, /Risks:/);
+
+    const contextOperatingRoomJsonResult = await runWm(todayRoot, [
+      "context",
+      "operating-room",
+      "ctx_inventory_project",
+      "--json"
+    ]);
+    const contextOperatingRoomJson = JSON.parse(contextOperatingRoomJsonResult.stdout);
+    assert.equal(contextOperatingRoomJson.context.id, "ctx_inventory_project");
+    assert.equal(contextOperatingRoomJson.quickActions.some((action) => action.action_id === "capture_context_note"), true);
 
     await writeVaultFile(
       todayRoot,

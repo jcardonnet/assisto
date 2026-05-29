@@ -1811,6 +1811,26 @@ export async function runWorkbenchTests() {
     assert.equal(contextDashboard.followups.some((followup) => followup.id === "fu_ask_jeff"), true);
     assert.equal(contextDashboard.citations.page_paths.includes("memory/contexts/inventory-project.md"), true);
 
+    const contextOperatingRoom = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/contexts/operating-room?id=ctx_inventory_project"
+        })
+      ).body
+    );
+    assert.equal(contextOperatingRoom.context.id, "ctx_inventory_project");
+    assert.equal(contextOperatingRoom.currentState.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(contextOperatingRoom.followupQueue.some((followup) => followup.id === "fu_ask_jeff"), true);
+    assert.equal(contextOperatingRoom.quickActions.some((action) => action.action_id === "capture_context_note"), true);
+    assert.match(contextOperatingRoom.warnings.join("\n"), /derived/);
+
+    const contextOperatingRoomWithoutId = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/contexts/operating-room"
+    });
+    assert.equal(contextOperatingRoomWithoutId.status, 400);
+
     const riskRoot = await makeTempVault("assisto-workbench-entity-risk-route-");
 
     try {
@@ -1905,6 +1925,12 @@ summary_generated_from:
       url: "/api/contexts/dashboard?id=ctx_missing"
     });
     assert.equal(unknownContextDashboard.status, 404);
+
+    const unknownContextOperatingRoom = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/contexts/operating-room?id=ctx_missing"
+    });
+    assert.equal(unknownContextOperatingRoom.status, 404);
 
     const entityAliasPreview = JSON.parse(
       (
