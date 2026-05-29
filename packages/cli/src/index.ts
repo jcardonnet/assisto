@@ -642,26 +642,40 @@ async function commandMode(root: string, args: string[], io: CliIo): Promise<num
   const [mode, ...rest] = args;
 
   if (!mode || mode === "--help" || mode === "-h") {
-    io.stdout("Usage: wm mode <morning|end-day> [--json]\n");
+    io.stdout("Usage: wm mode <morning|end-day|meeting|after-meeting> [id|path] [--json]\n");
     return 0;
   }
 
-  if (mode !== "morning" && mode !== "end-day") {
+  if (mode !== "morning" && mode !== "end-day" && mode !== "meeting" && mode !== "after-meeting") {
+    throw new Error("Usage: wm mode <morning|end-day|meeting|after-meeting> [id|path] [--json]");
+  }
+
+  const json = rest.includes("--json");
+  const positional = rest.filter((arg) => arg !== "--json");
+
+  if ((mode === "meeting" || mode === "after-meeting") && positional.length !== 1) {
+    throw new Error(`Usage: wm mode ${mode} <id|path> [--json]`);
+  }
+
+  if ((mode === "morning" || mode === "end-day") && positional.length > 0) {
     throw new Error("Usage: wm mode <morning|end-day> [--json]");
   }
 
-  if (rest.some((arg) => arg !== "--json")) {
-    throw new Error("Usage: wm mode <morning|end-day> [--json]");
+  if (rest.filter((arg) => arg === "--json").length > 1) {
+    throw new Error("Usage: wm mode <morning|end-day|meeting|after-meeting> [id|path] [--json]");
   }
 
-  const result = await buildWorkdayModeResult(root, mode, { now: io.now });
+  const result = await buildWorkdayModeResult(root, mode, { now: io.now, target: positional[0] });
 
-  if (rest.includes("--json")) {
+  if (json) {
     io.stdout(`${JSON.stringify(result, null, 2)}\n`);
     return 0;
   }
 
   io.stdout(`Workday mode: ${result.title} (${result.generated_at})\n`);
+  if (result.target) {
+    io.stdout(`Target: ${result.target.name}\n`);
+  }
   io.stdout(`${result.summary}\n`);
   io.stdout(`Next queue item: ${result.next_queue_item?.label ?? "none"}\n`);
   io.stdout(`Pinned questions: ${result.pinned_questions.length}\n`);
@@ -1539,7 +1553,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] daily session [--json]",
-      "  wm [--root <path>] mode <morning|end-day> [--json]",
+      "  wm [--root <path>] mode <morning|end-day|meeting|after-meeting> [id|path] [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",

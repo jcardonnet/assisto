@@ -480,6 +480,27 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildWorkdayModeResult(root, "end-day"));
   }
 
+  if (requestUrl.pathname === "/api/modes/meeting" || requestUrl.pathname === "/api/modes/after-meeting") {
+    const target = requestUrl.searchParams.get("id") ?? requestUrl.searchParams.get("target") ?? undefined;
+    const mode = requestUrl.pathname === "/api/modes/meeting" ? "meeting" : "after-meeting";
+
+    if (!target?.trim()) {
+      return jsonRoute(400, { error: `Missing target id for ${mode} mode.` });
+    }
+
+    try {
+      return jsonRoute(200, await buildWorkdayModeResult(root, mode, { target }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (/not found/i.test(message)) {
+        return jsonRoute(404, { error: message });
+      }
+
+      return jsonRoute(400, { error: message });
+    }
+  }
+
   if (requestUrl.pathname === "/api/dogfood/home") {
     return jsonRoute(200, await buildDogfoodHomeResult(root));
   }
@@ -3186,6 +3207,13 @@ function renderDogfoodHome(result, queue, tomorrow, session) {
       <button type="button" class="secondary workday-mode-button" data-mode-route="/api/modes/morning">Morning</button>
       <button type="button" class="secondary workday-mode-button" data-mode-route="/api/modes/end-day">End of day</button>
     </div>
+    <div class="form-grid">
+      <label>Person or Context id/path <input id="workday-mode-target" type="text" placeholder="per_jeff or ctx_inventory_project" /></label>
+      <div class="action-row">
+        <button type="button" class="secondary workday-mode-button" data-mode-route="/api/modes/meeting" data-needs-target="true">Meeting</button>
+        <button type="button" class="secondary workday-mode-button" data-mode-route="/api/modes/after-meeting" data-needs-target="true">After meeting</button>
+      </div>
+    </div>
     <div id="workday-mode-output" class="action-output"></div>
   </section>
   \${todayPendingTransactionsHtml(result.pending_transactions)}
@@ -3211,7 +3239,12 @@ function bindWorkdayModes() {
       output.innerHTML = "<pre>Loading</pre>";
 
       try {
-        output.innerHTML = renderWorkdayMode(await fetchJson(button.dataset.modeRoute));
+        const targetInput = document.querySelector("#workday-mode-target");
+        const target = targetInput?.value?.trim() ?? "";
+        const route = button.dataset.needsTarget === "true"
+          ? button.dataset.modeRoute + "?id=" + encodeURIComponent(target)
+          : button.dataset.modeRoute;
+        output.innerHTML = renderWorkdayMode(await fetchJson(route));
       } catch (error) {
         output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
       }
@@ -3222,10 +3255,14 @@ function bindWorkdayModes() {
 function renderWorkdayMode(result) {
   return \`<article class="item">
     <h3>\${escapeHtml(result.title)}</h3>
+    \${result.target ? \`<p class="meta">Target: \${escapeHtml(result.target.name)}</p>\` : ""}
     <p class="meta">\${escapeHtml(result.summary)}</p>
     <p class="meta">Next queue item: \${escapeHtml(result.next_queue_item?.label ?? "none")}</p>
     <p class="meta">Pinned questions: \${escapeHtml(result.pinned_questions.length)} · open follow-ups: \${escapeHtml(result.open_followups.length)} · logged misses: \${escapeHtml(result.logged_misses.length)}</p>
     \${plainListHtml("Suggested captures", result.suggested_captures ?? [])}
+    \${plainListHtml("Missing-memory prompts", result.missing_memory_prompts ?? [])}
+    \${plainListHtml("After-meeting prompts", result.after_meeting_prompts ?? [])}
+    \${plainListHtml("Follow-up checks", result.suggested_followup_checks ?? [])}
     <p class="meta">\${escapeHtml(result.disclaimer)}</p>
   </article>\`;
 }

@@ -745,6 +745,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /\/api\/daily\/queue/);
     assert.match(client.body, /\/api\/daily\/session/);
     assert.match(client.body, /\/api\/modes\/morning/);
+    assert.match(client.body, /\/api\/modes\/meeting/);
     assert.match(client.body, /renderActivationWizard/);
     assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
@@ -996,6 +997,22 @@ export async function runWorkbenchTests() {
     assert.equal(endDayMode.mode, "end-day");
     assert.equal(endDayMode.recent_changes.some((change) => change.id === "ev_2026_05_21_003"), true);
     assert.equal(endDayMode.unresolved_transactions.length, 4);
+
+    const meetingMode = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/modes/meeting?id=per_jeff" })).body
+    );
+    assert.equal(meetingMode.mode, "meeting");
+    assert.equal(meetingMode.target.id, "per_jeff");
+    assert.match(meetingMode.brief.contextPack, /# Session brief: Jeff/);
+
+    const afterMeetingMode = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/modes/after-meeting?id=ctx_inventory_project" })).body
+    );
+    assert.equal(afterMeetingMode.mode, "after-meeting");
+    assert.equal(afterMeetingMode.target.id, "ctx_inventory_project");
+
+    const unknownMeeting = await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/modes/meeting?id=missing" });
+    assert.equal(unknownMeeting.status, 404);
 
     const captureInbox = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/capture/inbox" })).body);
     assert.equal(captureInbox.recent_events[0].event_id, "ev_2026_05_21_003");
