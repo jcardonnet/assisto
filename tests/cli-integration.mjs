@@ -409,7 +409,23 @@ export async function runCliIntegrationTests() {
     assert.equal(Array.isArray(answerBasis.missingInformation), true);
     assert.equal(Array.isArray(answerBasis.manualActions), true);
     assert.equal(Array.isArray(answerBasis.suggestedNextQuestions), true);
+    assert.equal(Array.isArray(answerBasis.directAnswers), true);
+    assert.equal(typeof answerBasis.citationMap.claims, "object");
     assert.match(answerBasis.contextPack, /# Context pack/);
+
+    const answerContractResult = await runWm(askRoot, [
+      "ask",
+      "--answer-contract",
+      "How should I explain Joe and Mike the difference between Solr and Qdrant?"
+    ]);
+    const answerContract = JSON.parse(answerContractResult.stdout);
+    assert.equal(Array.isArray(answerContract.directAnswers), true);
+    assert.equal(Array.isArray(answerContract.cannotConfirm), true);
+    assert.equal(Array.isArray(answerContract.conflicts), true);
+    assert.equal(Array.isArray(answerContract.staleSignals), true);
+    assert.equal(Array.isArray(answerContract.repairActions), true);
+    assert.equal(typeof answerContract.citationMap.events, "object");
+    assert.match(answerContract.contextPack, /# Context pack/);
 
     const oldOpenAiKey = process.env.OPENAI_API_KEY;
     const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;

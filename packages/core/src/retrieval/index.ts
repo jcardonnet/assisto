@@ -49,6 +49,12 @@ export interface ContextPackResult {
   supportingClaims: PackedClaim[];
   activeClaims: PackedClaim[];
   uncertainClaims: PackedClaim[];
+  directAnswers: CitedDirectAnswer[];
+  cannotConfirm: AnswerCannotConfirm[];
+  conflicts: AnswerConflict[];
+  staleSignals: AnswerStaleSignal[];
+  citationMap: AnswerCitationMap;
+  repairActions: RetrievalManualAction[];
   linkedItems: PackedLinkedItem[];
   linkedReviewItems: PackedLinkedItem[];
   linkedFollowUps: PackedLinkedItem[];
@@ -60,6 +66,7 @@ export interface ContextPackResult {
 }
 
 export type AnswerBasisResult = ContextPackResult;
+export type CitedAnswerContract = AnswerBasisResult;
 
 export interface AnswerDraftProviderInput {
   question: string;
@@ -190,6 +197,10 @@ export interface PackedClaim {
   scope_state: string;
   evidence: string[];
   evidence_strength?: string;
+  recorded_at?: string | null;
+  observed_at?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
   why_included: string;
   uncertainty_markers: string[];
 }
@@ -231,6 +242,83 @@ export interface PackedEvidenceEvent {
 export interface PackedMissingInformation {
   code: "no_match" | "no_active_claims" | "missing_evidence_events";
   message: string;
+}
+
+export interface AnswerCitationSet {
+  claim_ids: string[];
+  event_ids: string[];
+  page_paths: string[];
+}
+
+export interface CitedDirectAnswer {
+  answer_id: string;
+  answer: string;
+  claim_id: string;
+  page_path: string;
+  statement: string;
+  claim_kind: string;
+  scope: string | null;
+  scope_state: string;
+  basis: "active_claim";
+  why_included: string;
+  citations: AnswerCitationSet;
+}
+
+export interface AnswerCannotConfirm {
+  code: PackedMissingInformation["code"] | "retrieval_warning";
+  message: string;
+  citations: AnswerCitationSet;
+}
+
+export interface AnswerConflict {
+  code: "uncertain_claim";
+  claim_id: string;
+  page_path: string;
+  statement: string;
+  claim_state: string;
+  scope_state: string;
+  evidence: string[];
+  message: string;
+  citations: AnswerCitationSet;
+}
+
+export interface AnswerStaleSignal {
+  code: "superseded_claim" | "rejected_claim" | "ended_claim";
+  claim_id: string;
+  page_path: string;
+  statement: string;
+  claim_state: string;
+  valid_to?: string | null;
+  message: string;
+  citations: AnswerCitationSet;
+}
+
+export interface AnswerCitationMap {
+  claims: Record<string, AnswerClaimCitation>;
+  events: Record<string, AnswerEventCitation>;
+  pages: Record<string, AnswerPageCitation>;
+}
+
+export interface AnswerClaimCitation {
+  claim_id: string;
+  page_path: string;
+  statement: string;
+  claim_state: string;
+  evidence: string[];
+}
+
+export interface AnswerEventCitation {
+  event_id: string;
+  path: string;
+  recorded_at?: string;
+  observed_at?: string;
+}
+
+export interface AnswerPageCitation {
+  path: string;
+  id?: string;
+  type?: string;
+  name: string;
 }
 
 const stopWords = new Set([
@@ -319,6 +407,12 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
   const plannedLookups = buildPlannedLookups(query, queryIntent, targets, pages, reviewItems, events);
   const manualActions = buildManualActions(queryIntent, matchedPages, linkedReviewItems, linkedFollowUps, uncertainClaims, missingInformation, evidenceEvents);
   const suggestedNextQuestions = buildSuggestedNextQuestions(queryIntent, matchedPages, answerCandidates, linkedReviewItems, linkedFollowUps, missingInformation);
+  const directAnswers = buildDirectAnswers(answerCandidates);
+  const cannotConfirm = buildCannotConfirm(missingInformation, warnings);
+  const conflicts = buildAnswerConflicts(uncertainClaims);
+  const staleSignals = buildStaleSignals(uncertainClaims);
+  const citationMap = buildAnswerCitationMap(matchedPages, supportingClaims, uncertainClaims, evidenceEvents);
+  const repairActions = manualActions;
   const contextPack = packContextForAnswer(query, pages, reviewItems, events, {
     queryIntent,
     plannedLookups,
@@ -328,6 +422,12 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     supportingClaims,
     activeClaims,
     uncertainClaims,
+    directAnswers,
+    cannotConfirm,
+    conflicts,
+    staleSignals,
+    citationMap,
+    repairActions,
     linkedItems,
     linkedReviewItems,
     linkedFollowUps,
@@ -352,6 +452,12 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
     supportingClaims,
     activeClaims,
     uncertainClaims,
+    directAnswers,
+    cannotConfirm,
+    conflicts,
+    staleSignals,
+    citationMap,
+    repairActions,
     linkedItems,
     linkedReviewItems,
     linkedFollowUps,
@@ -364,6 +470,10 @@ export async function retrieveContextForAnswer(root: string, query: string): Pro
 }
 
 export async function retrieveAnswerBasis(root: string, query: string): Promise<AnswerBasisResult> {
+  return retrieveContextForAnswer(root, query);
+}
+
+export async function retrieveCitedAnswerContract(root: string, query: string): Promise<CitedAnswerContract> {
   return retrieveContextForAnswer(root, query);
 }
 
@@ -1258,6 +1368,12 @@ export function packContextForAnswer(
     supportingClaims?: PackedClaim[];
     activeClaims?: PackedClaim[];
     uncertainClaims?: PackedClaim[];
+    directAnswers?: CitedDirectAnswer[];
+    cannotConfirm?: AnswerCannotConfirm[];
+    conflicts?: AnswerConflict[];
+    staleSignals?: AnswerStaleSignal[];
+    citationMap?: AnswerCitationMap;
+    repairActions?: RetrievalManualAction[];
     linkedItems?: PackedLinkedItem[];
     linkedReviewItems?: PackedLinkedItem[];
     linkedFollowUps?: PackedLinkedItem[];
@@ -1749,6 +1865,10 @@ function toPackedClaim(
     scope_state: stringValue(claim.fields.scope_state) ?? "unknown",
     evidence: stringArrayValue(claim.fields.evidence),
     evidence_strength: stringValue(claim.fields.evidence_strength),
+    recorded_at: nullableStringValue(claim.fields.recorded_at),
+    observed_at: nullableStringValue(claim.fields.observed_at),
+    valid_from: nullableStringValue(claim.fields.valid_from),
+    valid_to: nullableStringValue(claim.fields.valid_to),
     why_included: `claim on retrieved page ${page.path}`,
     uncertainty_markers: markers
   };
@@ -1766,6 +1886,175 @@ function buildAnswerCandidates(supportingClaims: PackedClaim[]): PackedAnswerCan
     basis: "active_claim",
     why_included: claim.why_included
   }));
+}
+
+function buildDirectAnswers(answerCandidates: PackedAnswerCandidate[]): CitedDirectAnswer[] {
+  return answerCandidates.map((candidate) => ({
+    answer_id: `ans_${candidate.claim_id}`,
+    answer: candidate.statement,
+    claim_id: candidate.claim_id,
+    page_path: candidate.page_path,
+    statement: candidate.statement,
+    claim_kind: candidate.claim_kind,
+    scope: candidate.scope,
+    scope_state: candidate.scope_state,
+    basis: candidate.basis,
+    why_included: candidate.why_included,
+    citations: citationSetFor(candidate.claim_id, candidate.page_path, candidate.evidence)
+  }));
+}
+
+function buildCannotConfirm(
+  missingInformation: PackedMissingInformation[],
+  warnings: string[]
+): AnswerCannotConfirm[] {
+  return [
+    ...missingInformation.map((item) => ({
+      code: item.code,
+      message: item.message,
+      citations: emptyCitationSet()
+    })),
+    ...warnings.map((warning) => ({
+      code: "retrieval_warning" as const,
+      message: warning,
+      citations: emptyCitationSet()
+    }))
+  ];
+}
+
+function buildAnswerConflicts(uncertainClaims: PackedClaim[]): AnswerConflict[] {
+  return uncertainClaims.map((claim) => ({
+    code: "uncertain_claim",
+    claim_id: claim.claim_id,
+    page_path: claim.page_path,
+    statement: claim.statement,
+    claim_state: claim.claim_state,
+    scope_state: claim.scope_state,
+    evidence: claim.evidence,
+    message: `Claim ${claim.claim_id} is ${claim.claim_state} with scope_state ${claim.scope_state}; answer should not treat it as confirmed active memory.`,
+    citations: citationSetFor(claim.claim_id, claim.page_path, claim.evidence)
+  }));
+}
+
+function buildStaleSignals(uncertainClaims: PackedClaim[]): AnswerStaleSignal[] {
+  const signals: AnswerStaleSignal[] = [];
+
+  for (const claim of uncertainClaims) {
+    if (claim.claim_state === "superseded") {
+      signals.push(staleSignalForClaim("superseded_claim", claim, `Claim ${claim.claim_id} has been superseded.`));
+    } else if (claim.claim_state === "rejected") {
+      signals.push(staleSignalForClaim("rejected_claim", claim, `Claim ${claim.claim_id} has been rejected.`));
+    } else if (claim.valid_to) {
+      signals.push(
+        staleSignalForClaim("ended_claim", claim, `Claim ${claim.claim_id} has valid_to ${claim.valid_to}.`)
+      );
+    }
+  }
+
+  return signals;
+}
+
+function staleSignalForClaim(
+  code: AnswerStaleSignal["code"],
+  claim: PackedClaim,
+  message: string
+): AnswerStaleSignal {
+  return {
+    code,
+    claim_id: claim.claim_id,
+    page_path: claim.page_path,
+    statement: claim.statement,
+    claim_state: claim.claim_state,
+    valid_to: claim.valid_to,
+    message,
+    citations: citationSetFor(claim.claim_id, claim.page_path, claim.evidence)
+  };
+}
+
+function buildAnswerCitationMap(
+  matchedPages: PackedPageSummary[],
+  supportingClaims: PackedClaim[],
+  uncertainClaims: PackedClaim[],
+  evidenceEvents: PackedEvidenceEvent[]
+): AnswerCitationMap {
+  const claims: Record<string, AnswerClaimCitation> = {};
+  const events: Record<string, AnswerEventCitation> = {};
+  const pages: Record<string, AnswerPageCitation> = {};
+
+  for (const claim of [...supportingClaims, ...uncertainClaims]) {
+    claims[claim.claim_id] = {
+      claim_id: claim.claim_id,
+      page_path: claim.page_path,
+      statement: claim.statement,
+      claim_state: claim.claim_state,
+      evidence: claim.evidence
+    };
+  }
+
+  for (const event of evidenceEvents) {
+    if (!event.id) {
+      continue;
+    }
+
+    events[event.id] = {
+      event_id: event.id,
+      path: event.path,
+      recorded_at: event.recorded_at,
+      observed_at: event.observed_at
+    };
+  }
+
+  for (const eventId of [...supportingClaims, ...uncertainClaims].flatMap((claim) => claim.evidence)) {
+    events[eventId] ??= {
+      event_id: eventId,
+      path: eventPathFromId(eventId) ?? eventId
+    };
+  }
+
+  for (const page of matchedPages) {
+    pages[page.path] = {
+      path: page.path,
+      id: page.id,
+      type: page.type,
+      name: page.name
+    };
+  }
+
+  for (const claim of [...supportingClaims, ...uncertainClaims]) {
+    pages[claim.page_path] ??= {
+      path: claim.page_path,
+      name: displayNameFromPath(claim.page_path)
+    };
+  }
+
+  return { claims, events, pages };
+}
+
+function citationSetFor(claimId: string, pagePath: string, evidence: string[]): AnswerCitationSet {
+  return {
+    claim_ids: uniqueSorted([claimId]),
+    event_ids: uniqueSorted(evidence),
+    page_paths: uniqueSorted([pagePath])
+  };
+}
+
+function emptyCitationSet(): AnswerCitationSet {
+  return {
+    claim_ids: [],
+    event_ids: [],
+    page_paths: []
+  };
+}
+
+function eventPathFromId(eventId: string): string | null {
+  const match = /^ev_(\d{4})_(\d{2})_(\d{2})_(\d{3})$/.exec(eventId);
+
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, sequence] = match;
+  return `memory/events/${year}/${year}-${month}/${year}-${month}-${day}-${sequence}.md`;
 }
 
 function summarizeMissingInformation(
@@ -2097,6 +2386,10 @@ function uniqueSorted(values: string[]): string[] {
 
 function stringValue(value: FrontmatterValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function nullableStringValue(value: FrontmatterValue | undefined): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 function frontmatterText(frontmatter: Frontmatter): string {

@@ -60,7 +60,7 @@ import {
 } from "../../core/src/extraction";
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
-import { previewAnswerDraft, retrieveContextForAnswer } from "../../core/src/retrieval";
+import { previewAnswerDraft, retrieveCitedAnswerContract, retrieveContextForAnswer } from "../../core/src/retrieval";
 import { startWorkbenchServer } from "@assisto/workbench";
 
 export interface CliIo {
@@ -1120,20 +1120,30 @@ async function commandEvents(root: string, args: string[], io: CliIo): Promise<n
 async function commandAsk(root: string, args: string[], io: CliIo): Promise<number> {
   const packContextQuestion = optionValue(args, "--pack-context");
   const answerBasisQuestion = optionValue(args, "--answer-basis");
+  const answerContractQuestion = optionValue(args, "--answer-contract");
   const draftQuestion = optionValue(args, "--draft");
 
-  if ([packContextQuestion, answerBasisQuestion, draftQuestion].filter(Boolean).length > 1) {
-    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --draft "<question>"');
+  if ([packContextQuestion, answerBasisQuestion, answerContractQuestion, draftQuestion].filter(Boolean).length > 1) {
+    throw new Error(
+      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --draft "<question>"'
+    );
   }
 
-  const question = packContextQuestion ?? answerBasisQuestion ?? draftQuestion;
+  const question = packContextQuestion ?? answerBasisQuestion ?? answerContractQuestion ?? draftQuestion;
 
   if (!question) {
-    throw new Error('Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --draft "<question>"');
+    throw new Error(
+      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --draft "<question>"'
+    );
   }
 
   if (draftQuestion) {
     io.stdout(`${JSON.stringify(await previewAnswerDraft(root, question), null, 2)}\n`);
+    return 0;
+  }
+
+  if (answerContractQuestion) {
+    io.stdout(`${JSON.stringify(await retrieveCitedAnswerContract(root, question), null, 2)}\n`);
     return 0;
   }
 
@@ -1723,6 +1733,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
       '  wm [--root <path>] ask --answer-basis "<question>"',
+      '  wm [--root <path>] ask --answer-contract "<question>"',
       '  wm [--root <path>] ask --draft "<question>"',
       "  wm [--root <path>] health check [--stage-review] [--note <text>]",
       "  wm [--root <path>] brief <today|person|context|review|followups|recent> [id|path]",

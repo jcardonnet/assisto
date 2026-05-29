@@ -358,6 +358,25 @@ export async function runCoreRetrievalTests() {
     assert.match(fullResult.contextPack, /What memory can say/);
     assert.match(fullResult.contextPack, /What memory cannot confirm/);
     assert.match(fullResult.contextPack, /Suggested manual actions/);
+    assert.equal(
+      fullResult.directAnswers.some(
+        (answer) =>
+          answer.claim_id === "clm_joe_search" &&
+          answer.citations.claim_ids.includes("clm_joe_search") &&
+          answer.citations.event_ids.includes("ev_2026_05_21_001") &&
+          answer.citations.page_paths.includes("memory/people/joe.md")
+      ),
+      true
+    );
+    assert.equal(fullResult.citationMap.claims.clm_joe_search.page_path, "memory/people/joe.md");
+    assert.equal(fullResult.citationMap.events.ev_2026_05_21_001.path, "memory/events/2026/2026-05/2026-05-21-001.md");
+    assert.equal(fullResult.citationMap.pages["memory/people/joe.md"].name, "joe");
+    assert.equal(fullResult.conflicts.some((conflict) => conflict.claim_id === "clm_qdrant_vector_db"), true);
+    assert.equal(fullResult.repairActions.some((action) => action.action === "inspect_entity"), true);
+
+    const contract = await retrieval.retrieveCitedAnswerContract(root, "Who is my manager?");
+    assert.equal(contract.directAnswers.some((answer) => answer.claim_id === "clm_mike_manager"), true);
+    assert.equal(contract.citationMap.claims.clm_mike_manager.evidence.includes("ev_2026_05_21_002"), true);
 
     const managerResult = await retrieval.retrieveContextForAnswer(root, "Who is my manager?");
     assert.equal(managerResult.queryIntent.primary, "manager_reporting");
@@ -426,6 +445,9 @@ export async function runCoreRetrievalTests() {
     assert.deepEqual(noMatch.matchedPages, []);
     assert.deepEqual(noMatch.answerCandidates, []);
     assert.equal(noMatch.missingInformation.some((item) => item.code === "no_match"), true);
+    assert.equal(noMatch.directAnswers.length, 0);
+    assert.equal(noMatch.cannotConfirm.some((item) => item.code === "no_match"), true);
+    assert.equal(noMatch.repairActions.some((action) => action.action === "capture_note"), true);
     assert.equal(noMatch.manualActions.some((action) => action.action === "capture_note"), true);
     assert.equal(noMatch.manualActions.some((action) => action.action === "log_friction"), true);
     assert.equal(noMatch.warnings.some((warning) => /No named/.test(warning)), true);
