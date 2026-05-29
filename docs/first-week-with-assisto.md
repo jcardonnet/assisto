@@ -77,6 +77,8 @@ For pasted batches, split units with a line containing only `---`. Duplicate raw
 
 In the Workbench Import tab, use triage before create when a batch is messy. Triage lets you split, merge, skip, set observed dates, set source labels, and assign Context per unit. The preview shows duplicate groups, likely safe/staged/conflict counts, estimated review load, and per-unit extraction summaries so you can tell how much review you are creating before writing anything. Kept units still create one Event plus one pending Transaction each. Skipped and duplicate units do not write Events.
 
+Use the Import Assistant before each batch. It starts with an "import 10 curated notes" recipe, then uses local triage sessions to show duplicate groups, review-load forecast, likely safe/staged/conflict counts, and the suggested next batch size. From the CLI, `wm import assistant` prints the same derived guidance.
+
 Import triage previews are stored as local sessions under `.assisto-local/import-sessions/` so you can reload the same derived triage view while using the Workbench. `.assisto-local/**` is not canonical memory and can be deleted without corrupting `memory/`.
 
 ## Ask cited questions

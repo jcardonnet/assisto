@@ -14,6 +14,9 @@ test("import tab previews, creates pending transactions, and dedupes by source h
 
     await page.goto(server.url);
     await page.getByRole("button", { name: "Import" }).click();
+    await expect(page.getByRole("heading", { name: "Import assistant" })).toBeVisible();
+    await expect(page.locator("#import-assistant-section .pill")).toHaveText("Import 10 curated notes");
+    await expect(page.getByText("Suggested next batch size")).toBeVisible();
     await page.getByLabel("Batch text").fill("Joe is the DBA. We use MySQL.\n---\nJoe is the DBA. We use MySQL.");
     await page.getByLabel("Source label", { exact: true }).fill("browser import");
 

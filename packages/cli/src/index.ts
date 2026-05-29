@@ -10,6 +10,7 @@ import {
   buildDailyQueueResult,
   buildDogfoodHomeResult,
   buildContextDashboardResult,
+  buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
   createCaptureFeedback,
   buildWorkdayModeResult,
@@ -41,6 +42,7 @@ import {
   validateDocuments,
   validateTransaction,
   type FrontmatterValue,
+  type ImportAssistantResult,
   type ImportNotesResult,
   type ParsedTransaction,
   type ReviewActionState,
@@ -441,9 +443,25 @@ async function commandCaptureFeedback(root: string, args: string[], io: CliIo): 
 async function commandImport(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
   const [subcommand] = args;
 
+  if (subcommand === "assistant") {
+    if (args.some((arg, index) => index > 0 && !["--json"].includes(arg))) {
+      throw new Error("Usage: wm import assistant [--json]");
+    }
+
+    const result = await buildImportAssistantResult(root, { now: io.now });
+
+    if (args.includes("--json")) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    printImportAssistantResult(result, io);
+    return 0;
+  }
+
   if (subcommand !== "notes") {
     throw new Error(
-      'Usage: wm import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]'
+      'Usage: wm import <assistant|notes> [--json] | wm import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]'
     );
   }
 
@@ -1484,6 +1502,42 @@ function printImportResult(result: ImportNotesResult, io: CliIo): void {
   }
 }
 
+function printImportAssistantResult(result: ImportAssistantResult, io: CliIo): void {
+  io.stdout(`Import assistant (${result.generated_at})\n`);
+  io.stdout(`${result.recipe.title}\n`);
+  io.stdout(`Suggested next batch size: ${result.suggested_next_batch_size}\n`);
+  io.stdout(`Local sessions: ${result.session_count}\n`);
+  io.stdout(`Review load: ${result.review_load_forecast.level} (${result.review_load_forecast.message})\n`);
+  io.stdout(`Estimated review minutes: ${result.review_load_forecast.estimated_review_minutes}\n\n`);
+  io.stdout("Likely counts\n");
+  io.stdout(`safe\t${result.likely_counts.safe}\n`);
+  io.stdout(`staged\t${result.likely_counts.staged}\n`);
+  io.stdout(`conflicts\t${result.likely_counts.conflicts}\n`);
+  io.stdout(`duplicates\t${result.likely_counts.duplicates}\n`);
+  io.stdout(`skipped\t${result.likely_counts.skipped}\n`);
+
+  if (result.duplicate_groups.length > 0) {
+    io.stdout("\nDuplicate groups\n");
+    for (const group of result.duplicate_groups) {
+      io.stdout(`- ${group.source_hash.slice(0, 12)}: ${group.unit_ids.join(", ")}\n`);
+    }
+  }
+
+  if (result.suggested_actions.length > 0) {
+    io.stdout("\nSuggested actions\n");
+    for (const action of result.suggested_actions) {
+      io.stdout(`- ${action}\n`);
+    }
+  }
+
+  if (result.warnings.length > 0) {
+    io.stdout("\nWarnings\n");
+    for (const warning of result.warnings) {
+      io.stdout(`- ${warning}\n`);
+    }
+  }
+}
+
 function importValidationPassed(result: ImportNotesResult): boolean {
   return result.units.every((unit) => unit.skipped || unit.validation?.passed === true);
 }
@@ -1648,6 +1702,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
       '  wm [--root <path>] capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]',
+      "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
