@@ -8,6 +8,7 @@ import {
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
+  runPersonalDogfoodEval,
   checkMemoryHealth,
   buildSessionBrief,
   buildTodayWorkbenchResult,
@@ -53,6 +54,7 @@ import {
   type ContextNoteResult,
   type DailyQueueResult,
   type DogfoodHomeResult,
+  type PersonalDogfoodEvalResult,
   type ExtractionProvider,
   type EntityKind,
   type EntityStewardshipPreview,
@@ -466,6 +468,10 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildDogfoodHomeResult(root));
   }
 
+  if (requestUrl.pathname === "/api/dogfood/eval") {
+    return jsonRoute(200, await runPersonalDogfoodEval(root, { questionsPath: optionalQuestionsPath(root, requestUrl) }));
+  }
+
   if (requestUrl.pathname === "/api/activation/status") {
     return jsonRoute(200, await buildActivationStatusResult(root));
   }
@@ -680,6 +686,10 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/friction/log") {
       return jsonRoute(200, await createFrictionLogPreview(root, input, true));
+    }
+
+    if (pathname === "/api/dogfood/eval/run") {
+      return jsonRoute(200, await createDogfoodEvalRun(root, input));
     }
 
     if (pathname === "/api/entities/alias/preview") {
@@ -1150,6 +1160,13 @@ async function createFrictionLogPreview(
   };
 
   return created ? createFrictionLog(root, frictionInput) : previewFrictionLog(root, frictionInput);
+}
+
+async function createDogfoodEvalRun(root: string, input: Record<string, unknown>): Promise<PersonalDogfoodEvalResult> {
+  const questionsPath = optionalStringInput(input, "questionsPath", "questions_path");
+  return runPersonalDogfoodEval(root, {
+    questionsPath: questionsPath ? path.resolve(root, questionsPath) : undefined
+  });
 }
 
 async function createEntityAliasPreview(
@@ -1816,6 +1833,13 @@ function optionalTarget(requestUrl: URL): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function optionalQuestionsPath(root: string, requestUrl: URL): string | undefined {
+  const questionsPath = requestUrl.searchParams.get("questions") ?? requestUrl.searchParams.get("questionsPath");
+  const trimmed = questionsPath?.trim();
+
+  return trimmed ? path.resolve(root, trimmed) : undefined;
+}
+
 function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
   const kind = requestUrl.searchParams.get("kind")?.trim();
 
@@ -2029,6 +2053,7 @@ function workbenchHtml(): string {
       </header>
       <nav class="tabs" aria-label="Workbench">
         <button type="button" data-tab="today" aria-pressed="true">Today</button>
+        <button type="button" data-tab="dogfood-eval" aria-pressed="false">Dogfood Eval</button>
         <button type="button" data-tab="capture" aria-pressed="false">Capture</button>
         <button type="button" data-tab="import" aria-pressed="false">Import</button>
         <button type="button" data-tab="entities" aria-pressed="false">People/Topics/Contexts</button>
@@ -2191,6 +2216,32 @@ h1 {
 .view {
   display: grid;
   gap: 12px;
+}
+
+.metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.metric {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.metric span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.metric strong {
+  color: var(--ink);
+  font-size: 20px;
 }
 
 .activation-wizard {
@@ -2592,6 +2643,7 @@ const quickCaptureForm = document.querySelector("#quick-capture-form");
 let snapshot = null;
 let health = null;
 let dogfoodHome = null;
+let dogfoodEvalResult = null;
 let dailyQueue = null;
 let dailyQueueIndex = 0;
 let activationStatus = null;
@@ -2789,6 +2841,11 @@ function render() {
 
   activationWizard.innerHTML = "";
 
+  if (activeTab === "dogfood-eval") {
+    void renderDogfoodEval();
+    return;
+  }
+
   if (activeTab === "capture") {
     void renderCapture();
     return;
@@ -2857,6 +2914,141 @@ function render() {
   }
 
   renderBriefs();
+}
+
+async function renderDogfoodEval() {
+  if (!dogfoodEvalResult) {
+    view.innerHTML = '<article class="item"><h2>Loading Dogfood Eval</h2><p class="meta">Reading local question set and deterministic answer basis.</p></article>';
+    dogfoodEvalResult = await fetchJson("/api/dogfood/eval");
+
+    if (activeTab !== "dogfood-eval") {
+      return;
+    }
+  }
+
+  renderDogfoodEvalView(dogfoodEvalResult);
+}
+
+function renderDogfoodEvalView(result, message = "") {
+  view.innerHTML = \`<header class="view-header">
+    <div>
+      <p class="eyebrow">Dogfood</p>
+      <h1>Dogfood Eval</h1>
+      <p class="meta">Local questions from \${escapeHtml(result.questions_path)}. Derived only; nothing is saved to memory.</p>
+    </div>
+    <div class="action-row">
+      <button type="button" id="dogfood-eval-run">Run eval</button>
+      <button type="button" class="secondary copy-derived-text" data-copy-target="#dogfood-eval-export">Copy eval report</button>
+    </div>
+  </header>
+  <output id="dogfood-eval-output" class="copy-output" aria-live="polite">\${escapeHtml(message)}</output>
+  <output id="copy-output" class="copy-output" aria-live="polite"></output>
+  \${dogfoodEvalMetricsHtml(result)}
+  \${dogfoodEvalWarningsHtml(result.warnings ?? [])}
+  <section data-dogfood-eval-section="questions">
+    <h2>Questions</h2>
+    \${result.questions.length ? \`<div class="grid">\${result.questions.map(dogfoodEvalQuestionHtml).join("")}</div>\` : '<article class="item"><h3>No local questions</h3><p class="meta">Create .assisto-local/eval/questions.json to score real work questions.</p></article>'}
+  </section>
+  <section data-dogfood-eval-section="export">
+    <h2>Derived export</h2>
+    <pre id="dogfood-eval-export" class="derived-export">\${escapeHtml(dogfoodEvalExportText(result))}</pre>
+  </section>\`;
+
+  document.querySelector("#dogfood-eval-run")?.addEventListener("click", async () => {
+    dogfoodEvalResult = await postJson("/api/dogfood/eval/run", {});
+    renderDogfoodEvalView(dogfoodEvalResult, "Dogfood eval refreshed");
+  });
+  bindCopyControls();
+}
+
+function dogfoodEvalMetricsHtml(result) {
+  const metrics = result.metrics;
+  return \`<section data-dogfood-eval-section="metrics">
+    <h2>Scores</h2>
+    <div class="metrics">
+      \${metricHtml("Questions", metrics.total_questions)}
+      \${metricHtml("Answerability", percentText(metrics.answerability))}
+      \${metricHtml("Citation coverage", percentText(metrics.citation_coverage))}
+      \${metricHtml("Irrelevant inclusions", metrics.irrelevant_inclusion_count)}
+      \${metricHtml("Missing-memory guidance", metrics.missing_memory_guidance_count)}
+      \${metricHtml("Review/follow-up surfacing", metrics.review_followup_surfacing_count)}
+      \${metricHtml("Generated persistence violations", metrics.generated_persistence_violations)}
+    </div>
+  </section>\`;
+}
+
+function dogfoodEvalWarningsHtml(warnings) {
+  return warnings.length
+    ? \`<section data-dogfood-eval-section="warnings"><h2>Warnings</h2>\${plainListHtml("Warnings", warnings)}</section>\`
+    : "";
+}
+
+function dogfoodEvalQuestionHtml(question) {
+  return \`<article class="item dogfood-eval-card">
+    <h3>\${escapeHtml(question.question)}</h3>
+    <p class="pill">\${question.answerable ? "answerable" : "needs memory"}</p>
+    <p class="meta">expected \${question.found_expected_items}/\${question.expected_items}; irrelevant inclusions \${question.irrelevant_inclusion_count}</p>
+    \${question.missing_memory_guidance ? '<p class="meta">missing-memory guidance surfaced</p>' : ""}
+    \${dogfoodEvalFoundHtml("Found claims", question.found_claim_ids)}
+    \${dogfoodEvalFoundHtml("Found Events", question.found_event_ids)}
+    \${dogfoodEvalFoundHtml("Found pages", question.found_page_paths)}
+    \${dogfoodEvalFoundHtml("Found ReviewItems", question.found_review_ids)}
+    \${dogfoodEvalFoundHtml("Found FollowUps", question.found_followup_ids)}
+    \${dogfoodEvalMissingHtml(question)}
+  </article>\`;
+}
+
+function dogfoodEvalFoundHtml(label, items) {
+  return items.length ? plainListHtml(label, items) : "";
+}
+
+function dogfoodEvalMissingHtml(question) {
+  const missing = [
+    ...missingExpected("Missing claims", question.expected_claim_ids, question.found_claim_ids),
+    ...missingExpected("Missing Events", question.expected_event_ids, question.found_event_ids),
+    ...missingExpected("Missing pages", question.expected_page_paths, question.found_page_paths),
+    ...missingExpected("Missing ReviewItems", question.expected_review_ids, question.found_review_ids),
+    ...missingExpected("Missing FollowUps", question.expected_followup_ids, question.found_followup_ids)
+  ];
+
+  return missing.length ? \`<div class="warning-list">\${plainListHtml("Failing expectations", missing)}</div>\` : "";
+}
+
+function metricHtml(label, value) {
+  return \`<article class="metric"><span>\${escapeHtml(label)}</span><strong>\${escapeHtml(String(value))}</strong></article>\`;
+}
+
+function missingExpected(label, expected, found) {
+  const foundSet = new Set(found);
+  return expected.filter((item) => !foundSet.has(item)).map((item) => \`\${label}: \${item}\`);
+}
+
+function dogfoodEvalExportText(result) {
+  const metrics = result.metrics;
+  const lines = [
+    "# Dogfood Eval",
+    \`generated_at: \${result.generated_at}\`,
+    \`questions_path: \${result.questions_path}\`,
+    \`questions: \${metrics.total_questions}\`,
+    \`answerability: \${percentText(metrics.answerability)}\`,
+    \`citation_coverage: \${percentText(metrics.citation_coverage)}\`,
+    \`irrelevant_inclusion_count: \${metrics.irrelevant_inclusion_count}\`,
+    \`missing_memory_guidance_count: \${metrics.missing_memory_guidance_count}\`,
+    \`review_followup_surfacing_count: \${metrics.review_followup_surfacing_count}\`,
+    \`generated_persistence_violations: \${metrics.generated_persistence_violations}\`,
+    "",
+    "## Questions"
+  ];
+
+  for (const question of result.questions) {
+    lines.push(\`- \${question.question}: \${question.found_expected_items}/\${question.expected_items} expected items found\`);
+  }
+
+  return lines.join("\\n");
+}
+
+function percentText(value) {
+  return \`\${Math.round((value ?? 0) * 100)}%\`;
 }
 
 async function renderToday() {

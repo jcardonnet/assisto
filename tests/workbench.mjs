@@ -1350,6 +1350,47 @@ export async function runWorkbenchTests() {
     assert.deepEqual(pinnedAskSession.pinned_questions, ["Who is my manager?"]);
     assert.equal(pinnedAskSession.basis, null);
 
+    await writeVaultFile(
+      root,
+      ".assisto-local/eval/questions.json",
+      JSON.stringify({
+        questions: [
+          {
+            question: "Who is my manager?",
+            expected_claim_ids: ["clm_jeff_manager", "clm_missing_manager"],
+            expected_event_ids: ["ev_2026_05_21_001"],
+            expected_page_paths: ["memory/people/jeff.md"],
+            tags: ["manager"]
+          },
+          {
+            question: "What is the Neptune deploy key?",
+            tags: ["no_match"]
+          }
+        ]
+      })
+    );
+    const dogfoodEval = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/dogfood/eval" })).body
+    );
+    assert.equal(dogfoodEval.metrics.total_questions, 2);
+    assert.equal(dogfoodEval.metrics.expected_items, 4);
+    assert.equal(dogfoodEval.metrics.found_expected_items, 3);
+    assert.equal(dogfoodEval.questions[0].found_claim_ids.includes("clm_jeff_manager"), true);
+    assert.equal(dogfoodEval.questions[0].found_claim_ids.includes("clm_missing_manager"), false);
+    assert.equal(dogfoodEval.questions[1].missing_memory_guidance, true);
+
+    const dogfoodEvalRun = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/dogfood/eval/run",
+          body: JSON.stringify({})
+        })
+      ).body
+    );
+    assert.equal(dogfoodEvalRun.metrics.generated_persistence_violations, 0);
+    assert.equal(dogfoodEvalRun.metrics.missing_memory_guidance_count, 1);
+
     const noMatchAsk = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {
