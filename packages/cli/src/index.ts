@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { writeSync } from "node:fs";
+import { existsSync, writeSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -123,6 +124,10 @@ export async function main(
 
     if (command === "dogfood") {
       return await commandDogfood(parsed.root, rest, io);
+    }
+
+    if (command === "doctor") {
+      return await commandDoctor(parsed.root, rest, io, cwd);
     }
 
     if (command === "friction") {
@@ -593,6 +598,46 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   return 0;
 }
 
+async function commandDoctor(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const [subcommand] = args;
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm doctor memory-data [--json]\n");
+    return 0;
+  }
+
+  if (subcommand !== "memory-data") {
+    throw new Error("Usage: wm doctor memory-data [--json]");
+  }
+
+  const scriptPath = path.join(findRepoRoot(cwd), "scripts", "check-memory-data.mjs");
+  const scriptArgs = [scriptPath, "--base", "origin/main"];
+
+  if (args.includes("--json")) {
+    scriptArgs.push("--json");
+  }
+
+  const result = spawnSync(process.execPath, scriptArgs, {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env }
+  });
+
+  if (result.error !== undefined) {
+    throw result.error;
+  }
+
+  if (result.stdout) {
+    io.stdout(result.stdout);
+  }
+
+  if (result.stderr) {
+    io.stderr(result.stderr);
+  }
+
+  return result.status ?? 1;
+}
+
 async function commandActivate(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand] = args;
 
@@ -969,6 +1014,24 @@ function parseGlobalArgs(argv: string[], cwd: string): ParsedArgs {
   return { root, args };
 }
 
+function findRepoRoot(start: string): string {
+  let current = path.resolve(start);
+
+  while (true) {
+    if (existsSync(path.join(current, "scripts", "check-memory-data.mjs"))) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+
+    if (parent === current) {
+      throw new Error("Could not find scripts/check-memory-data.mjs. Run wm doctor memory-data from the Assisto repo.");
+    }
+
+    current = parent;
+  }
+}
+
 function optionValue(args: string[], name: string): string | null {
   const index = args.indexOf(name);
 
@@ -1317,6 +1380,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] daily queue [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] dogfood status [--json]",
+      "  wm [--root <path>] doctor memory-data [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',
       "  wm [--root <path>] review show <id|path>",

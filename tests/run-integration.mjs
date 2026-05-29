@@ -16,6 +16,7 @@ import { runPiExtensionTests } from "./pi-extension.mjs";
 import { runWorkbenchTests } from "./workbench.mjs";
 import { runScenarioFactoryTests } from "./scenario-factory.mjs";
 import { runScriptHelperTests } from "./script-helpers.mjs";
+import { runCheckMemoryDataTests } from "./check-memory-data.mjs";
 import { runAgentControlTests } from "./agent-control.mjs";
 import { runAgentPolicyTests } from "./agent-policy.mjs";
 import { runAgentRunnerTests } from "./agent-runner.mjs";
@@ -43,6 +44,7 @@ export async function runIntegrationTests() {
   await runWorkbenchTests();
   await runScenarioFactoryTests();
   await runScriptHelperTests();
+  await runCheckMemoryDataTests();
   await runAgentControlTests();
   await runAgentPolicyTests();
   await runAgentRunnerTests();

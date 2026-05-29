@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,26 @@ async function makeTempVault() {
   const root = await mkdtemp(path.join(os.tmpdir(), "assisto-cli-"));
   await mkdir(path.join(root, "memory", "transactions", "pending"), { recursive: true });
   return root;
+}
+
+function runGit(root, args) {
+  const result = spawnSync("git", args, {
+    cwd: root,
+    encoding: "utf8"
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  assert.equal(result.status, 0, result.stderr);
+}
+
+function initGitRepo(root) {
+  runGit(root, ["init"]);
+  runGit(root, ["branch", "-M", "main"]);
+  runGit(root, ["config", "user.email", "tests@example.test"]);
+  runGit(root, ["config", "user.name", "Assisto Tests"]);
 }
 
 async function runWm(root, args, ioOverrides = {}) {
@@ -67,8 +88,31 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /activate status/);
   assert.match(help.stdout, /seed kit/);
   assert.match(help.stdout, /daily queue/);
+  assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
+
+  const doctorRoot = await makeTempVault();
+
+  try {
+    initGitRepo(doctorRoot);
+    await writeVaultFile(
+      doctorRoot,
+      "memory/events/2026/2026-05/2026-05-20-003.md",
+      "# Dogfood event\n"
+    );
+
+    const doctorResult = await runWm(doctorRoot, ["doctor", "memory-data", "--json"]);
+    const doctorJson = JSON.parse(doctorResult.stdout);
+
+    assert.deepEqual(doctorJson.changed, []);
+    assert.deepEqual(doctorJson.untracked_user_memory_paths, [
+      "memory/events/2026/2026-05/2026-05-20-003.md"
+    ]);
+    assert.equal(doctorJson.has_untracked_user_memory, true);
+  } finally {
+    await rm(doctorRoot, { recursive: true, force: true });
+  }
 
   const txRoot = await makeTempVault();
 
