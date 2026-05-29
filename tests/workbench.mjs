@@ -1432,8 +1432,23 @@ export async function runWorkbenchTests() {
     assert.equal(ask.manualActions.some((action) => action.action === "open_followups"), true);
     assert.equal(ask.suggestedNextQuestions.some((question) => /source Event supports/i.test(question)), true);
     assert.equal(ask.matchedPages.some((page) => page.path === "memory/people/jeff.md"), true);
+    assert.equal(ask.directAnswers.some((answer) => answer.claim_id === "clm_jeff_manager"), true);
+    assert.equal(ask.citationMap.claims.clm_jeff_manager.evidence.includes("ev_2026_05_21_001"), true);
     assert.match(ask.contextPack, /clm_jeff_manager/);
     assert.match(ask.contextPack, /ev_2026_05_21_001/);
+
+    const answerContract = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/ask/answer-contract?q=Who%20is%20my%20manager%3F"
+        })
+      ).body
+    );
+    assert.equal(answerContract.query, "Who is my manager?");
+    assert.equal(answerContract.directAnswers.some((answer) => answer.claim_id === "clm_jeff_manager"), true);
+    assert.equal(answerContract.citationMap.events.ev_2026_05_21_001.path, "memory/events/2026/2026-05/2026-05-21-001.md");
+    assert.equal(answerContract.repairActions.some((action) => action.action === "open_followups"), true);
 
     const askSession = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask/session?q=Who%20is%20my%20manager%3F" }))

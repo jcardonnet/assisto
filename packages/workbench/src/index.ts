@@ -51,6 +51,7 @@ import {
   previewSeedKit,
   updateDailySession,
   previewAnswerDraft,
+  retrieveCitedAnswerContract,
   retrieveContextForAnswer,
   validateTransaction,
   type AnswerDraftResult,
@@ -597,6 +598,13 @@ export async function handleWorkbenchRoute(
     const query = optionalQuery(requestUrl);
     return query
       ? jsonRoute(200, await retrieveContextForAnswer(root, query))
+      : jsonRoute(400, { error: "Missing required query parameter: q." });
+  }
+
+  if (requestUrl.pathname === "/api/ask/answer-contract") {
+    const query = optionalQuery(requestUrl);
+    return query
+      ? jsonRoute(200, await retrieveCitedAnswerContract(root, query))
       : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
