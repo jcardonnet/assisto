@@ -113,6 +113,16 @@ summary_generated_from:
     await expect(page.locator("#entity-action-output").getByText("memory/people/jeff.md")).toBeVisible();
     assert.deepEqual(await pendingTransactionFiles(root), afterAliasPendingTransactions);
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
+
+    await roleRepairForm.getByPlaceholder("Jeff is the platform DBA.").fill("Jeff is the platform DBA.");
+    await roleRepairForm.getByPlaceholder("Optional Context id or path").fill("ctx_inventory_project");
+    await roleRepairForm.getByPlaceholder("Optional claim_id to supersede").fill("");
+    await roleRepairForm.getByRole("button", { name: "Stage role" }).click();
+
+    await expect(page.getByRole("heading", { name: "Pending transaction created" })).toBeVisible();
+    await expect(page.locator("#entity-action-output .pill", { hasText: "stage entity role" })).toBeVisible();
+    assert.notDeepEqual(await pendingTransactionFiles(root), afterAliasPendingTransactions);
+    assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforePersonPage);
   } finally {
     await server?.close();
     await rm(root, { recursive: true, force: true });

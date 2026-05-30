@@ -82,3 +82,6 @@ jobs:
 
       - name: Answers eval
         run: pnpm eval:answers
+
+      - name: v8 eval
+        run: pnpm eval:v8

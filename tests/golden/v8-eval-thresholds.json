@@ -1,0 +1,16 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "generatedPersistenceViolationsMax": 0,
+  "autonomousMergesMax": 0,
+  "autonomousSupersessionsMax": 0,
+  "eventRawTextRewritesMax": 0,
+  "unsupportedAnswerCountMax": 0,
+  "citationCoverageMin": 1,
+  "answerContractFlowMin": 1,
+  "askRepairPreviewFlowMin": 1,
+  "entityRiskLaneFlowMin": 1,
+  "entityRepairStagingFlowMin": 1,
+  "contextOperatingRoomFlowMin": 1,
+  "contextTimelineFlowMin": 1,
+  "docsCoverageMin": 1
+}
