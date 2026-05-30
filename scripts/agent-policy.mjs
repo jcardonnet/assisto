@@ -117,6 +117,8 @@ export function buildValidationPlan({
           "eval:v6",
           "eval:dogfood-local",
           "eval:v7",
+          "eval:answers",
+          "eval:v8",
           "check:memory-data"
         ]
       : [
@@ -130,6 +132,8 @@ export function buildValidationPlan({
           "eval:v6",
           "eval:dogfood-local",
           "eval:v7",
+          "eval:answers",
+          "eval:v8",
           "test:browser",
           "check:memory-data"
         ];
@@ -150,6 +154,8 @@ export function buildValidationPlan({
         "eval:v6",
         "eval:dogfood-local",
         "eval:v7",
+        "eval:answers",
+        "eval:v8",
         "check:memory-data"
       ].map((name) => command(name, "Eval/test harness changes require the full eval chain."))
     );
@@ -165,6 +171,8 @@ export function buildValidationPlan({
         "eval:v6",
         "eval:dogfood-local",
         "eval:v7",
+        "eval:answers",
+        "eval:v8",
         "check:memory-data"
       ].map((name) => command(name, "Workbench/browser changes require UI and recent eval coverage."))
     );
@@ -182,6 +190,8 @@ export function buildValidationPlan({
         "eval:v6",
         "eval:dogfood-local",
         "eval:v7",
+        "eval:answers",
+        "eval:v8",
         "check:memory-data"
       ].map((name) => command(name, "Core/CLI/Pi behavior changes require deterministic eval coverage."))
     );

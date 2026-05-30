@@ -42,6 +42,15 @@ Ask a real question such as:
 
 Use the answer basis and citations. If memory cannot answer, preview a missing-memory action or log a retrieval miss. Miss logging creates an Event plus pending NOOP Transaction.
 
+Follow the Ask -> Entity -> Context workflow when the answer points at a person, topic, or project:
+
+1. Open the cited Person, Topic, or Context from the Ask result.
+2. Check stewardship risk lanes for duplicate, alias, role/reporting, stale-claim, and review warnings.
+3. Open the Context operating room or timeline for project questions.
+4. Stage a repair or capture missing evidence only through preview-first actions.
+
+Generated answers and briefs are disposable; they do not become memory unless you separately capture the underlying source note.
+
 ## 35-45 minutes: Import 10 curated notes
 
 Use the Import Assistant before importing:
