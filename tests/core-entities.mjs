@@ -77,6 +77,21 @@ export async function runCoreEntityTests() {
     assert.equal(operatingRoom.citations.event_ids.includes("ev_2026_05_21_003"), true);
     assert.match(operatingRoom.warnings.join("\n"), /derived/);
 
+    const timeline = await entities.buildContextTimelineResult(root, "ctx_inventory_project", {
+      now: "2026-05-24T13:00:00-03:00"
+    });
+
+    assert.equal(timeline.context.id, "ctx_inventory_project");
+    assert.equal(timeline.items.some((item) => item.item_type === "event" && item.event_id === "ev_2026_05_21_003"), true);
+    assert.equal(timeline.items.some((item) => item.item_type === "claim" && item.claim_id === "clm_inventory_decision_mysql"), true);
+    assert.equal(timeline.items.some((item) => item.item_type === "transaction" && item.transaction_id === "tx_inventory_context_risk"), true);
+    assert.equal(timeline.items.some((item) => item.item_type === "review" && item.review_item_id === "rev_inventory_context_risk"), true);
+    assert.equal(timeline.items.some((item) => item.item_type === "followup" && item.followup_id === "fu_ask_jeff"), true);
+    assert.equal(timeline.items.some((item) => item.change_kinds.includes("decision")), true);
+    assert.equal(timeline.items.some((item) => item.change_kinds.includes("ownership")), true);
+    assert.equal(timeline.citations.event_ids.includes("ev_2026_05_21_003"), true);
+    assert.match(timeline.warnings.join("\n"), /No new temporal inference/);
+
     await assert.rejects(
       () => entities.buildContextDashboardResult(root, "per_jeff"),
       /Context dashboard target must be a Context/
@@ -373,6 +388,40 @@ linked_transaction: tx_inventory_context_risk
 # Review rev_inventory_context_risk
 
 Inventory Project has an open question that should be resolved before relying on the dashboard as complete.
+`
+  );
+  await writeVaultFile(
+    root,
+    "memory/transactions/applied/tx_inventory_context_risk.md",
+    `---
+id: tx_inventory_context_risk
+type: transaction
+transaction_state: applied
+created_at: 2026-05-22T11:05:00-03:00
+source_events:
+  - ev_2026_05_21_003
+operations:
+  - UPSERT_CLAIM
+affected_files:
+  - contexts/inventory-project.md
+risk_level: low
+requires_review: false
+validation_errors: []
+---
+
+# Transaction tx_inventory_context_risk
+
+## Intent
+
+Apply Inventory Project context claims.
+
+## Proposed operations
+
+- UPSERT_CLAIM: record Inventory Project decision and open question
+
+## Rollback / repair notes
+
+Use supersession or staged review if this decision changes later.
 `
   );
 }

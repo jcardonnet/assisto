@@ -792,6 +792,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /Context operating room/);
     assert.match(client.body, /\/api\/entities\/stewardship\?kind=/);
     assert.match(client.body, /\/api\/contexts\/operating-room/);
+    assert.match(client.body, /\/api\/contexts\/timeline/);
     assert.match(client.body, /\/api\/entities\/alias\/preview/);
     assert.match(client.body, /\/api\/entities\/context\/preview/);
     assert.match(client.body, /\/api\/entities\/context-note\/preview/);
@@ -1827,6 +1828,20 @@ export async function runWorkbenchTests() {
     assert.equal(contextOperatingRoom.quickActions.some((action) => action.action_id === "capture_context_note"), true);
     assert.match(contextOperatingRoom.warnings.join("\n"), /derived/);
 
+    const contextTimeline = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/contexts/timeline?id=ctx_inventory_project"
+        })
+      ).body
+    );
+    assert.equal(contextTimeline.context.id, "ctx_inventory_project");
+    assert.equal(contextTimeline.items.some((item) => item.item_type === "claim" && item.claim_id === "clm_jeff_manager"), true);
+    assert.equal(contextTimeline.items.some((item) => item.item_type === "event" && item.event_id === "ev_2026_05_21_001"), true);
+    assert.equal(contextTimeline.items.some((item) => item.item_type === "followup" && item.followup_id === "fu_ask_jeff"), true);
+    assert.match(contextTimeline.warnings.join("\n"), /temporal inference/);
+
     const contextOperatingRoomWithoutId = await workbench.handleWorkbenchRoute(root, {
       method: "GET",
       url: "/api/contexts/operating-room"
@@ -1933,6 +1948,12 @@ summary_generated_from:
       url: "/api/contexts/operating-room?id=ctx_missing"
     });
     assert.equal(unknownContextOperatingRoom.status, 404);
+
+    const unknownContextTimeline = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/contexts/timeline?id=ctx_missing"
+    });
+    assert.equal(unknownContextTimeline.status, 404);
 
     const entityAliasPreview = JSON.parse(
       (

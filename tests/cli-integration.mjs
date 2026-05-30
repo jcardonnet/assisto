@@ -93,6 +93,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /mode <morning\|end-day\|meeting\|after-meeting>/);
   assert.match(help.stdout, /context dashboard/);
   assert.match(help.stdout, /context operating-room/);
+  assert.match(help.stdout, /context timeline/);
   assert.match(help.stdout, /entities stewardship/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
@@ -632,6 +633,15 @@ export async function runCliIntegrationTests() {
     const contextOperatingRoomJson = JSON.parse(contextOperatingRoomJsonResult.stdout);
     assert.equal(contextOperatingRoomJson.context.id, "ctx_inventory_project");
     assert.equal(contextOperatingRoomJson.quickActions.some((action) => action.action_id === "capture_context_note"), true);
+
+    const contextTimeline = await runWm(todayRoot, ["context", "timeline", "ctx_inventory_project"]);
+    assert.match(contextTimeline.stdout, /Context timeline: Inventory Project/);
+    assert.match(contextTimeline.stdout, /Timeline items:/);
+
+    const contextTimelineJsonResult = await runWm(todayRoot, ["context", "timeline", "ctx_inventory_project", "--json"]);
+    const contextTimelineJson = JSON.parse(contextTimelineJsonResult.stdout);
+    assert.equal(contextTimelineJson.context.id, "ctx_inventory_project");
+    assert.equal(contextTimelineJson.items.some((item) => item.item_type === "event" && item.event_id === "ev_2026_05_21_001"), true);
 
     await writeVaultFile(
       todayRoot,

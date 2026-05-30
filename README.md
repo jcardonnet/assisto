@@ -346,6 +346,8 @@ wm context dashboard ctx_inventory_project
 wm context dashboard ctx_inventory_project --json
 wm context operating-room ctx_inventory_project
 wm context operating-room ctx_inventory_project --json
+wm context timeline ctx_inventory_project
+wm context timeline ctx_inventory_project --json
 wm entities stewardship --kind person
 wm entities stewardship --kind person --json
 ```

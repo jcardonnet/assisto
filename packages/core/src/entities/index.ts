@@ -9,6 +9,7 @@ import {
 import { listMarkdownFiles, readMarkdownPage, writeMarkdownPageAtomic } from "../fs";
 import {
   createTransactionDraft,
+  parseTransactionMarkdown,
   serializeTransactionMarkdown,
   transactionFilePaths,
   validateTransaction,
@@ -62,6 +63,8 @@ export interface EntityLinkedReviewItem {
   path: string;
   review_state: string;
   review_reason?: string;
+  created_at?: string;
+  updated_at?: string;
   source_events: string[];
   affected_files: string[];
 }
@@ -71,6 +74,9 @@ export interface EntityLinkedFollowUp {
   path: string;
   followup_state: string;
   review_state: string;
+  created_at?: string;
+  updated_at?: string;
+  due_at?: string;
   source_events: string[];
   related: string[];
 }
@@ -173,6 +179,35 @@ export interface ContextOperatingRoomAction {
   label: string;
   kind: "capture" | "review" | "brief" | "health";
   target?: string;
+}
+
+export interface ContextTimelineResult {
+  generated_at: string;
+  context: ContextDashboardResult["context"];
+  items: ContextTimelineItem[];
+  citations: ContextDashboardCitations;
+  warnings: string[];
+}
+
+export interface ContextTimelineItem {
+  item_id: string;
+  item_type: "claim" | "event" | "transaction" | "review" | "followup";
+  occurred_at: string | null;
+  time_basis: "recorded_at" | "observed_at" | "valid_from" | "valid_to" | "created_at" | "unknown";
+  title: string;
+  path?: string;
+  state?: string;
+  source_events: string[];
+  claim_ids: string[];
+  change_kinds: string[];
+  event_id?: string;
+  claim_id?: string;
+  transaction_id?: string;
+  review_item_id?: string;
+  followup_id?: string;
+  operations?: string[];
+  affected_files?: string[];
+  temporal_fields?: Record<string, string | null>;
 }
 
 export interface EntityDetailResult extends EntitySummary {
@@ -496,6 +531,53 @@ export async function buildContextOperatingRoomResult(
     warnings: [
       "Context operating room is a derived view; no canonical memory files were written.",
       "Durable changes must route through capture or pending Transactions."
+    ]
+  };
+}
+
+export async function buildContextTimelineResult(
+  root: string,
+  idOrPath: string,
+  options: EntityStewardshipOptions = {}
+): Promise<ContextTimelineResult> {
+  const generatedAt = options.now ?? new Date().toISOString();
+  const index = await loadIndexOrEmpty(root);
+  const path = resolveEntityPath(index, idOrPath);
+
+  if (!path) {
+    throw new Error(`Entity not found: ${idOrPath}`);
+  }
+
+  const contextPage = await loadEntityPage(root, path);
+
+  if (stringValue(contextPage.frontmatter.type) !== "context") {
+    throw new Error(`Context timeline target must be a Context: ${idOrPath}`);
+  }
+
+  const dashboard = await buildContextDashboardResult(root, idOrPath, { ...options, now: generatedAt });
+  const claims = await claimsScopedToContext(root, contextPage);
+  const eventIds = new Set([
+    ...dashboard.citations.event_ids,
+    ...claims.flatMap((claim) => claim.evidence)
+  ]);
+  const events = await evidenceEvents(root, eventIds);
+  const transactions = await contextTimelineTransactions(root, contextPage, eventIds);
+  const items = [
+    ...claims.map(claimTimelineItem),
+    ...events.map(eventTimelineItem),
+    ...transactions.map(transactionTimelineItem),
+    ...dashboard.review_items.map(reviewTimelineItem),
+    ...dashboard.followups.map(followupTimelineItem)
+  ].sort(compareTimelineItems);
+
+  return {
+    generated_at: generatedAt,
+    context: dashboard.context,
+    items,
+    citations: contextTimelineCitations(dashboard, items),
+    warnings: [
+      "Context timeline is derived from markdown; no canonical memory files were written.",
+      "No new temporal inference is performed: recorded_at, observed_at, valid_from, and valid_to retain their source meanings."
     ]
   };
 }
@@ -1493,6 +1575,8 @@ async function linkedReviewItems(root: string, page: LoadedEntityPage): Promise<
       path: file,
       review_state: stringValue(parsed.frontmatter.review_state) ?? "none",
       review_reason: stringValue(parsed.frontmatter.review_reason),
+      created_at: stringValue(parsed.frontmatter.created_at),
+      updated_at: stringValue(parsed.frontmatter.updated_at),
       source_events: stringArrayValue(parsed.frontmatter.source_events),
       affected_files: affected
     });
@@ -1530,6 +1614,9 @@ async function linkedFollowUps(root: string, page: LoadedEntityPage): Promise<En
       path: file,
       followup_state: stringValue(parsed.frontmatter.followup_state) ?? "unknown",
       review_state: stringValue(parsed.frontmatter.review_state) ?? "none",
+      created_at: stringValue(parsed.frontmatter.created_at),
+      updated_at: stringValue(parsed.frontmatter.updated_at),
+      due_at: stringValue(parsed.frontmatter.due_at),
       source_events: stringArrayValue(parsed.frontmatter.source_events),
       related
     });
@@ -1583,6 +1670,222 @@ function staleDashboardClaims(claims: EntityClaimSummary[], now: string): Entity
 
     return typeof claim.valid_to === "string" && claim.valid_to.length > 0 && claim.valid_to <= currentDate;
   });
+}
+
+async function contextTimelineTransactions(
+  root: string,
+  contextPage: LoadedEntityPage,
+  eventIds: Set<string>
+): Promise<ParsedTransaction[]> {
+  const files = uniqueSorted([
+    ...(await listFilesOrEmpty(root, "memory/transactions/*.md")),
+    ...(await listFilesOrEmpty(root, "memory/transactions/**/*.md"))
+  ]);
+  const transactions: ParsedTransaction[] = [];
+
+  for (const file of files) {
+    let transaction: ParsedTransaction;
+
+    try {
+      transaction = parseTransactionMarkdown(await readMarkdownPage(root, file));
+    } catch {
+      continue;
+    }
+
+    if (transactionTouchesContext(transaction, contextPage, eventIds)) {
+      transactions.push(transaction);
+    }
+  }
+
+  return transactions.sort((left, right) => right.created_at.localeCompare(left.created_at) || left.id.localeCompare(right.id));
+}
+
+function transactionTouchesContext(
+  transaction: ParsedTransaction,
+  contextPage: LoadedEntityPage,
+  eventIds: Set<string>
+): boolean {
+  const contextId = stringValue(contextPage.frontmatter.id);
+  const contextPaths = new Set([contextPage.path, stripMemoryPrefix(contextPage.path)]);
+  const normalizedAffected = transaction.affected_files.map((file) => stripMemoryPrefix(normalizePath(file)));
+  const normalizedWrites = transaction.proposed_file_writes.map((write) => stripMemoryPrefix(normalizePath(write.path)));
+
+  return (
+    transaction.source_events.some((eventId) => eventIds.has(eventId)) ||
+    normalizedAffected.some((file) => contextPaths.has(file)) ||
+    normalizedWrites.some((file) => contextPaths.has(file)) ||
+    Boolean(contextId && transaction.intent?.includes(contextId))
+  );
+}
+
+function claimTimelineItem(claim: EntityClaimSummary): ContextTimelineItem {
+  const time = timelineTime([
+    ["valid_to", claim.valid_to],
+    ["observed_at", claim.observed_at],
+    ["recorded_at", claim.recorded_at],
+    ["valid_from", claim.valid_from]
+  ]);
+
+  return {
+    item_id: `claim:${claim.claim_id}`,
+    item_type: "claim",
+    occurred_at: time.occurred_at,
+    time_basis: time.time_basis,
+    title: claim.statement,
+    path: claim.page_path,
+    state: claim.claim_state,
+    source_events: claim.evidence,
+    claim_ids: [claim.claim_id],
+    claim_id: claim.claim_id,
+    change_kinds: claimChangeKinds(claim),
+    temporal_fields: {
+      recorded_at: claim.recorded_at,
+      observed_at: claim.observed_at,
+      valid_from: claim.valid_from,
+      valid_to: claim.valid_to
+    }
+  };
+}
+
+function eventTimelineItem(event: EntityEvidenceEvent): ContextTimelineItem {
+  const time = timelineTime([
+    ["observed_at", event.observed_at ?? null],
+    ["recorded_at", event.recorded_at ?? null]
+  ]);
+
+  return {
+    item_id: `event:${event.id}`,
+    item_type: "event",
+    occurred_at: time.occurred_at,
+    time_basis: time.time_basis,
+    title: `Source Event ${event.id}`,
+    path: event.path,
+    source_events: [event.id],
+    claim_ids: [],
+    event_id: event.id,
+    change_kinds: ["evidence"]
+  };
+}
+
+function transactionTimelineItem(transaction: ParsedTransaction): ContextTimelineItem {
+  return {
+    item_id: `transaction:${transaction.id}`,
+    item_type: "transaction",
+    occurred_at: transaction.created_at,
+    time_basis: "created_at",
+    title: transaction.intent?.trim() || `Transaction ${transaction.id}`,
+    state: transaction.transaction_state,
+    source_events: transaction.source_events,
+    claim_ids: [],
+    transaction_id: transaction.id,
+    operations: transaction.operations.map((operation) => operation.operation),
+    affected_files: transaction.affected_files,
+    change_kinds: transaction.operations.map((operation) => operation.operation.toLowerCase())
+  };
+}
+
+function reviewTimelineItem(item: EntityLinkedReviewItem): ContextTimelineItem {
+  const time = timelineTime([
+    ["created_at", item.created_at ?? null],
+    ["updated_at", item.updated_at ?? null]
+  ]);
+
+  return {
+    item_id: `review:${item.id}`,
+    item_type: "review",
+    occurred_at: time.occurred_at,
+    time_basis: time.time_basis,
+    title: `Review ${item.id}`,
+    path: item.path,
+    state: item.review_state,
+    source_events: item.source_events,
+    claim_ids: [],
+    review_item_id: item.id,
+    affected_files: item.affected_files,
+    change_kinds: [item.review_reason ?? "review"]
+  };
+}
+
+function followupTimelineItem(item: EntityLinkedFollowUp): ContextTimelineItem {
+  const time = timelineTime([
+    ["created_at", item.created_at ?? null],
+    ["due_at", item.due_at ?? null]
+  ]);
+
+  return {
+    item_id: `followup:${item.id}`,
+    item_type: "followup",
+    occurred_at: time.occurred_at,
+    time_basis: time.time_basis === "created_at" ? "created_at" : "unknown",
+    title: `FollowUp ${item.id}`,
+    path: item.path,
+    state: item.followup_state,
+    source_events: item.source_events,
+    claim_ids: [],
+    followup_id: item.id,
+    change_kinds: ["followup"]
+  };
+}
+
+function timelineTime(
+  fields: Array<[ContextTimelineItem["time_basis"] | "updated_at" | "due_at", string | null]>
+): Pick<ContextTimelineItem, "occurred_at" | "time_basis"> {
+  for (const [basis, value] of fields) {
+    if (value) {
+      return {
+        occurred_at: value,
+        time_basis: basis === "updated_at" || basis === "due_at" ? "unknown" : basis
+      };
+    }
+  }
+
+  return { occurred_at: null, time_basis: "unknown" };
+}
+
+function claimChangeKinds(claim: EntityClaimSummary): string[] {
+  const kinds = [
+    matchesDecisionIntent(claim.statement) ? "decision" : "",
+    matchesOpenQuestionIntent(claim.statement) ? "open_question" : "",
+    matchesOwnerIntent(claim.statement) ? "ownership" : "",
+    matchesReportingIntent(claim.statement) ? "reporting" : "",
+    matchesRoleIntent(claim.statement) ? "role" : "",
+    claim.claim_state !== "active" ? claim.claim_state : ""
+  ].filter(Boolean);
+
+  return uniqueSorted(kinds.length > 0 ? kinds : ["claim"]);
+}
+
+function compareTimelineItems(left: ContextTimelineItem, right: ContextTimelineItem): number {
+  const leftTime = left.occurred_at ?? "";
+  const rightTime = right.occurred_at ?? "";
+
+  if (leftTime !== rightTime) {
+    return rightTime.localeCompare(leftTime);
+  }
+
+  return left.item_id.localeCompare(right.item_id);
+}
+
+function contextTimelineCitations(
+  dashboard: ContextDashboardResult,
+  items: ContextTimelineItem[]
+): ContextDashboardCitations {
+  return {
+    claim_ids: uniqueSorted([...dashboard.citations.claim_ids, ...items.flatMap((item) => item.claim_ids)]),
+    event_ids: uniqueSorted([...dashboard.citations.event_ids, ...items.flatMap((item) => item.source_events)]),
+    page_paths: uniqueSorted([
+      ...dashboard.citations.page_paths,
+      ...items.map((item) => item.path).filter((path): path is string => Boolean(path))
+    ]),
+    review_item_ids: uniqueSorted([
+      ...dashboard.citations.review_item_ids,
+      ...items.map((item) => item.review_item_id).filter((id): id is string => Boolean(id))
+    ]),
+    followup_ids: uniqueSorted([
+      ...dashboard.citations.followup_ids,
+      ...items.map((item) => item.followup_id).filter((id): id is string => Boolean(id))
+    ])
+  };
 }
 
 function contextOperatingRoomRisks(result: ContextDashboardResult): ContextOperatingRoomRisk[] {

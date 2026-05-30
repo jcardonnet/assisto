@@ -146,6 +146,8 @@ test("entities tab renders context operating pages and stages context notes", as
     await expect(detailPanel.getByRole("heading", { name: "Owners and roles" })).toBeVisible();
     await expect(detailPanel.getByRole("heading", { name: "Review risks" })).toBeVisible();
     await expect(detailPanel.getByRole("heading", { name: "Source timeline" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Context timeline" })).toBeVisible();
+    await expect(detailPanel.getByText("No new temporal inference")).toBeVisible();
     await expect(detailPanel.getByRole("heading", { name: "Cited briefs" })).toBeVisible();
     await expect(detailPanel.getByRole("heading", { name: "Context operating page" })).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "clm_jeff_manager" }).first()).toBeVisible();
