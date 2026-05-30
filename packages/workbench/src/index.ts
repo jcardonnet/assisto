@@ -7,6 +7,7 @@ import {
   buildActivationStatusResult,
   buildContextDashboardResult,
   buildContextOperatingRoomResult,
+  buildContextTimelineResult,
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
@@ -699,6 +700,22 @@ export async function handleWorkbenchRoute(
 
     try {
       return jsonRoute(200, await buildContextOperatingRoomResult(root, target));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = /^Entity not found:/.test(message) ? 404 : 400;
+      return jsonRoute(status, { error: message });
+    }
+  }
+
+  if (requestUrl.pathname === "/api/contexts/timeline") {
+    const target = optionalTarget(requestUrl);
+
+    if (!target) {
+      return jsonRoute(400, { error: "Missing required query parameter: id." });
+    }
+
+    try {
+      return jsonRoute(200, await buildContextTimelineResult(root, target));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const status = /^Entity not found:/.test(message) ? 404 : 400;
@@ -4669,7 +4686,13 @@ async function loadEntityDetailWithRoom(id) {
 
   if (detail.type === "context") {
     try {
-      detail.contextOperatingRoom = await fetchJson(\`/api/contexts/operating-room?id=\${encodeURIComponent(detail.id ?? detail.path)}\`);
+      const target = detail.id ?? detail.path;
+      const [room, timeline] = await Promise.all([
+        fetchJson(\`/api/contexts/operating-room?id=\${encodeURIComponent(target)}\`),
+        fetchJson(\`/api/contexts/timeline?id=\${encodeURIComponent(target)}\`)
+      ]);
+      detail.contextOperatingRoom = room;
+      detail.contextTimeline = timeline;
     } catch (error) {
       detail.contextOperatingRoomError = error.message;
     }
@@ -4767,6 +4790,7 @@ function entityDetailHtml(detail) {
   </article>
   \${entityRiskCommandCenterHtml(detail)}
   \${contextOperatingRoomHtml(detail.contextOperatingRoom, detail.contextOperatingRoomError)}
+  \${contextTimelineHtml(detail.contextTimeline)}
   \${contextOperatingPageHtml(detail.contextOperatingPage)}
   \${entityClaimSectionHtml("Active claims", detail.activeClaims)}
   \${entityClaimSectionHtml("Staged claims", detail.stagedClaims)}
@@ -4951,6 +4975,34 @@ function contextOperatingRoomHtml(room, errorMessage = "") {
   \${entityListSectionHtml("Review queue", room.reviewQueue ?? [], (item) => \`\${item.id} · \${item.review_reason ?? "review"} · \${item.path}\`)}
   \${entityListSectionHtml("Source timeline", sourceTimeline, (item) => item)}
   <article class="item"><h3>Cited briefs</h3>\${briefActions}</article>\`;
+}
+
+function contextTimelineHtml(timeline) {
+  if (!timeline) {
+    return "";
+  }
+
+  const items = (timeline.items ?? []).slice(0, 24);
+  return \`<article class="item context-timeline">
+    <h3>Context timeline</h3>
+    \${detailListHtml([
+      ["Context", timeline.context?.id ?? timeline.context?.path ?? "unknown"],
+      ["Timeline items", String(timeline.items?.length ?? 0)],
+      ["Event citations", String(timeline.citations?.event_ids?.length ?? 0)],
+      ["Claim citations", String(timeline.citations?.claim_ids?.length ?? 0)]
+    ])}
+    \${plainListHtml("Warnings", timeline.warnings ?? [])}
+  </article>
+  \${entityListSectionHtml("Timeline items", items, contextTimelineItemLine)}\`;
+}
+
+function contextTimelineItemLine(item) {
+  const when = item.occurred_at ?? "unknown time";
+  const citations = [
+    ...(item.claim_ids ?? []),
+    ...(item.source_events ?? [])
+  ].join(", ") || "no citations";
+  return \`\${when} (\${item.time_basis}) · \${item.item_type} · \${item.title} · state: \${item.state ?? "none"} · changes: \${(item.change_kinds ?? []).join(", ") || "none"} · citations: \${citations}\`;
 }
 
 function contextOperatingPageHtml(page) {

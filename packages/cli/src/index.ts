@@ -11,6 +11,7 @@ import {
   buildDogfoodHomeResult,
   buildContextDashboardResult,
   buildContextOperatingRoomResult,
+  buildContextTimelineResult,
   buildEntityStewardshipResult,
   buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
@@ -777,14 +778,14 @@ async function commandMode(root: string, args: string[], io: CliIo): Promise<num
 
 async function commandContext(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand, target, ...rest] = args;
-  const usage = "Usage: wm context <dashboard|operating-room> <id|path> [--json]";
+  const usage = "Usage: wm context <dashboard|operating-room|timeline> <id|path> [--json]";
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     io.stdout(`${usage}\n`);
     return 0;
   }
 
-  if ((subcommand !== "dashboard" && subcommand !== "operating-room") || !target) {
+  if ((subcommand !== "dashboard" && subcommand !== "operating-room" && subcommand !== "timeline") || !target) {
     throw new Error(usage);
   }
 
@@ -814,6 +815,29 @@ async function commandContext(root: string, args: string[], io: CliIo): Promise<
       io.stdout("\nQuick actions\n");
       for (const action of result.quickActions) {
         io.stdout(`- ${action.label}\n`);
+      }
+    }
+
+    return 0;
+  }
+
+  if (subcommand === "timeline") {
+    const result = await buildContextTimelineResult(root, target, { now: io.now });
+
+    if (rest.includes("--json")) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    io.stdout(`Context timeline: ${result.context.name} (${result.generated_at})\n`);
+    io.stdout(`Timeline items: ${result.items.length}\n`);
+    io.stdout(`Claim citations: ${result.citations.claim_ids.length}\n`);
+    io.stdout(`Event citations: ${result.citations.event_ids.length}\n`);
+
+    if (result.items.length > 0) {
+      io.stdout("\nRecent timeline\n");
+      for (const item of result.items.slice(0, 10)) {
+        io.stdout(`- ${item.occurred_at ?? "unknown"}\t${item.item_type}\t${item.title}\n`);
       }
     }
 
@@ -1800,6 +1824,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] mode <morning|end-day|meeting|after-meeting> [id|path] [--json]",
       "  wm [--root <path>] context dashboard <id|path> [--json]",
       "  wm [--root <path>] context operating-room <id|path> [--json]",
+      "  wm [--root <path>] context timeline <id|path> [--json]",
       "  wm [--root <path>] entities stewardship [--kind person|topic|context] [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
