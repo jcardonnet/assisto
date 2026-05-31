@@ -1456,11 +1456,26 @@ export async function runWorkbenchTests() {
     assert.equal(answerContract.citationMap.events.ev_2026_05_21_001.path, "memory/events/2026/2026-05/2026-05-21-001.md");
     assert.equal(answerContract.repairActions.some((action) => action.action === "open_followups"), true);
 
+
+
+    const contractV3 = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/ask/contract-v3?q=Who%20is%20my%20manager%3F"
+        })
+      ).body
+    );
+    assert.equal(contractV3.version, "answer-contract-v3");
+    assert.equal(contractV3.directAnswers.some((answer) => answer.claim_id === "clm_jeff_manager"), true);
+    assert.equal(contractV3.directAnswers.some((answer) => Array.isArray(answer.citations) && answer.citations.some((citation) => citation.kind === "event")), true);
+
     const askSession = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask/session?q=Who%20is%20my%20manager%3F" }))
         .body
     );
     assert.equal(askSession.query, "Who is my manager?");
+    assert.equal(askSession.basis.version, "answer-contract-v3");
     assert.equal(askSession.basis.answerCandidates.some((candidate) => candidate.claim_id === "clm_jeff_manager"), true);
     assert.equal(askSession.citation_explorer.claim_ids.includes("clm_jeff_manager"), true);
     assert.equal(askSession.citation_explorer.event_ids.includes("ev_2026_05_21_001"), true);

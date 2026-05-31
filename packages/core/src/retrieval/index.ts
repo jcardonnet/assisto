@@ -8,6 +8,7 @@ import {
   type ParsedClaimBlockRecord
 } from "../markdown";
 import { loadVaultIndex, type VaultIndex, type VaultIndexEntry } from "../vault";
+import { buildCitedAnswerContractV3, type CitedAnswerContractV3 } from "../answers";
 
 export type RetrievalTargetKind = "person" | "topic" | "context";
 
@@ -475,6 +476,10 @@ export async function retrieveAnswerBasis(root: string, query: string): Promise<
 
 export async function retrieveCitedAnswerContract(root: string, query: string): Promise<CitedAnswerContract> {
   return retrieveContextForAnswer(root, query);
+}
+
+export async function retrieveCitedAnswerContractV3(root: string, query: string): Promise<CitedAnswerContractV3> {
+  return buildCitedAnswerContractV3(await retrieveContextForAnswer(root, query));
 }
 
 export async function previewAnswerDraft(

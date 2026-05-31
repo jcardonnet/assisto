@@ -478,6 +478,19 @@ export async function runCliIntegrationTests() {
     assert.equal(typeof answerContract.citationMap.events, "object");
     assert.match(answerContract.contextPack, /# Context pack/);
 
+
+
+    const contractV3Result = await runWm(askRoot, [
+      "ask",
+      "--contract-v3",
+      "How should I explain Joe and Mike the difference between Solr and Qdrant?"
+    ]);
+    const contractV3 = JSON.parse(contractV3Result.stdout);
+    assert.equal(contractV3.version, "answer-contract-v3");
+    assert.equal(Array.isArray(contractV3.directAnswers[0]?.citations ?? []), true);
+    assert.equal(typeof contractV3.citationIndex, "object");
+    assert.match(contractV3.contextPack, /# Context pack/);
+
     const oldOpenAiKey = process.env.OPENAI_API_KEY;
     const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;
 

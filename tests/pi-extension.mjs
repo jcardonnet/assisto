@@ -39,7 +39,7 @@ export async function runPiExtensionTests() {
     assert.equal(piEntry.default, piEntry.factory);
 
     const factoryExtension = piEntry.default({ vaultRoot: root });
-    assert.equal(factoryExtension.tools.length, 16);
+    assert.equal(factoryExtension.tools.length, 17);
     assert.equal(factoryExtension.commands.length, 12);
 
     const nativeTools = [];
@@ -67,6 +67,7 @@ export async function runPiExtensionTests() {
         "wm_mark_review_item",
         "wm_events_reprocess",
         "wm_pack_context",
+        "wm_answer_contract_v3",
         "wm_reject_transaction",
         "wm_review_inbox",
         "wm_review_apply_staged",
@@ -128,6 +129,7 @@ export async function runPiExtensionTests() {
         "wm_mark_review_item",
         "wm_events_reprocess",
         "wm_pack_context",
+        "wm_answer_contract_v3",
         "wm_reject_transaction",
         "wm_review_inbox",
         "wm_review_apply_staged",
@@ -154,7 +156,7 @@ export async function runPiExtensionTests() {
       ].sort()
     );
     assert.equal(registeredGuards.length, 1);
-    assert.equal(registered.tools.length, 16);
+    assert.equal(registered.tools.length, 17);
     assert.equal(registered.commands.length, 12);
 
     const directCanonical = piExtension.checkWorkMemoryWrite({ path: "memory/people/joe.md" });
@@ -343,6 +345,10 @@ linked_transaction: tx_2026_05_20_010
     assert.equal(context.plannedLookups.some((lookup) => lookup.kind === "named_targets"), true);
     assert.equal(context.answerCandidates.some((candidate) => candidate.claim_id === "clm_joe_role_dba"), true);
 
+    const answerContractV3 = await tools.get("wm_answer_contract_v3").run({ question: "What should I know about Joe?" });
+    assert.equal(answerContractV3.version, "answer-contract-v3");
+    assert.equal(answerContractV3.directAnswers.some((answer) => answer.claim_id === "clm_joe_role_dba"), true);
+
     const lintResult = await tools.get("wm_lint").run();
     assert.equal(Array.isArray(lintResult.issues), true);
 
@@ -352,9 +358,14 @@ linked_transaction: tx_2026_05_20_010
     const commandResult = await registered.commands
       .find((command) => command.name === "/wm-ask")
       .run("What should I know about Joe?");
+    assert.equal(commandResult.version, "answer-contract-v3");
     assert.match(commandResult.contextPack, /memory\/people\/joe\.md/);
     assert.equal(commandResult.queryIntent.primary, "person_facts");
     assert.equal(commandResult.supportingClaims.some((claim) => claim.claim_id === "clm_joe_role_dba"), true);
+    assert.equal(commandResult.directAnswers.some((answer) =>
+      answer.claim_id === "clm_joe_role_dba" &&
+      answer.citation_ids.every((citationId) => commandResult.citationIndex[citationId])
+    ), true);
 
     await writeVaultFile(root, "memory/review/oracle-scope.md", `---
 id: rev_oracle_scope

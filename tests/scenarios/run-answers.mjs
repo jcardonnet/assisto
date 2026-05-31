@@ -16,7 +16,9 @@ const metrics = {
   conflictCoverage: 0,
   staleSignalCoverage: 0,
   repairActionCoverage: 0,
-  generatedPersistenceViolations: 0
+  generatedPersistenceViolations: 0,
+  contractV3DirectCitationCoverage: 0,
+  contractV3RepairLinkCoverage: 0,
 };
 
 const root = await makeTempVault("eval-answers-");
@@ -39,6 +41,33 @@ try {
     metrics.unsupportedAnswerCount += countUnsupportedDirectAnswers(manager) + countUnsupportedDirectAnswers(reporting);
     metrics.irrelevantInclusionCount += reporting.directAnswers.filter(
       (answer) => answer.claim_id !== "clm_maria_reports_to_jeff"
+    ).length;
+  });
+
+
+  await suite("answer contract v3 carries per-answer citations and repair links", async () => {
+    const manager = await retrieval.retrieveCitedAnswerContractV3(root, "Who is my manager?");
+    const noMatch = await retrieval.retrieveCitedAnswerContractV3(root, "What is the Neptune deploy key?");
+
+    assert.equal(manager.version, "answer-contract-v3");
+    assert.equal(manager.directAnswers.some((answer) =>
+      answer.claim_id === "clm_mike_manager" &&
+      answer.citations.some((citation) => citation.kind === "claim" && citation.id === "clm_mike_manager") &&
+      answer.citations.some((citation) => citation.kind === "event" && citation.id === "ev_manager") &&
+      answer.inference_paths.includes("claim:clm_mike_manager")
+    ), true);
+    const noMatchItem = noMatch.cannotConfirm.find((item) => item.code === "no_match");
+    assert.ok(noMatchItem);
+    assert.equal(noMatchItem.repair_action_ids.length >= 2, true);
+    assert.equal(noMatchItem.repair_action_ids.every((actionId) => noMatch.repairActions.some((action) => action.action_id === actionId)), true);
+    assert.equal(noMatchItem.repair_action_ids.some((actionId) => noMatch.repairActions.some((action) => action.action_id === actionId && action.action === "capture_note")), true);
+    assert.equal(noMatchItem.repair_action_ids.some((actionId) => noMatch.repairActions.some((action) => action.action_id === actionId && action.action === "log_friction")), true);
+
+    metrics.contractV3DirectCitationCoverage += countSupportedDirectAnswersV3(manager);
+    metrics.unsupportedAnswerCount += manager.directAnswers.length - countSupportedDirectAnswersV3(manager);
+    metrics.contractV3RepairLinkCoverage += noMatch.cannotConfirm.filter((item) =>
+      item.repair_action_ids.length >= 2 &&
+      item.repair_action_ids.every((actionId) => noMatch.repairActions.some((action) => action.action_id === actionId))
     ).length;
   });
 
@@ -111,6 +140,8 @@ assertAtLeast("missing memory guidance", metrics.missingMemoryGuidance, threshol
 assertAtLeast("conflict coverage", metrics.conflictCoverage, thresholds.conflictCoverageMin);
 assertAtLeast("stale signal coverage", metrics.staleSignalCoverage, thresholds.staleSignalCoverageMin);
 assertAtLeast("repair action coverage", metrics.repairActionCoverage, thresholds.repairActionCoverageMin);
+assertAtLeast("contract v3 direct citation coverage", metrics.contractV3DirectCitationCoverage, thresholds.contractV3DirectCitationCoverageMin);
+assertAtLeast("contract v3 repair link coverage", metrics.contractV3RepairLinkCoverage, thresholds.contractV3RepairLinkCoverageMin);
 assertAtMost(
   "generated persistence violations",
   metrics.generatedPersistenceViolations,
@@ -132,6 +163,16 @@ function countSupportedDirectAnswers(result) {
     result.citationMap?.claims?.[answer.claim_id] &&
     (answer.citations?.event_ids ?? []).every((eventId) => result.citationMap?.events?.[eventId])
   ).length;
+}
+
+function countSupportedDirectAnswersV3(result) {
+  return (result.directAnswers ?? []).filter((answer) => {
+    const ids = new Set((answer.citations ?? []).map((citation) => citation.citation_id));
+    return ids.has(`claim:${answer.claim_id}`) &&
+      ids.has(`page:${answer.page_path}`) &&
+      (answer.citations ?? []).some((citation) => citation.kind === "event") &&
+      (answer.citation_ids ?? []).every((citationId) => result.citationIndex?.[citationId]);
+  }).length;
 }
 
 function countUnsupportedDirectAnswers(result) {
@@ -331,7 +372,11 @@ ${rawText}
 }
 
 async function snapshotFiles(root) {
-  return (await walk(root)).sort();
+  const files = (await walk(root)).sort();
+  return Promise.all(files.map(async (filePath) => ({
+    path: path.relative(root, filePath),
+    content: await readFile(filePath, "utf8")
+  })));
 }
 
 async function walk(directory) {
@@ -355,7 +400,7 @@ async function walk(directory) {
 }
 
 function arraysEqual(left, right) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function assertAtMost(label, actual, expected) {

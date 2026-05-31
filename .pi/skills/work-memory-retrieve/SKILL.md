@@ -18,7 +18,7 @@ Use when answering questions from existing work-memory pages or gathering contex
 1. Prefer:
 
    ```bash
-   wm ask --answer-contract "<question>"
+   wm ask --contract-v3 "<question>"
    ```
 
 2. Read structured fields first:
@@ -36,7 +36,7 @@ Use when answering questions from existing work-memory pages or gathering contex
 
 ## Retrieval Boundaries
 
-- Cited answer contract first.
+- Cited answer contract v3 first.
 - `contextPack` compatibility second.
 - Ontology/symbolic hints are derived-only.
 - Semantic search is discovery-only and cannot outrank cited claims.

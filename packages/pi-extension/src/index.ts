@@ -32,7 +32,7 @@ import {
 } from "../../core/src/extraction";
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
-import { retrieveContextForAnswer } from "../../core/src/retrieval";
+import { retrieveCitedAnswerContractV3, retrieveContextForAnswer } from "../../core/src/retrieval";
 
 export type WorkMemoryToolName =
   | "wm_validate"
@@ -50,6 +50,7 @@ export type WorkMemoryToolName =
   | "wm_review_apply_staged"
   | "wm_events_reprocess"
   | "wm_pack_context"
+  | "wm_answer_contract_v3"
   | "wm_lint";
 
 export type WorkMemoryCommandName =
@@ -394,6 +395,11 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
       run: async (input) => retrieveContextForAnswer(rootFromInput(input, vaultRoot), stringInput(input, "question"))
     },
     {
+      name: "wm_answer_contract_v3",
+      description: "Build a strict cited answer contract v3 for a question.",
+      run: async (input) => retrieveCitedAnswerContractV3(rootFromInput(input, vaultRoot), stringInput(input, "question"))
+    },
+    {
       name: "wm_lint",
       description: "Run manual MVP lint checks and stage ReviewItems.",
       run: async (input) => lintVault(rootFromInput(input, vaultRoot))
@@ -523,8 +529,8 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
     },
     {
       name: "/wm-ask",
-      description: "Pack deterministic context and answer-basis fields for a question.",
-      run: async (input) => byName.get("wm_pack_context")!.run({ question: commandText(input) })
+      description: "Build a strict cited answer contract v3 for a question.",
+      run: async (input) => byName.get("wm_answer_contract_v3")!.run({ question: commandText(input) })
     },
     {
       name: "/wm-validate",
@@ -714,6 +720,7 @@ function toolLabel(name: WorkMemoryToolName): string {
     wm_review_apply_staged: "WM Review Apply Staged",
     wm_events_reprocess: "WM Events Reprocess",
     wm_pack_context: "WM Pack Context",
+    wm_answer_contract_v3: "WM Answer Contract V3",
     wm_lint: "WM Lint"
   };
 
@@ -794,6 +801,7 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
     case "wm_events_reprocess":
       return objectSchema({ ...baseProperties, id: reviewId, stage_only: stageOnly }, ["id", "stage_only"]);
     case "wm_pack_context":
+    case "wm_answer_contract_v3":
       return objectSchema({ ...baseProperties, question }, ["question"]);
     case "wm_validate":
     case "wm_list_transactions":

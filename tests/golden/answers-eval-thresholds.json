@@ -7,5 +7,7 @@
   "conflictCoverageMin": 1,
   "staleSignalCoverageMin": 1,
   "repairActionCoverageMin": 3,
-  "generatedPersistenceViolationsMax": 0
+  "generatedPersistenceViolationsMax": 0,
+  "contractV3DirectCitationCoverageMin": 1,
+  "contractV3RepairLinkCoverageMin": 1
 }

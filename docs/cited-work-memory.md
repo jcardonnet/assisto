@@ -10,30 +10,44 @@ Ask → Entity → Context → Repair
 Generated answers stay disposable; cited answer contracts and briefs are derived reading surfaces, not memory truth.
 The loop is deterministic. It turns markdown memory into cited answer contracts, entity risk views, and Context operating rooms. It does not persist generated answers, create canonical graph/vector state, merge entities, resolve contradictions, or write canonical pages directly from UI/API handlers.
 
-## CitedAnswerContract
+## CitedAnswerContract v3
 
 Use:
 
 ```bash
-wm ask --answer-contract "Who is my manager?"
+wm ask --contract-v3 "Who is my manager?"
 ```
 
 Conceptual shape:
 
 ```ts
-type CitedAnswerContract = {
+type CitedAnswerContractV3 = {
+  version: "answer-contract-v3";
   question: string;
-  directAnswers: DirectAnswer[];
-  cannotConfirm: CannotConfirmItem[];
+  directAnswers: Array<{
+    text: string;
+    answer_kind: string;
+    confidence_label: string;
+    citations: AnswerCitation[];
+    inference_paths: string[];
+  }>;
+  cannotConfirm: Array<{
+    item_id: string;
+    code: string;
+    text: string;
+    missing_evidence: string[];
+    repair_action_ids: string[];
+  }>;
   conflicts: ConflictSignal[];
   staleSignals: StaleSignal[];
   citationMap: AnswerCitationMap;
-  repairActions: RepairAction[];
+  citationIndex: Record<string, AnswerCitation>;
+  repairActions: Array<RepairAction & { action_id: string }>;
   contextPack: string;
 };
 ```
 
-`contextPack` remains available for compatibility. The contract is derived output, not memory.
+`contextPack` remains available for compatibility. The older `wm ask --answer-contract` and `/api/ask/answer-contract` surfaces are preserved; v3 is the stricter Ask/Pi/UI contract. The contract is derived output, not memory.
 
 ## Evidence hydration
 
