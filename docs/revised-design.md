@@ -1,4 +1,4 @@
-# Revised Design: Local-First AI Work-Memory Assistant
+# Revised Design: Assisto Local-First Work-Memory OS
 
 ## Source basis and revision status
 
@@ -9,6 +9,8 @@ Notation used in this document:
 - **[DS]** refers to the original design synthesis. It is treated as the source for the initial layered model, object model, mutation operations, retrieval strategy, maintenance ideas, and roadmap.
 - **[PA]** refers to the prior-art report. It is treated as evidence for the public-system landscape, including Karpathy-style LLM Wikis, Basic Memory, Obsidian/MCP tooling, LangMem, Mem0, Graphiti/Zep, CRM-style markdown systems, and meeting-ingestion systems.
 - **[CR]** refers to the pasted senior-architect critique. It is treated as the source for the implementation discipline introduced here: transaction layer, reduced MVP, deterministic staging, stricter follow-up rules, schema validation, temporal-field separation, and evaluation thresholds.
+- **[KW]** refers to Andrej Karpathy's LLM Wiki pattern: a persistent, markdown-based knowledge layer compiled from raw sources and maintained by an LLM or agent rather than rediscovered from raw chunks at query time.
+- **[GC]** refers to public builder comments on that pattern, especially lessons about identity drift, relationship typing, stale wiki maintenance, claim-level provenance, ingestion-order bias, local tooling, concurrent writes, retrieval drift, and knowledge lifecycle design.
 
 This document is not a framework selection. It is an architecture-neutral specification for a local-first markdown prototype.
 
@@ -62,6 +64,173 @@ Human review is not universal, but it is mandatory for high-risk mutations: ambi
 
 ---
 
+
+### Assisto vision: MVP core and Local Memory OS
+
+This system is codenamed **Assisto**.
+
+The MVP is the safe compiler core. The larger Assisto vision is a local work-memory operating system: a set of deterministic, cited, review-gated loops for compiling raw work traces into useful current-state memory, retrieving that memory with citations, inspecting entity and context risk, and repairing gaps without letting generated text become durable truth.
+
+The post-MVP architecture adds cited answer assembly, entity stewardship, context operating rooms, source adapters, a derived ontology registry, symbolic reasoning, consolidation cycles, dogfood loops, and personal evaluation. These additions are **not** permission to weaken the MVP safety model. They are derived, explainable, rebuildable, and review-gated unless explicitly routed through the same Event and Transaction model as any other durable memory.
+
+The central post-MVP rule is:
+
+```text
+Derived artifacts may guide, explain, and propose. Only Events, Transactions, validation, and review create durable memory.
+```
+
+---
+
+## 1A. Epistemic integrity and inference laundering
+
+**Epistemic integrity** means that Assisto must preserve the difference between evidence, extracted claims, inferred knowledge, generated answers, retrieval context, summaries, and durable current-state memory.
+
+**Inference laundering** happens when generated, inferred, weakly supported, or retrieval-assembled text quietly becomes canonical truth. It is the failure mode where a plausible answer, a generated summary, a symbolic inference, or a context-pack sentence gets copied into memory and later treated as if it were evidence.
+
+Assisto prevents inference laundering by treating the following as derived artifacts unless they are explicitly captured as evidence and routed through the canonical mutation path:
+
+```text
+generated answers
+symbolic inferences
+retrieval packs
+context packs
+hot packs
+export packs
+briefs
+reasoning traces
+summary drafts
+Workbench/session state
+```
+
+The protected path remains:
+
+```text
+Raw input → Event → Candidate claims → Transaction → Validated mutation or staged review → Current pages
+```
+
+Rules:
+
+```text
+- A generated answer is not memory.
+- A context pack is not memory.
+- A symbolic inference is not memory.
+- A brief is not memory.
+- A reasoning trace is not memory.
+- A generated summary is not canonical truth.
+- Durable memory requires Event evidence and Transaction-backed validation/review.
+```
+
+## 1B. Canonical versus derived state
+
+| Artifact | Canonical? | Notes |
+|---|---:|---|
+| Raw Event text | Yes | Preserved source evidence. |
+| Active claim blocks | Yes | Must cite Event IDs. |
+| Current-state markdown pages | Yes | People, Contexts, Topics, FollowUps. |
+| Transactions | Yes | Mutation audit trail. |
+| ReviewItems | Yes | Human review state. |
+| Logs | Yes | Operational audit. |
+| Indexes | No | Rebuildable. |
+| ContextPack | No | Rebuildable query artifact. |
+| HotPack | No | Temporary high-priority context for a work session. |
+| ExportPack | No | Serialized context for another agent/tool. |
+| BriefPack / generated brief | No | Disposable unless explicitly captured as evidence. |
+| SymbolicMemoryGraph | No | Derived from canonical markdown and ontology. |
+| CitedAnswerContract | No | Query output, not memory. |
+| Workbench/session state | No | Runtime or UI state. |
+| Generated explanation | No | Not persisted unless explicitly saved through Event/Transaction flow. |
+
+Derived artifacts may guide retrieval, review, repair, and explanation. They may not outrank canonical markdown. They may become durable only by being captured as evidence and routed through a validated Transaction.
+
+## 1C. Global boundary rule for post-MVP capabilities
+
+Every post-MVP feature in this document must answer these questions:
+
+1. Is this canonical or derived?
+2. If canonical, what Event evidence supports it?
+3. If it changes canonical memory, where is the Transaction?
+4. If inferred, where is the inference path?
+5. If generated, why is it not being persisted?
+6. If ambiguous, why is it staged rather than promoted?
+7. If a new layer is proposed, can it be rebuilt from markdown?
+8. If an agent executes it, what prevents silent corruption?
+
+Derived artifacts may guide, explain, rank, propose, and stage. They may not silently create or modify canonical memory.
+
+## 1D. No new canonical object types without migration
+
+New canonical object types require a design migration. Until then, post-MVP surfaces must be represented as sections on existing objects, ReviewItems, Transactions, Logs, or derived artifacts.
+
+Decision, OpenQuestion, Explanation, OntologyView, SymbolicFact, Brief, EvalSession, WorkbenchSession, ContextRoom, CitedAnswerContract, ContextPack, HotPack, ExportPack, and SymbolicMemoryGraph are not canonical MVP objects.
+
+## 1E. Write permission matrix
+
+| Actor / Layer | May write Events | May write pending Transactions | May apply Transactions | May write current pages directly | May write derived indexes |
+|---|---:|---:|---:|---:|---:|
+| Ingestion | Yes | Yes | No | No | No |
+| Capture UI | Yes | Yes | No | No | No |
+| Import adapter | Yes | Yes | No | No | No |
+| Review UI | Only explicit note capture | Yes | Through validated helper only | No | No |
+| Transaction applier | No | No | Yes | Yes, via transaction only | No |
+| Health checker | No | Optional pending Transaction | No | No | Yes |
+| Adversarial review | No | Yes, `STAGE_REVIEW` only | No | No | Yes |
+| Symbolic reasoner | No | Optional review candidate Transaction | No | No | Yes |
+| Retrieval / Ask | No | No, except explicit repair preview | No | No | Optional query cache |
+| Brief builder | No | No | No | No | No |
+| Workbench session state | No | No | No | No | Local `.assisto-local` only |
+
+No UI, adapter, retrieval, reasoning, brief, or lint layer may write current pages directly. Current pages are modified only by the validated transaction applier.
+
+## 1F. Post-MVP local Memory OS architecture
+
+The MVP compiles short notes into safe, cited markdown memory. The post-MVP Memory OS adds user-facing and agent-facing surfaces around the same core.
+
+```text
+Raw Sources
+→ Source Adapters
+→ Events
+→ Candidate Claims
+→ Transactions
+→ Canonical Markdown Memory
+→ Derived Indexes, Packs, Ontology Views, and Symbolic Graph
+→ Cited Answers, Entity Stewardship, Context Rooms, Briefs, and Repair Actions
+```
+
+| Layer | Role | Canonical? |
+|---|---|---:|
+| Raw Sources and Source Adapters | Normalize external inputs into Events. | Raw source is preserved; adapter output is derived until Evented. |
+| Event and Transaction Core | Evidence and mutation safety. | Yes |
+| Canonical Markdown Memory | People, Contexts, Topics, FollowUps, ReviewItems, Logs. | Yes |
+| Derived Indexes and Packs | Retrieval/context artifacts. | No |
+| Cited Answer Contract | Query output with citations, uncertainty, conflicts, stale signals, and repair actions. | No |
+| Entity and Context Stewardship | Derived health/risk cockpit for people, topics, and contexts. | No |
+| Derived Ontology and Symbolic Reasoning | Typed relation registry, inference, proof traces, review candidates. | No |
+| Workbench and Daily Operating Loops | Capture/review/ask/repair/brief workflows. | Mostly no; durable writes route through Events and Transactions. |
+
+The post-MVP architecture is aspirational but bounded: no vector search, graph database, MCP integration, symbolic reasoning, generated brief, or Workbench state is canonical memory.
+
+Explicit non-negotiables:
+
+```text
+no vector search as canonical memory
+no graph database as canonical memory
+no MCP integration as canonical memory
+no autonomous entity merges
+no autonomous contradiction resolution
+no generated answer persistence
+no generated explanation persistence
+no generated brief persistence
+```
+
+### Why not a graph database yet?
+
+Assisto may derive graph-shaped views from markdown, but it does not need a graph database as canonical state. The primary risks are source-of-truth confusion, opaque mutation semantics, and autonomous relation drift. A graph database may be evaluated later only as a rebuildable index if lexical, wikilink, ontology, and symbolic retrieval fail measured evals.
+
+### Semantic search boundary
+
+Semantic search is introduced only after retrieval evals show specific misses that exact pages, wikilinks, structured fields, ontology expansion, and symbolic hints cannot solve. It remains a derived index and may not provide unsupported facts or outrank cited claims.
+
+
 ## 2. Design principles
 
 | Principle | Rule | Reason | Implementation implication | Failure mode prevented |
@@ -81,6 +250,14 @@ Human review is not universal, but it is mandatory for high-risk mutations: ambi
 | Human review is selective but mandatory for high risk | Not every mutation needs approval, but some can never be automatic. | Review everything is too slow; review nothing is unsafe. | High-risk operations stage in `review/`. | Duplicate merges, wrong role changes, silent contradiction resolution. |
 | Maintenance has a budget and cadence | Review queues need operating discipline. | Unreviewed maintenance files become noise. | Daily ingest review ≤10 minutes; weekly lint ≤30 minutes; backlog thresholds. | Review graveyard, ignored lint reports. |
 | Retrieval starts simple | MVP uses lexical search, exact page lookup, wikilinks, and structured fields. | Search complexity should follow observed retrieval misses. | Vector search and graph traversal are deferred. | Premature infrastructure complexity. |
+| Epistemic integrity | Derived intelligence must not become durable truth without evidence and review. | Generated answers, inferences, summaries, and packs are useful but dangerous if laundered into memory. | Route durable changes through Event → Transaction → validation/review. | Inference laundering, unsupported memory, generated falsehoods. |
+| Ontology defines relation semantics | Entity kinds and relation kinds must be explicit. | Generic `related` links are too weak for reasoning. | Use a small ontology registry for relation types, scopes, inverse relations, cardinality hints, and review risk. | Relationship collapse, weak retrieval, hidden contradictions. |
+| Symbolic reasoning is derived | Inference may produce answer support, stale signals, and ReviewItems, but not active claims. | Derived facts can help reasoning but can corrupt truth if canonicalized. | Store reasoning outputs as `derived_only` with inference paths. | Inferred facts silently becoming durable claims. |
+| Cited answers are contracts | Serious answers should expose support, uncertainty, conflicts, stale signals, and repair actions. | Work answers need auditability, not just fluent prose. | Add `CitedAnswerContract` as a derived output. | Unsupported answers and hidden uncertainty. |
+| Stewardship is a user surface | Entity/context risk should be visible and actionable. | Identity drift and stale context are recurring work-memory failure modes. | Add derived Entity Stewardship and Context Operating Room views. | Duplicate people, stale ownership, context rot. |
+| Consolidation is review-gated | Maintenance may find, rank, draft, and stage; it may not silently rewrite. | Background cleanup can corrupt memory if autonomous. | Consolidation outputs ReviewItems or pending Transactions. | Silent cleanup, false merges, contradiction overreach. |
+| Source adapters normalize to Events | All future input sources must produce Events first. | Direct source-specific mutation fragments the architecture. | Add Source Adapter Fabric later; adapters never write canonical pages directly. | Import pipelines bypassing provenance. |
+| Dogfood loops drive usefulness | Usefulness comes from daily capture/review/ask/repair loops. | Schemas alone do not create habits. | Add Workbench and personal eval loops. | Beautiful unused system. |
 
 ---
 
@@ -92,7 +269,7 @@ The MVP includes only what is necessary to validate the source-backed markdown m
 
 | Capability | Included behavior |
 |---|---|
-| Events | Create one Event per user note, meeting, transcript section, or imported document section. |
+| Events | Create one Event per user note, meeting, curated transcript excerpt or reviewed transcript section, or imported document section. |
 | People | Store explicit person facts, role claims, interactions, and staged communication inferences. |
 | Contexts | Represent work/project/system/team/client scope under one umbrella object. |
 | Topics | Store technical/business concepts relevant to work. |
@@ -145,6 +322,13 @@ memory/
     statuses.md
     relation-types.md
     validators.md
+    ontology/                     # post-MVP schema/policy, not user memory
+      README.md
+      entity-kinds.yaml
+      relation-kinds.yaml
+      claim-patterns.yaml
+      scopes.yaml
+      review-rules.yaml
 
   events/
     2026/
@@ -175,6 +359,7 @@ memory/
     duplicates.md
     unscoped-claims.md
     stale-items.md
+    lint-runs/
 
   transactions/
     pending/
@@ -185,9 +370,19 @@ memory/
   logs/
     ingest-log.md
     maintenance-log.md
+    domain-events.md
+    maintenance-events/
+      2026-06.md
 
   indexes/
     README.md
+    ontology/                     # post-MVP derived and rebuildable ontology views
+    symbolic/                     # post-MVP derived and rebuildable reasoning cache
+      facts.jsonl
+      derived-facts.jsonl
+      proofs.jsonl
+      retrieval-hints.jsonl
+      review-candidates.jsonl
 ```
 
 ### Why this is smaller than the original design
@@ -211,6 +406,8 @@ The revised MVP collapses early-stage concepts:
 
 The folder layout is intentionally boring. It optimizes for implementation safety, not taxonomy completeness.
 
+The `memory/schema/ontology/`, `memory/indexes/ontology/`, `memory/indexes/symbolic/`, and `review/lint-runs/` folders are post-MVP additions. Ontology registry files are schema/policy, not user memory. Derived ontology and symbolic views are rebuildable indexes. Maintenance domain events belong in logs, not work Events. None of these folders replaces canonical markdown pages or authorizes autonomous mutation.
+
 ---
 
 ## 5. Revised object model
@@ -219,7 +416,7 @@ The folder layout is intentionally boring. It optimizes for implementation safet
 
 | Field | Definition |
 |---|---|
-| Purpose | Immutable evidence unit representing a user note, meeting note, transcript section, imported document section, or query worth preserving. |
+| Purpose | Immutable evidence unit representing a user note, meeting note, curated transcript excerpt or reviewed transcript section, imported document section, or query worth preserving. |
 | Created when | Every meaningful ingest. |
 | Updated when | Only for metadata enrichment, extraction annotations, or transaction references. Raw text is immutable. |
 | Archived when | Rarely; events may be moved by date but not deleted in MVP. |
@@ -347,6 +544,151 @@ If a Topic exceeds 7 active claims, 5 open questions, or 10 related links, stage
 | Standalone Claim | Embedded structured claim block inside current pages. |
 
 ---
+
+
+## 5A. Promotion policy
+
+Assisto should not create heavyweight pages for every mention. Concepts move through promotion stages:
+
+```text
+Mention → Candidate entity → Topic page → Context/Decision/Explanation surface
+```
+
+Promotion rules:
+
+```yaml
+promotion_policy:
+  topic_page:
+    create_if:
+      - exact technical term appears
+      - mentioned in >= 2 Events
+      - explicitly requested by user
+
+  context_page:
+    create_if:
+      - user names a bounded project/system/team/client
+      - unscoped claims need a home and user confirms
+
+  decision_section:
+    create_if:
+      - explicit decision language appears
+      - reviewed ReviewItem confirms decision
+
+  explanation_candidate:
+    stage_if:
+      - same explanation is requested >= 2 times
+      - explanation appears useful across multiple contexts
+
+  explanation_section_or_page:
+    create_if:
+      - user explicitly says "save this"
+      - a reviewed Transaction applies the saved explanation
+```
+
+This prevents the **Level** failure mode where tactical notes and high-level concepts appear at the same level. In the MVP, decisions, open questions, and explanations remain sections or derived outputs unless explicitly promoted through review.
+
+In the MVP, explanations remain disposable answer outputs or sections inside an existing Context, Topic, or ReviewItem. A standalone Explanation page is a future, review-gated object, not an automatic promotion target. A saved explanation is evidence that the user chose to save that explanation at a time; it is not evidence that every factual statement inside the explanation is true. Factual claims inside saved explanations need independent Event evidence or must remain marked as generated/explanatory.
+
+## 5B. Entity stewardship
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Entity stewardship is a post-MVP derived surface for identity and truth maintenance around people, topics, and contexts. It answers:
+
+```text
+- Do we have duplicate people/topics/contexts?
+- Are aliases safe or risky?
+- Did a role/reporting/ownership claim change?
+- Are there stale active claims?
+- Are there conflicting active claims in the same scope?
+- Which ReviewItems and FollowUps affect this entity?
+- What evidence supports current identity?
+```
+
+Derived stewardship fields:
+
+```text
+identityRisk
+nearDuplicates
+aliasConflicts
+roleChanges
+reportingChanges
+ownershipChanges
+staleClaims
+conflictingClaims
+recommendedReviewLane
+```
+
+Allowed actions:
+
+```text
+- stage alias correction
+- stage role correction
+- stage reporting correction
+- stage ownership correction
+- stage identity review
+- capture missing evidence
+```
+
+Forbidden actions:
+
+```text
+- merge entities automatically
+- split entities automatically
+- delete entity pages automatically
+- supersede claims without explicit selected claim IDs
+- resolve contradictions without review
+```
+
+Entity stewardship is derived. Any durable correction must become a ReviewItem or Transaction.
+
+## 5C. Context operating rooms
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Context operating rooms are post-MVP derived cockpits for projects, systems, teams, clients, or bounded work contexts.
+
+A Context operating room may include:
+
+```text
+current state
+owners and roles
+systems and dependencies
+decisions-as-claims
+open questions-as-claims
+risks
+recent changes
+stale claims
+ReviewItems
+FollowUps
+source timeline
+answerable questions
+missing-memory prompts
+quick repair actions
+cited briefs
+```
+
+Timeline sources:
+
+```text
+Events
+pending/applied/rejected Transactions
+active/staged/superseded claims
+FollowUps
+ReviewItems
+health findings
+```
+
+Rules:
+
+```text
+- Context room output is derived.
+- Corrections route through capture or pending Transactions.
+- Timeline uses existing temporal semantics only.
+- Do not invent valid_from from recorded_at.
+- Briefs generated from context rooms are disposable unless explicitly captured.
+```
+
 
 ## 6. Canonical state model
 
@@ -704,6 +1046,36 @@ Pending.
 
 ---
 
+
+## 9A. Write safety and locking
+
+Transactions provide logical mutation safety. They do not by themselves prevent concurrent physical writes. Before enabling Pi/Hermes gateway ingestion, scheduled jobs, or parallel agents, Assisto must add write safety.
+
+Rules:
+
+```text
+1. Only one transaction may be applied at a time.
+2. `applyTransaction()` acquires a global apply lock.
+3. It then acquires per-file locks for affected files in sorted path order.
+4. Writes use temp files and atomic rename where the filesystem supports it.
+5. If lock acquisition fails, the transaction remains pending.
+6. If a partial write occurs, the transaction moves to `failed/` with repair notes.
+7. Events are preserved even if canonical mutations fail.
+8. No process may write to canonical files outside the transaction application path.
+```
+
+Additional transaction validation checklist items:
+
+```markdown
+- [ ] Required locks were acquired before application
+- [ ] Atomic write path was used
+- [ ] Failure behavior preserves Events
+```
+
+Write safety is required before ambient runtimes, gateways, cron jobs, or multi-agent workflows. It is not optional polish; without it, transaction semantics can still be undermined by file-system races.
+
+---
+
 ## 10. Memory mutation operations
 
 Only the following operations are in the MVP.
@@ -965,6 +1337,264 @@ Do not create any follow-up from:
 | search | `topics/solr.md` exists | Not Solr; likely generic topic, stage if conflating |
 
 ---
+
+
+## 13A. Derived ontology registry
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+The ontology is a post-MVP deterministic registry of entity kinds, relation kinds, temporal semantics, scope requirements, inverse relations, cardinality hints, and review rules. It is not a graph database and not a second source of truth. It helps validators, retrieval, health checks, and symbolic reasoning interpret existing cited claims.
+
+The ontology is inspired by lightweight controlled-vocabulary and shape-validation ideas: use a small local registry of concepts and relations rather than a broad philosophical model. It should remain local, versioned, reviewable, and operational.
+
+Conceptual shape:
+
+```ts
+type OntologyRegistry = {
+  entityKinds: EntityKindDefinition[];
+  relationKinds: RelationKindDefinition[];
+  claimPatterns: ClaimPatternDefinition[];
+  reviewRules: OntologyReviewRule[];
+};
+```
+
+Relation definition:
+
+```ts
+type RelationDefinition = {
+  id: string;
+  label: string;
+  fromKinds: string[];
+  toKinds: string[];
+  inverse?: string;
+  transitive?: boolean;
+  symmetric?: boolean;
+  requiresScope?: boolean;
+  temporal?: boolean;
+  cardinalityHint?: "one" | "many";
+  reviewRisk: "low" | "medium" | "high";
+};
+```
+
+Example relation kinds:
+
+```text
+reports_to
+manages
+owns
+part_of
+depends_on
+supersedes
+contradicts
+evidenced_by
+mentions
+has_open_followup
+review_risk_for
+```
+
+Example ontology files:
+
+```text
+memory/schema/ontology/
+  entity-kinds.yaml
+  relation-kinds.yaml
+  claim-patterns.yaml
+  scopes.yaml
+  review-rules.yaml
+```
+
+Derived ontology views may be emitted under:
+
+```text
+memory/indexes/ontology/
+memory/indexes/symbolic/
+```
+
+Ontology registry files are schema/policy, not user memory. If stored under `memory/`, they belong under `memory/schema/ontology/`. Derived ontology views belong under `memory/indexes/ontology/` or `memory/indexes/symbolic/` and must be rebuildable from canonical markdown plus schema policy.
+
+Rules:
+
+```text
+- The ontology is derived policy and validation support.
+- It does not replace markdown.
+- It does not create a canonical graph database.
+- It does not authorize automatic merges or contradiction resolution.
+- It helps validators, retrieval, health checks, and symbolic reasoning interpret cited claims.
+- Generic `related` links are allowed only when no more specific relation applies.
+```
+
+### Ontology versioning and migrations
+
+Ontology changes are schema changes. They may invalidate derived symbolic indexes and retrieval hints, but they do not rewrite canonical claims by themselves.
+
+When relation semantics change, Assisto should:
+
+1. mark affected derived indexes stale;
+2. rebuild ontology views and symbolic indexes;
+3. stage ReviewItems for claims whose relation type is now invalid or ambiguous;
+4. avoid automatic claim migration unless a reviewed Transaction applies it.
+
+Ontology migrations may stage ReviewItems for affected claims, but they do not directly edit Person, Context, Topic, FollowUp, Event, ReviewItem, or Transaction pages.
+
+### Ontology-aware extraction frames
+
+Post-MVP extraction should move from loose candidate strings to typed frames.
+
+```yaml
+- candidate_id: cand_mysql_used
+  text: We use MySQL.
+  candidate_kind: fact
+  frame:
+    relation: uses_technology
+    subject:
+      kind: Context
+      id: null
+      resolution_state: missing
+    object:
+      kind: Topic
+      id: top_mysql
+      resolution_state: exact_match
+    qualifiers:
+      scope: null
+      environment: null
+      project: null
+      time_scope: null
+  evidence:
+    event_id: ev_2026_05_20_001
+    quote: We use MySQL.
+  staging_reasons:
+    - missing_context_for_uses_technology
+```
+
+Ontology-aware frames make validation and staging deterministic: invalid domain/range combinations, missing required scope, and high-risk relation changes become ReviewItems instead of silently mutating canonical pages.
+
+Ontology-aware extraction frames are intermediate extraction artifacts. They are not canonical claim blocks. A frame becomes durable only if converted into a valid claim block inside a Transaction or staged as a ReviewItem candidate.
+
+```text
+candidate frame
+→ staging decision
+→ canonical claim block or ReviewItem candidate
+→ Transaction validation
+→ applied current page or staged review
+```
+
+## 13B. Derived symbolic reasoning and inference paths
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Symbolic reasoning is a derived layer over canonical markdown state. It may produce answer support, stale signals, conflict signals, manager/reporting chains, ownership traces, missing-memory prompts, repair suggestions, and review-lane routing. It may not produce active canonical claims directly.
+
+Assisto should support:
+
+```text
+- deterministic forward inference
+- deterministic backward inference
+- contradiction/staleness detection
+- answer explanation paths
+- repair suggestions
+- review-lane routing
+```
+
+Assisto should not support:
+
+```text
+- autonomous theorem proving over user memory
+- hidden probabilistic inference that writes memory
+- canonical graph state that diverges from markdown
+- automatic identity merges
+- automatic contradiction resolution
+- invisible background cleanup
+```
+
+Conceptual result type:
+
+```ts
+type ReasoningFinding = {
+  id: string;
+  kind:
+    | "derived_relation"
+    | "possible_conflict"
+    | "stale_signal"
+    | "missing_scope"
+    | "missing_evidence"
+    | "identity_risk"
+    | "answer_support";
+  statement: string;
+  inferencePath: InferencePath;
+  canonicalState: "derived_only";
+  suggestedAction?: RepairAction;
+};
+```
+
+Inference path:
+
+```ts
+type InferencePath = {
+  inputQuestion?: string;
+  rules: string[];
+  claimIds: string[];
+  eventIds: string[];
+  pagePaths: string[];
+  uncertainty: string[];
+};
+```
+
+Example forward inferences:
+
+```text
+If A reports_to B, then B may be surfaced as A's manager in that scope.
+If a Context has owner P and open FollowUps, meeting prep should surface P and those FollowUps.
+If a claim has valid_to, current answers should treat it as stale or superseded.
+If two active role claims conflict in the same scope, stage a review finding.
+```
+
+Example backward inferences:
+
+```text
+"Who owns X?" traces owner claims, Context links, evidence Events, and cannot-confirm gaps.
+"Can I trust this answer?" traces source Events, claim state, scope state, review state, and conflicts.
+"What should I ask before meeting Joe?" traces Person, Context, open FollowUps, ReviewItems, and missing-memory prompts.
+```
+
+Derived symbolic outputs are written only to derived stores such as:
+
+```text
+memory/indexes/symbolic/facts.jsonl
+memory/indexes/symbolic/derived-facts.jsonl
+memory/indexes/symbolic/proofs.jsonl
+memory/indexes/symbolic/retrieval-hints.jsonl
+memory/indexes/symbolic/review-candidates.jsonl
+```
+
+Canonical write path:
+
+```text
+symbolic output → ReviewItem → Transaction → validation → user review/apply
+```
+
+Key rule:
+
+```text
+Every reasoning output must expose an inference path. Reasoning outputs are derived and cannot become active claims unless explicitly routed through Event → Transaction → validation/review.
+```
+
+### Symbolic index rebuild semantics
+
+Symbolic index files are cache artifacts. They may be deleted and rebuilt from canonical markdown, schema/ontology policy, and deterministic reasoning rules.
+
+They must include rebuild metadata:
+
+```yaml
+symbolic_index_version: v1
+ontology_version: ontology_2026_06_01
+generated_at: 2026-06-01T10:00:00Z
+input_hashes:
+  - memory/people/joe.md: sha256:...
+  - memory/contexts/inventory.md: sha256:...
+```
+
+No answer, Transaction, or canonical mutation may require symbolic index state that cannot be reconstructed from canonical markdown plus schema/ontology plus deterministic rules.
+
 
 ## 14. Markdown schemas and templates
 
@@ -1760,7 +2390,97 @@ Not allowed without more evidence:
 
 ---
 
+
+## 15A. Source Adapter Fabric
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+The Source Adapter Fabric is a post-MVP extension point for importing material beyond short pasted notes while preserving the Event-first architecture.
+
+Adapters may handle:
+
+```text
+markdown/text import
+pasted notes
+web clippings
+document parsers
+email/chat excerpts
+calendar/meeting notes
+code/project artifacts
+curated transcript excerpts or reviewed transcript sections
+```
+
+Adapter output:
+
+```ts
+type SourceAdapterOutput = {
+  adapterId: string;
+  sourceLabel: string;
+  sourceHash: string;
+  observedAt?: string;
+  rawText: string;
+  units: SourceUnit[];
+  parserNotes: string[];
+};
+
+type SourceUnit = {
+  unitId: string;
+  rawText: string;
+  sourceSpan?: {
+    filePath?: string;
+    lineStart?: number;
+    lineEnd?: number;
+    page?: number;
+  };
+  suggestedEventMetadata: Record<string, unknown>;
+};
+```
+
+Adapter rules:
+
+```text
+- raw text must be preserved;
+- duplicate hashes should be skipped or staged;
+- parser uncertainty should be visible;
+- each kept unit creates an Event plus a pending Transaction;
+- full transcript ingestion remains a separate high-volume, review-heavy workflow;
+- adapters never write Person, Topic, Context, FollowUp, or ReviewItem pages directly.
+```
+
+Forbidden shortcuts:
+
+```text
+PDF → Person page directly
+Slack → FollowUp directly
+Transcript → Decision directly
+Email → Context directly
+```
+
+All adapters must output normalized Events, then use the normal extraction → transaction → validation path.
+
+### Future evidence granularity ladder
+
+MVP provenance requires each durable claim to cite at least one Event ID. For short notes this is sufficient. For transcripts, documents, and longer imported material, claims should eventually cite a source span.
+
+```yaml
+evidence:
+  - event_id: ev_2026_05_20_003
+    quote: "Today I talked with Joe about pgvector..."
+    start_char: 0
+    end_char: 83
+    source_line_start: null
+    source_line_end: null
+    page: null
+    timestamp_start: null
+    timestamp_end: null
+```
+
+Span-level provenance remains evidence metadata. It does not change the transaction model.
+
+
 ## 16. Retrieval and context assembly
+
+> This section describes a derived or review-gated post-MVP capability where explicitly labeled. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
 
 ### MVP retrieval steps
 
@@ -1841,7 +2561,117 @@ Answer behavior:
 - Do not persist the explanation unless explicitly requested.
 ```
 
+
+### Post-MVP cited answer assembly
+
+The MVP retrieval workflow loads relevant pages and Events safely. Post-MVP retrieval should produce a structured answer contract for serious work questions.
+
+```ts
+type CitedAnswerContract = {
+  question: string;
+  queryIntent: RetrievalQueryIntent;
+  directAnswers: DirectAnswer[];
+  cannotConfirm: CannotConfirmItem[];
+  conflicts: ConflictSignal[];
+  staleSignals: StaleSignal[];
+  citationMap: AnswerCitationMap;
+  repairActions: RepairAction[];
+  suggestedNextQuestions: string[];
+  contextPack: string;
+};
+
+type DirectAnswer = {
+  answer: string;
+  support: {
+    claimIds: string[];
+    eventIds: string[];
+    pagePaths: string[];
+    inferencePathIds?: string[];
+  };
+  scopeState: "complete" | "partial" | "unknown";
+  answerState: "supported" | "derived" | "uncertain";
+};
+```
+
+Behavior rules:
+
+```text
+- No direct answer without citations.
+- Derived answers must show inference paths.
+- Missing facts go to cannotConfirm, not invented prose.
+- Stale and conflicting claims are surfaced separately.
+- Repair actions are suggestions, not mutations.
+- The contextPack is derived and rebuildable.
+```
+
+Derived retrieval artifacts:
+
+```text
+ContextPack
+HotPack
+ExportPack
+BriefPack
+AgentWorkPack
+SymbolicMemoryGraph
+```
+
+All are non-canonical. They may be exported to agents or used in Workbench flows, but they do not become durable memory unless explicitly captured as Events and processed through Transactions.
+
+### Post-MVP retrieval expansion order
+
+```text
+1. Exact page hits
+2. Active claims from exact pages
+3. Linked ReviewItems and FollowUps
+4. Evidence Events for cited, high-impact, contested, sparse, or temporal claims
+5. Ontology-expanded pages
+6. Symbolic retrieval hints with inference paths
+7. Optional semantic search only if evaluated lexical/wikilink/ontology retrieval is insufficient
+8. Final answer contract assembly with directAnswers, cannotConfirm, conflicts, staleSignals, citations, and repairActions
+```
+
+Semantic search may discover candidate context, but it may not outrank cited canonical claims or their source Events. Cited answer assembly must hydrate the evidence Events required to support direct answers before emitting the final answer contract.
+
+
 ---
+
+## 16A. Repair action semantics
+
+Repair actions are previews or transaction-backed workflows. They are not direct memory edits.
+
+```ts
+type RepairAction = {
+  id: string;
+  kind:
+    | "capture_missing_memory"
+    | "log_retrieval_miss"
+    | "open_review_item"
+    | "open_followup"
+    | "open_entity"
+    | "open_context"
+    | "stage_alias_correction"
+    | "stage_role_correction"
+    | "stage_reporting_correction"
+    | "stage_scope_clarification"
+    | "stage_health_finding";
+  label: string;
+  previewRequired: true;
+  durableWrite:
+    | "none"
+    | "event_plus_pending_transaction"
+    | "pending_transaction"
+    | "validated_transaction_apply";
+};
+```
+
+Rules:
+
+```text
+- Repair actions are not mutations by themselves.
+- UI/API handlers must preview before write.
+- Durable repair writes use Events and/or pending Transactions.
+- Repair actions may not directly edit current pages.
+```
 
 ## 17. Maintenance and linting
 
@@ -1876,6 +2706,237 @@ If review/inbox.md exceeds 25 unresolved items or 7 days of unresolved ambiguous
 | Topic bloat | >7 active claims, >5 open questions, >10 related links | `review/inbox.md` | Stage split candidate | Required | Medium |
 
 ---
+
+
+## 17A. Maintenance, consolidation, and repair cycles
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Maintenance is a lifecycle, not an afterthought. Assisto's knowledge lifecycle is:
+
+```text
+Capture
+Compile
+Validate
+Review
+Retrieve
+Repair
+Consolidate
+Archive
+```
+
+Consolidation or "dream cycle" passes may produce:
+
+```text
+duplicate candidates
+stale claim findings
+unscoped claim findings
+contradiction findings
+missing evidence findings
+suggested context splits
+suggested topic splits
+review backlog summaries
+regenerated summary drafts
+source coverage gaps
+retrieval miss clusters
+```
+
+Unsafe consolidation outputs:
+
+```text
+direct canonical rewrites
+automatic merges
+automatic contradiction resolution
+automatic deletion
+generated explanation persistence
+```
+
+Rule:
+
+```text
+Consolidation may find, rank, draft, and stage. It may not silently rewrite.
+```
+
+### Bias-aware randomized lint
+
+Assisto should not only lint recently changed pages or follow ingestion order. Long-lived contradictions may appear across old pages, and context-window limits make full-vault linting impractical.
+
+Add lint modes:
+
+```text
+/wm-lint --changed
+/wm-lint --random --sample 8
+/wm-lint --topic pgvector --neighborhood-depth 2
+/wm-lint --resume lint_<id>
+```
+
+Lint runs are recorded under:
+
+```text
+review/lint-runs/
+```
+
+Example lint-run metadata:
+
+```yaml
+id: lint_2026_06_01_random_001
+mode: random_batch
+random_seed: 4815162342
+sample_size: 8
+sampled_pages:
+  - people/joe.md
+  - topics/pgvector.md
+  - contexts/current-work.md
+open_threads:
+  - possible_mysql_scope_conflict
+```
+
+## 17B. Adversarial review
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Adversarial review is a post-MVP lint mode. It uses a second model or independent pass to inspect pages for:
+
+```text
+unsupported summaries
+inference promoted as fact
+overgeneralized scope
+stale claims
+contradiction candidates
+missing evidence
+missing ReviewItems
+```
+
+Adversarial review may emit derived findings, ReviewItem candidates, or pending `STAGE_REVIEW` Transactions. A durable ReviewItem is created only through the existing transaction-backed staging path. It may not apply transactions, rewrite summaries, supersede claims, merge entities, delete memory, resolve contradictions, or directly write canonical ReviewItems.
+
+Commands:
+
+```text
+/wm-adversarial-review <page>
+/wm-adversarial-review --changed-since HEAD~1
+/wm-adversarial-review --high-impact
+```
+
+Allowed outputs:
+
+```text
+- derived finding
+- ReviewItem candidate
+- pending STAGE_REVIEW Transaction
+- log entry
+```
+
+Forbidden outputs:
+
+```text
+- direct canonical ReviewItem write
+- direct summary rewrite
+- direct claim supersession
+- direct entity merge
+- direct contradiction resolution
+```
+
+Example ReviewItem candidate:
+
+```yaml
+review_reason: unsupported_summary
+severity: medium
+affected_files:
+  - people/joe.md
+issue: >
+  Summary says Joe owns database decisions, but evidence only supports
+  "Joe is the DBA."
+candidate_resolutions:
+  - remove ownership wording
+  - downgrade to inference
+  - ask user whether Joe owns DB decisions
+```
+
+## 17C. Maintenance domain events
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Assisto should record high-level maintenance events in `logs/domain-events.md` or `logs/maintenance-events/YYYY-MM.md`.
+
+Examples:
+
+```text
+DuplicateCandidateDetected
+EntityAliasProposed
+ConceptRelationshipTyped
+ConceptLevelChanged
+ClaimPromotedToTopic
+TopicSplitCandidateDetected
+ContradictionCandidateDetected
+UnsupportedSummaryDetected
+ScopeClarificationRequested
+StaleClaimCandidateDetected
+```
+
+Example:
+
+```yaml
+event_type: DuplicateCandidateDetected
+subject: per_joe
+candidate: per_joseph
+evidence:
+  - similar_name: true
+  - overlapping_role: DBA
+  - overlapping_topics: [mysql, pgvector]
+result:
+  review_item: rev_duplicate_joe_joseph
+```
+
+Maintenance domain events are operational audit entries. They belong in Logs, not Events, unless the user explicitly captures a maintenance finding as a work note. They may cite Events and ReviewItems, but they are not themselves evidence for work-memory claims. Domain events are operational evidence about Assisto's maintenance behavior; they do not create canonical work facts.
+
+## 17D. Workbench and daily dogfood loops
+
+> This section describes a derived or review-gated post-MVP capability. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+Assisto's strongest path to usefulness is a daily operating loop, not just better extraction.
+
+Daily loop:
+
+```text
+capture one real note
+→ review one pending transaction
+→ ask one cited question
+→ repair one missing or wrong memory item
+→ generate one disposable brief
+```
+
+Workday modes:
+
+```text
+Morning review
+Meeting prep
+After-meeting capture
+End-of-day review
+Weekly health check
+```
+
+High-value surfaces:
+
+```text
+Dogfood Home
+Daily Queue
+Capture Inbox
+Import Assistant
+Ask Workbench
+Context Dashboards
+Meeting Modes
+End-of-Day Review
+Personal Dogfood Eval
+```
+
+Rules:
+
+```text
+- Workbench state is derived or local UI state.
+- Durable changes route through Events and Transactions.
+- Disposable briefs are not memory unless explicitly captured.
+```
+
 
 ## 18. Human review model
 
@@ -1915,6 +2976,13 @@ Validation must run before any transaction is applied.
 | `validate-summary-basis` | New summary text must derive from active claims or be omitted. |
 | `validate-no-ambiguous-entity-update` | `near_match` and `ambiguous` entities cannot be updated automatically. |
 | `validate-transaction-rollback` | Transactions include rollback/repair notes. |
+| `validate-ontology-relation-known` | Relation names in ontology-aware frames must exist in the OntologyRegistry. |
+| `validate-ontology-domain-range` | Relation frames must satisfy relation domain/range constraints. |
+| `validate-ontology-scope-requirements` | Relations requiring scope must stage or fail when scope is missing. |
+| `validate-no-generic-related-when-specific-exists` | Generic `related` links should fail or stage when a more specific relation applies. |
+| `validate-derived-facts-non-canonical` | Derived symbolic facts cannot appear as active canonical claims. |
+| `validate-proof-for-derived-fact` | Every derived finding must have rule IDs and source claim/Event premises. |
+| `validate-write-lock-requirements` | Transaction application must use global/per-file locks after write-safety phase. |
 
 ### Validation failure behavior
 
@@ -1944,6 +3012,56 @@ Validation must run before any transaction is applied.
 | Summary unsupported-claim rate | 0% for MVP-generated summaries |
 | Broken-link rate after applied transactions | 0% |
 | Review backlog unresolved after weekly review | ≤ 25 items |
+| Answer citation coverage for CitedAnswerContract | ≥ 95% |
+| Unsupported answer count in answer evals | 0 high-impact answers |
+| Inference laundering violations | 0 |
+| Derived facts with proof traces | 100% |
+| Derived facts written as active canonical claims | 0 |
+| Generic relation when specific relation exists | 0 in generated examples |
+| Concurrent transaction corruption | 0 |
+| Adversarial review direct edits | 0 |
+| Randomized lint reproducibility with fixed seed | 100% |
+
+### Post-MVP eval gates
+
+New intelligence layers require their own eval gates:
+
+```text
+eval:answers
+eval:ontology
+eval:reasoning
+eval:maintenance
+eval:adapters
+```
+
+Minimum scenarios:
+
+```text
+- manager/reporting inverse relation
+- ownership relation with missing scope
+- stale role detection
+- conflict detection in same scope
+- no inference promoted to active claim
+- symbolic derived fact has inference path
+- changed ontology invalidates derived index
+- explanation repeat stages candidate, not page
+- adversarial review creates pending STAGE_REVIEW Transaction only
+- source adapter preserves raw text and hash
+```
+
+Post-MVP acceptance thresholds:
+
+```text
+unsupported direct answers = 0
+derived facts written as active claims = 0
+symbolic outputs without inference path = 0
+ontology relation domain/range violations missed = 0
+automatic entity merges from ontology/reasoning = 0
+automatic contradiction resolution from reasoning = 0
+generated explanation persistence without explicit capture = 0
+adversarial review direct canonical writes = 0
+semantic search unsupported-fact answers = 0
+```
 
 ### Required tests
 
@@ -1963,6 +3081,51 @@ Validation must run before any transaction is applied.
 | Review backlog growth | 200 ambiguous notes. | Unusable review queue. |
 | Source-grounded answer | Ask factual query requiring evidence. | Unsupported answer. |
 | Retrieval context packing | Solr/Qdrant Joe/Mike query. | Irrelevant or missing context. |
+| Ontology domain/range | `uses_technology(Person, MySQL)` fails or stages. | Invalid semantic frames. |
+| Ontology scope requirement | `uses_technology(unknown, MySQL)` stages. | Unscoped technical truth. |
+| Relation typing | Generic `related` rejected when `discussed_topic` applies. | Relationship collapse. |
+| Symbolic retrieval hint | Joe is retrieved for pgvector through proof-backed discussion rule. | Opaque retrieval. |
+| Symbolic no-canonical-write | Derived facts cannot modify People/Topics/Contexts. | Inference becoming truth. |
+| Proof required | Every derived fact has rule ID and premises. | Unexplainable reasoning. |
+| Adversarial unsupported summary | “Joe owns DB decisions” from “Joe is DBA” creates ReviewItem. | Summary overreach. |
+| Concurrent apply | Two transaction applies cannot corrupt files. | Physical write race. |
+| Randomized lint | Fixed seed reproduces sampled page set. | Non-reproducible maintenance. |
+| Adapter normalization | Future input adapters output Events only. | Source-specific direct mutation. |
+| Personal dogfood eval | Real user questions require expected claim/Event/page IDs. | Synthetic-only eval blindness. |
+
+
+### Personal dogfood evals
+
+Assisto should evaluate against the user's real questions, not only synthetic fixtures. Personal evals live in local `.assisto-local` state and should not be committed if they contain private work questions.
+
+Workbench session state belongs under `.assisto-local/**` or equivalent ignored runtime storage. It may store pinned questions, daily UI progress, import sessions, and local eval question sets. It must not store canonical claims, generated answer truth, generated briefs as memory, or transaction substitutes. Deleting `.assisto-local/**` must not corrupt memory.
+
+Example eval item:
+
+```json
+{
+  "question": "Who is my manager?",
+  "expected_claim_ids": ["clm_example"],
+  "expected_event_ids": ["ev_example"],
+  "expected_page_paths": ["memory/people/example.md"],
+  "tags": ["manager", "person"]
+}
+```
+
+Metrics:
+
+```text
+answerability
+citation coverage
+irrelevant inclusion count
+cannot-confirm quality
+review/follow-up surfacing
+generated-persistence violations
+missing-memory action quality
+```
+
+Retrieval misses should become repair suggestions, not hallucinated answers.
+
 
 ---
 
@@ -2195,6 +3358,61 @@ Whether transaction model is safe enough for automation.
 
 ## 22. Architecture-neutral implementation roadmap
 
+> This section describes a derived or review-gated post-MVP capability where explicitly labeled. It does not expand the set of canonical memory objects and does not authorize direct writes to Person, Context, Topic, FollowUp, ReviewItem, or Transaction pages.
+
+### Roadmap by implementation status
+
+The roadmap separates the current invariant from near-term hardening and post-MVP architecture so future agents do not mistake roadmap concepts for implemented canonical behavior.
+
+#### MVP invariant / always required
+
+```text
+Event evidence
+Candidate claims
+Transactions
+validation
+ReviewItems
+claim provenance
+staging
+no autonomous merge
+no autonomous contradiction resolution
+```
+
+#### Near-term hardening
+
+```text
+write permission matrix
+ontology path correction
+adversarial review transaction path
+RepairAction semantics
+retrieval evidence hydration
+symbolic index rebuild semantics
+ontology versioning
+```
+
+#### Post-MVP architecture
+
+```text
+Cited Answer Engine
+Entity Stewardship Command Center
+Context Operating Rooms
+Source Adapter Fabric
+Derived Ontology and Symbolic Reasoning
+Consolidation and Repair Cycles
+Dogfood Workbench and Personal Eval Loops
+```
+
+#### Deferred research / explicitly out of scope
+
+```text
+graph database as canonical state
+vector search as canonical state
+autonomous merge
+autonomous contradiction resolution
+full transcript ingestion
+generated explanation persistence without explicit capture
+```
+
 ### Phase 0 — Manual markdown prototype and schema validation
 
 | Field | Detail |
@@ -2225,6 +3443,16 @@ Whether transaction model is safe enough for automation.
 | Risk | Missing semantically related notes. |
 | Success criteria | Solr/Qdrant Joe/Mike scenario retrieves relevant pages and avoids noisy context. |
 
+### Phase 2.5 — Write safety and locking
+
+| Field | Detail |
+|---|---|
+| Goal | Prevent physical file corruption under parallel or ambient runtimes. |
+| Deliverables | Global apply lock, per-file locks, atomic writes, failed transaction repair path. |
+| Deferred | Parallel ingestion, background jobs, Hermes/Pi gateway ingestion. |
+| Risk | False sense of safety from logical transactions alone. |
+| Success criteria | Concurrent transaction tests cannot corrupt files. |
+
 ### Phase 3 — Review queue and weekly linting
 
 | Field | Detail |
@@ -2234,6 +3462,36 @@ Whether transaction model is safe enough for automation.
 | Deferred | Autonomous resolution. |
 | Risk | Review backlog becomes too large. |
 | Success criteria | Weekly review stays under 30 minutes and backlog ≤25 items. |
+
+### Phase 3.5 — Cited Answer Engine
+
+| Field | Detail |
+|---|---|
+| Goal | Upgrade retrieval into structured, cited answers with uncertainty, conflicts, stale signals, and repair actions. |
+| Deliverables | `CitedAnswerContract`, `AnswerCitationMap`, `cannotConfirm`, `conflicts`, `staleSignals`, `repairActions`. |
+| Deferred | Persisting generated answers as memory. |
+| Risk | User treats fluent answers as canonical truth. |
+| Success criteria | High-impact answers have citations or explicit cannot-confirm entries; no inference laundering. |
+
+### Phase 3.6 — Entity Stewardship Command Center
+
+| Field | Detail |
+|---|---|
+| Goal | Surface identity risk, duplicate candidates, alias conflicts, stale claims, and conflicting facts. |
+| Deliverables | Derived entity risk views, duplicate/alias review lanes, identity repair suggestions. |
+| Deferred | Automatic merge/split/delete. |
+| Risk | False merges corrupt memory. |
+| Success criteria | Ambiguous identities are staged and never merged automatically. |
+
+### Phase 3.7 — Context Operating Rooms
+
+| Field | Detail |
+|---|---|
+| Goal | Provide derived project/system/team cockpits with owners, decisions, open questions, risks, follow-ups, and source timeline. |
+| Deliverables | Derived context room view, timeline, cited brief generation, repair suggestions. |
+| Deferred | Context room as canonical page replacement. |
+| Risk | Derived room treated as truth. |
+| Success criteria | Context rooms cite source claims/events and route corrections through Transactions. |
 
 ### Phase 4 — Optional MCP/tool integration
 
@@ -2245,23 +3503,53 @@ Whether transaction model is safe enough for automation.
 | Risk | Tooling complexity hides semantic problems. |
 | Success criteria | Tools apply only validated transactions. |
 
-### Phase 5 — Optional vector/graph indexes
+### Phase 4.5 — Source Adapter Fabric
 
 | Field | Detail |
 |---|---|
-| Goal | Improve retrieval only if lexical/wikilink retrieval fails. |
-| Deliverables | Derived index pipeline, rebuild procedure, evaluation comparison. |
-| Deferred | Making index canonical. |
-| Risk | Search layer becomes source of truth. |
-| Success criteria | Demonstrated retrieval improvement without canonical-state confusion. |
+| Goal | Add document/transcript/email/browser inputs without fragmenting the architecture. |
+| Deliverables | `InputAdapter` / `SourceAdapterOutput`, source hashes, observed dates, parser notes, normalized Events. |
+| Deferred | Direct source-specific canonical mutations. |
+| Risk | Adapters bypass Events or generate too many claims. |
+| Success criteria | Every adapter outputs Events and uses the normal transaction path. |
 
-### Phase 6 — Automation after thresholds are met
+### Phase 5 — Derived Ontology and Symbolic Reasoning
+
+| Field | Detail |
+|---|---|
+| Goal | Add typed relation semantics, bounded inference, proof traces, stale/conflict signals, and review candidates. |
+| Deliverables | `OntologyRegistry`, `RelationDefinition`, `SymbolicMemoryGraph`, `InferencePath`, `ReasoningFinding`. |
+| Deferred | Graph database as canonical state, autonomous theorem proving, automatic inferred facts. |
+| Risk | Hidden symbolic errors or ontology rigidity. |
+| Success criteria | Every reasoning output is `derived_only`, proof-backed, and unable to write active claims directly. |
+
+### Phase 5.5 — Consolidation and Repair Cycles
+
+| Field | Detail |
+|---|---|
+| Goal | Add review-gated dream cycles for duplicates, stale claims, contradictions, gaps, retrieval misses, and summary drafts. |
+| Deliverables | Randomized lint, persistent lint scratchpad, domain events, repair suggestions, pending Transactions. |
+| Deferred | Autonomous cleanup. |
+| Risk | Review fatigue. |
+| Success criteria | Consolidation finds issues and stages them without silently rewriting canonical memory. |
+
+### Phase 6 — Dogfood Workbench and Personal Eval Loops
+
+| Field | Detail |
+|---|---|
+| Goal | Make the system useful in daily work through capture/review/ask/repair/brief loops and personal evals. |
+| Deliverables | Dogfood Home, Daily Queue, Ask Workbench, meeting modes, end-of-day review, personal eval format. |
+| Deferred | Product polish and full UI. |
+| Risk | Beautiful but unused system. |
+| Success criteria | User can run daily loop and personal evals without violating canonical/derived boundaries. |
+
+### Phase 7 — Automation after thresholds are met
 
 | Field | Detail |
 |---|---|
 | Goal | Automate only safe, proven operations. |
 | Deliverables | Automated ADD_EVENT, low-risk UPSERT_CLAIM, STAGE_REVIEW, validation, logs. |
-| Deferred | Autonomous merge/delete/contradiction resolution. |
+| Deferred | Autonomous merge/delete/contradiction resolution, generated explanation persistence. |
 | Risk | Silent memory corruption. |
 | Success criteria | All evaluation thresholds met over real or simulated 30-day workload. |
 
@@ -2426,3 +3714,140 @@ The first prototype should support only short user notes and manual/semiautomati
 The first milestone is:
 
 > A source-backed markdown mutation loop that can ingest 50 realistic work notes without creating fake obligations, duplicate people, unsupported summaries, broken links, or unscoped technical truths.
+
+
+---
+
+## Appendix A — Non-canonical derived layers
+
+Assisto may maintain derived layers:
+
+```text
+indexes/lexical/
+indexes/semantic/
+indexes/symbolic/
+ontology views
+ContextPack
+HotPack
+ExportPack
+BriefPack
+AgentWorkPack
+CitedAnswerContract
+Workbench/session state
+personal eval sessions
+```
+
+Rules:
+
+```text
+1. Derived layers are rebuildable.
+2. Derived layers never override canonical markdown.
+3. Derived facts cannot appear as active canonical claims.
+4. Derived retrieval hints must include provenance.
+5. Derived review candidates must become ReviewItems before mutation.
+6. Any canonical change requires a Transaction.
+```
+
+## Appendix B — Semantic anti-patterns
+
+### Anti-pattern: generic relation graph
+
+Bad:
+
+```text
+Joe related_to pgvector
+Solr related_to Qdrant
+```
+
+Good:
+
+```text
+discussed_topic(Joe, pgvector, Event)
+broader(qdrant, vector-search)
+broader(solr, lexical-search)
+```
+
+### Anti-pattern: inference promoted as fact
+
+Bad:
+
+```text
+Joe is DBA → Joe owns pgvector decision
+```
+
+Good:
+
+```text
+possible_stakeholder(Joe, pgvector) → retrieval hint or ReviewItem
+```
+
+### Anti-pattern: ontology as canonical truth
+
+Bad:
+
+```text
+Ontology says DBAs own DB decisions, therefore Joe owns DB decisions.
+```
+
+Good:
+
+```text
+Ontology suggests a review candidate requiring explicit evidence.
+```
+
+### Anti-pattern: symbolic writes
+
+Bad:
+
+```text
+Datalog rule writes to people/joe.md
+```
+
+Good:
+
+```text
+Datalog rule writes to indexes/symbolic/review-candidates.jsonl
+```
+
+### Anti-pattern: generated answer persistence
+
+Bad:
+
+```text
+A generated answer is appended to an Explanation page because it sounded useful.
+```
+
+Good:
+
+```text
+User explicitly says "save this" → answer is captured as an Event → candidate claims/explanation → Transaction → review/apply.
+```
+
+## Appendix C — Risk register
+
+| Risk | Description | Severity | Mitigation |
+|---|---|---:|---|
+| Inference laundering | Derived/generated/inferred text becomes durable truth. | High | Event → Transaction → validation/review for all durable changes. |
+| False merge | Two people/topics become one incorrectly. | High | Stage near/ambiguous identity; no autonomous merge. |
+| Scope overreach | Local/project fact becomes global truth. | High | Require scope for system/context claims. |
+| Stale current state | Old roles or owners keep answering as current. | High | Temporal fields, supersession, stale signals, context timelines. |
+| Review fatigue | Too many staged items become ignored. | High | Daily queue, prioritization, grouped review summaries. |
+| Retrieval drift | Larger memory retrieves wrong or irrelevant pages. | Medium | Answer evals, citation coverage, repair actions, personal dogfood eval. |
+| Ingestion-order bias | Early sources dominate summaries and framing. | Medium | Bias-aware lint and randomized/stratified maintenance. |
+| Provenance too coarse | Event-level citations cannot support precise claims. | Medium | Optional span/page/line evidence ladder. |
+| Tooling becomes canonical | Index/graph/vector/UI state outranks markdown. | High | Derived-artifact rule and rebuildability checks. |
+| Full transcript noise | Bulk ingestion overwhelms review and claims. | Medium | Curated import, triage, source hashes, limit handling. |
+| Generated brief persistence | Disposable summaries become memory. | High | Capture only via explicit source Event and pending Transaction. |
+| Concurrency corruption | Two agents mutate same pages inconsistently. | High | Transaction locks, write safety, validation before apply. |
+| Ontology rigidity | Overdesigned taxonomy blocks real work. | Medium | Small registry, versioned rules, derived only. |
+| Hidden symbolic errors | Reasoner implies unsupported facts. | High | Inference paths, cannot-confirm, no canonical writes. |
+| Eval blindness | Synthetic tests pass but real use fails. | Medium | Personal dogfood eval and retrieval miss logging. |
+
+## Appendix D — Source references
+
+- [KW] Andrej Karpathy, **LLM Wiki**: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
+- [GC] Public comments on the LLM Wiki gist, especially implementation lessons on Identity, Level, Relationship, lint/dream cycles, provenance, and maintenance.
+- W3C SKOS Primer: https://www.w3.org/TR/skos-primer/
+- W3C SHACL Recommendation: https://www.w3.org/TR/shacl/
+- Soufflé Datalog tutorial: https://souffle-lang.github.io/tutorial
+- Soufflé provenance guide: https://souffle-lang.github.io/provenance

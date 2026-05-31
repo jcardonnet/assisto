@@ -1,313 +1,106 @@
 # WSL2 Handoff
 
-Use this document to continue the work-memory assistant from a WSL2 checkout.
+Use this file to restart Assisto work in `/home/jc/assisto`.
 
-## Prime Prompt
-
-Paste this into the new WSL2 Codex/Pi thread:
+## Read First
 
 ```text
-You are continuing work on the Assisto work-memory assistant in WSL2.
-
-Read first:
-- AGENTS.md
-- README.md
-- docs/revised-design.md
-- docs/implementation-plan.md
-- docs/decisions.md
-- docs/wsl2-handoff.md
-
-Project invariant:
-- Canonical state lives under memory/.
-- Ingestion may create Events and pending Transactions.
-- Canonical memory pages must not be written directly from ingestion.
-- Multi-file mutations go through Transactions.
-- Durable claims must cite Event IDs.
-- Unknown system/project/context scope must be staged.
-- Do not implement vector search, graph DB, MCP, autonomous merges, autonomous contradiction resolution, autonomous background linting, full transcript ingestion, or direct canonical writes from ingestion.
-
-Current implementation status:
-- TypeScript pnpm monorepo is scaffolded.
-- Core domain types, markdown parsing, validators, safe fs/vault utilities, transactions, deterministic policies, candidate-pipeline ingestion, provider-ready LLM extraction, CLI, lexical retrieval, lint, eval harness, Pi extension, Pi skills/prompts, review workflow support, and CI exist.
-- Pi extension entrypoint exports a default factory function, native Pi command/tool adapter, write guard, and review item tools.
-- Skill files have required YAML frontmatter.
-- Rule-based ingestion now recognizes first-person job utterances like "I started new job this monday as a AI Engineer at SmartEquip".
-- Testing is split into `pnpm test:unit`, `pnpm test:integration`, `pnpm test:e2e`, `pnpm eval:mvp`, `pnpm eval:v2`, and `pnpm eval:v3`; `pnpm test` runs unit plus integration.
-- GitHub Actions CI is at `.github/workflows/ci.yml` and runs lint, typecheck, test, test:e2e, eval:mvp, eval:v2, and eval:v3 on push/PR to main.
-
-Before changing behavior, inspect the current git status and preserve unrelated user changes.
-Run validation after code changes:
-- pnpm lint
-- pnpm typecheck
-- pnpm test
-- pnpm test:e2e for CLI/Pi/review workflow changes
-- pnpm eval:mvp when touching ingestion, validation, transactions, follow-ups, retrieval, entity resolution, linting, or evals.
-- pnpm eval:v2 when touching v2 extraction, context staging, review workflow, retrieval, or evals.
-- pnpm eval:v3 when touching deterministic detectors, safe upserts, review application, Event reprocessing, or v3 evals.
-
-Recommended next feature:
-Expand reviewed resolution flows and detector coverage from real notes while keeping provider output as candidate data only.
-```
-
-## WSL2 Bootstrap
-
-From WSL2, prefer working inside the Linux filesystem, for example:
-
-```bash
-cd ~/assisto
-corepack enable
-corepack prepare pnpm@9.15.4 --activate
-pnpm install
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm eval:mvp
-pnpm eval:v2
-pnpm eval:v3
-```
-
-If cloning from the Windows working tree, check line endings before committing. The Windows repo has shown LF-to-CRLF warnings. Prefer Git settings that keep repo text stable in WSL2.
-
-## Repo Layout
-
-```text
-packages/core          deterministic memory semantics
-packages/cli           local wm executable wrapper
-packages/pi-extension  Pi runtime adapter
-.pi/extensions         Pi extension entrypoint
-.pi/skills             Pi workflow skills
-.pi/prompts            Pi prompt templates
-memory/                canonical markdown vault
-tests/                 deterministic unit/integration/eval tests
-```
-
-## Current Git/State Notes
-
-Latest pushed commits on `main`:
-
-```text
-3494a16 Add CI validation workflow
-4cae8ec Finished V2
-```
-
-Current expected state after pulling `origin/main`:
-
-```text
-git status --short --branch
-## main...origin/main
-```
-
-Historical caution: earlier handoffs had untracked runtime `memory/events/2026/` and pending transaction files. Treat any local `memory/` files as user data until inspected. Do not delete or revert them without explicit approval.
-
-## Recent Fixes To Preserve
-
-### Pi Extension Loader
-
-Files:
-
-```text
-.pi/extensions/work-memory/index.ts
-packages/pi-extension/src/index.ts
-tests/pi-extension.mjs
-```
-
-Important behavior:
-
-- `.pi/extensions/work-memory/index.ts` exports a default factory and named `factory`.
-- Native Pi APIs are detected through `api.on`.
-- Native command registration uses `registerCommand("wm-apply", options)` instead of passing a command object.
-- Autocomplete completions are normalized so `value`, `label`, and `description` are strings.
-- Direct canonical writes are blocked through the Pi `tool_call` guard.
-
-This addressed Pi crashes like:
-
-```text
-TypeError: value.startsWith is not a function
-```
-
-### Pi Skills
-
-Files:
-
-```text
-.pi/skills/work-memory-ingest/SKILL.md
-.pi/skills/work-memory-lint/SKILL.md
-.pi/skills/work-memory-retrieve/SKILL.md
-.pi/skills/work-memory-review/SKILL.md
-```
-
-Each skill now has required YAML frontmatter:
-
-```yaml
----
-name: ...
-description: ...
----
-```
-
-### First-Person Job Extraction
-
-Files:
-
-```text
-packages/core/src/ingest/index.ts
-tests/core-ingest.mjs
-tests/scenarios/run-mvp.mjs
+AGENTS.md
 README.md
+docs/revised-design.md
+docs/cited-work-memory.md
+docs/use-assisto-tomorrow.md
+docs/first-week-with-assisto.md
+docs/dogfood-vault-hygiene.md
+docs/implementation-plan.md
+docs/decisions.md
+docs/wsl2-handoff.md
 ```
 
-The rule-based extractor now handles:
-
-```text
-I started new job this monday as a AI Engineer at SmartEquip
-```
-
-Expected proposed claim:
-
-```text
-claim_id: clm_user_job_ai_engineer_smartequip
-statement: User started a new job at SmartEquip as an AI Engineer.
-scope: SmartEquip
-scope_state: complete
-valid_from: 2026-05-18
-```
-
-This is proposed in `memory/people/user.md` through a pending Transaction, not written directly to canonical memory.
-
-## Current Extractor Shape
-
-Main orchestrator:
-
-```text
-packages/core/src/ingest/index.ts
-```
-
-Candidate pipeline modules:
-
-```text
-packages/core/src/ingest/candidates.ts
-packages/core/src/ingest/detectors.ts
-packages/core/src/ingest/entity-resolution.ts
-packages/core/src/ingest/transaction-builder.ts
-```
-
-`ingestNote()` currently:
-
-1. normalizes the note;
-2. creates Event and Transaction IDs;
-3. infers simple observed dates;
-4. runs detector proposals;
-5. resolves entities and scope;
-6. applies deterministic staging policy;
-7. builds proposed transaction writes;
-8. writes the Event;
-9. writes a pending Transaction;
-10. applies only if `options.apply === true`.
-
-Current hard-coded detectors include:
-
-- Joe role claim: `Joe is the DBA`.
-- First-person employment claim: `I started ... job ... as ROLE at ORG`.
-- MySQL usage claim: `We use MySQL`, staged because scope is unknown.
-- Mike profile facts from the MVP fixtures.
-- Discussion event: `Today I talked with PERSON about TOPIC...`.
-- Follow-up detection through deterministic policy rules.
-
-Known limitation:
-
-- The extractor is not yet general-purpose natural-language extraction.
-- Detector coverage is intentionally narrow and should be expanded with tests/evals first.
-
-## V2 Foundation To Preserve
-
-Implemented v2 foundation:
-
-```text
-Raw note / provider output
--> normalized candidate data
--> entity and scope resolution
--> deterministic policy/staging
--> transaction builder
--> pending transaction
--> explicit apply
-```
-
-Important behavior:
-
-- Detectors emit candidate data only; they do not write markdown.
-- Provider-ready LLM extraction in `packages/core/src/extraction/index.ts` converts provider output into the same candidate pipeline.
-- `LlmExtractionProvider` remains provider-ready/stubbed unless a caller supplies a client; `OpenAiExtractionProvider` is the planned env-backed candidate provider and requires `OPENAI_API_KEY` plus `ASSISTO_OPENAI_MODEL`.
-- Provider hints can only increase caution; deterministic resolver/policy remains authoritative.
-- Existing Context exact/alias matches can scope claims; new, near-match, ambiguous, or unknown contexts stage ReviewItems.
-- Review item state changes are transaction-backed through `packages/core/src/review/index.ts`, CLI review commands, and Pi review tools.
-- Retrieval remains lexical and alias-aware; vector search remains deferred.
-
-CI:
-
-```text
-.github/workflows/ci.yml
-```
-
-The workflow uses Node 22 and pnpm 9.15.4, then runs:
+Then inspect:
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm eval:mvp
-pnpm eval:v2
-pnpm eval:v3
+git fetch origin
+git status --short --branch
+git log --oneline -5
 ```
 
-## Validation Baseline
+## Current Implementation Status
 
-Latest local validation passed with:
+- deterministic ingestion and candidate pipeline;
+- provider-ready optional extraction as candidate-only;
+- transaction-backed review state changes;
+- Event reprocessing and safe claim upserts;
+- lexical retrieval and cited answer contracts;
+- People/Topics/Contexts stewardship;
+- Context dashboards, operating rooms, and timelines;
+- local Workbench: Today, Capture, Import, Review, Transactions, Ask, Health, Briefs;
+- personal dogfood evals;
+- Pi adapter and CLI;
+- MVP/v2/v3/retrieval/v4/v5/v6/v7/v8 evals.
+
+## User Data Boundaries
+
+Treat these as user dogfood data unless explicitly instructed otherwise:
 
 ```text
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm eval:mvp
-pnpm eval:v2
+memory/events/**
+memory/transactions/**
+.assisto-local/**
 ```
 
-In this WSL2 shell, commands may need Linux temp variables if tools try to use Windows paths:
+Run before staging/committing:
 
 ```bash
-env TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm <script>
+pnpm check:memory-data
 ```
 
-The preferred local wrapper is:
+## Validation
+
+Prefer:
 
 ```bash
 pnpm validate:local
 ```
 
-It applies those temp/cache variables to lint, typecheck, tests, evals, and browser tests. Use `pnpm validate:ci-parity` to run the same suite in the GitHub Actions order. Use `pnpm env:doctor` to check Node, pnpm, temp paths, GitHub auth, Mixedbread credentials, Playwright, localhost binding, and git status.
-
-For large PRs or after sandbox-specific browser/e2e failures, use the local CI capsule:
+Useful gates:
 
 ```bash
-pnpm agent:ci-local --plan
-pnpm agent:ci-local
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm test:e2e
+pnpm eval:mvp
+pnpm eval:v2
+pnpm eval:v3
+pnpm eval:retrieval
+pnpm eval:v4
+pnpm eval:v5
+pnpm eval:v6
+pnpm eval:dogfood-local
+pnpm eval:v7
+pnpm eval:answers
+pnpm eval:v8
+pnpm test:browser
 ```
 
-The capsule builds a Docker/devcontainer image on Node 22 with pnpm 9.15.4, WSL-safe temp/cache variables, Playwright Chromium setup, and explicit GitHub/Mixedbread/OpenAI credential pass-through. It runs `pnpm validate:ci-parity` locally, but GitHub Actions remains the authoritative remote CI gate.
+## Mixedbread
 
-Repo-local Git email was set to the GitHub noreply address to avoid push rejection:
+Use Mixedbread for retrieval planning before non-trivial edits. Open local files before patching. Never patch from search snippets alone.
 
-```text
-931057+jcardonnet@users.noreply.github.com
+After merge:
+
+```bash
+pnpm mxbai:upload
+pnpm mxbai:smoke
 ```
 
-## Operational Cautions
+## Known Environment Issues
 
-- Do not run destructive Git commands such as `git reset --hard`.
-- Do not delete `memory/` files unless explicitly approved.
-- Run `pnpm check:memory-data` before merge to catch staged, modified, or committed edits under `memory/events/**` or `memory/transactions/**`. Untracked files in those folders are reported as local dogfood user data; do not stage them during product PRs.
-- Do not commit local runtime caches, `.codex/`, `.agents/`, `node_modules/`, or Pi runtime cache/session folders.
-- `.gitignore` is intended to keep caches out while preserving `.pi/skills`, `.pi/prompts`, and `.pi/extensions`.
-- If Pi reports extension-loader or autocomplete issues, inspect `.pi/extensions/work-memory/index.ts` and `packages/pi-extension/src/index.ts` before changing core semantics.
+If WSL/UNC access is flaky, use:
+
+```bash
+wsl.exe -d Ubuntu --cd /home/jc/assisto -- <cmd>
+```
+
+Browser tests may need to run outside the sandbox when Chromium sandbox launch is blocked.

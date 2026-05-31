@@ -1,76 +1,73 @@
 # Use Assisto Tomorrow
 
-This is a 60-minute activation recipe for turning an empty or thin Assisto vault into something useful for tomorrow's workday. It keeps the same safety model as the rest of the repo: capture and import create Events plus pending Transactions, generated answers and briefs stay disposable, and `.assisto-local/**` is only local UI/session state.
+This is a 60-minute activation recipe for turning an empty or thin Assisto vault into something useful for tomorrow's workday.
 
-## 0-5 minutes: Start clean
+Assisto's safe path is:
 
-1. Run `wm doctor memory-data` and confirm any `memory/events/**` or `memory/transactions/**` files shown as untracked are intentional personal dogfood data.
-2. Start the Workbench with `wm workbench serve`.
-3. Open the Today tab and read the Use-Assisto-Tomorrow card. Completion is derived; Assisto does not create a canonical completion page.
+```text
+Raw input → Event → Candidate claims → Transaction → Validated mutation or staged review → Current pages
+```
 
-## 5-15 minutes: Seed the basics
+Generated answers, briefs, Workbench views, and `.assisto-local/**` state are disposable derived artifacts.
 
-Use the Capture tab or Seed Kit for only the facts you would want cited tomorrow:
+## 0-5 Minutes: Start Clean
+
+1. Run `wm doctor memory-data`.
+2. Start Workbench with `wm workbench serve`.
+3. Open Today / Dogfood Home.
+
+## 5-15 Minutes: Seed The Basics
+
+Use Capture or Seed Kit for facts you would want cited tomorrow:
 
 - your role;
-- your manager and immediate team;
+- manager and immediate team;
 - current projects or Contexts;
 - important people and systems;
-- open loops you explicitly need to track;
+- open loops with explicit commitments;
 - things you keep forgetting.
 
-Seed creation and capture both write source Events plus pending Transactions only. Review before applying.
+Seed/capture writes Events plus pending Transactions only.
 
-## 15-25 minutes: Review one thing
+Do not paste a generated answer back into memory as if it were evidence. If a generated answer reveals something useful, capture the underlying source note or an explicit user correction instead.
+Ask -> Entity -> Context is the first-day workflow: ask a cited question, inspect the cited entity, then open the relevant Context.
 
-Use the Today Daily Queue or Review tab. Pick one item, preview the action, then decide:
+## 15-25 Minutes: Review One Thing
 
-- apply a staged claim only with an explicit target and Context when needed;
-- contest or archive unclear ReviewItems;
-- reprocess stale NOOP Events with stage-only semantics;
-- reject pending Transactions that are wrong.
+Use Today Daily Queue or Review. Pick one item, preview the action, then apply, reject, contest, archive, or reprocess through transaction-backed helpers.
 
-Do not batch apply. The Review queue navigator exists to make one-at-a-time review faster, not automatic.
+Do not batch apply.
 
-## 25-35 minutes: Ask one cited question
+## 25-35 Minutes: Ask One Cited Question
 
-Ask a real question such as:
+Ask:
 
 - "Who is my manager?"
 - "What project is MySQL tied to?"
 - "What do I need to review?"
 
-Use the answer basis and citations. If memory cannot answer, preview a missing-memory action or log a retrieval miss. Miss logging creates an Event plus pending NOOP Transaction.
+Use citations, `cannotConfirm`, conflicts, stale signals, and inference paths. Repair actions are previews until you confirm creation of an Event or pending Transaction.
 
-Follow the Ask -> Entity -> Context workflow when the answer points at a person, topic, or project:
+## 35-45 Minutes: Import 10 Curated Notes
 
-1. Open the cited Person, Topic, or Context from the Ask result.
-2. Check stewardship risk lanes for duplicate, alias, role/reporting, stale-claim, and review warnings.
-3. Open the Context operating room or timeline for project questions.
-4. Stage a repair or capture missing evidence only through preview-first actions.
-
-Generated answers and briefs are disposable; they do not become memory unless you separately capture the underlying source note.
-
-## 35-45 minutes: Import 10 curated notes
-
-Use the Import Assistant before importing:
+Do not import full meeting transcripts during this first-day loop. Use curated excerpts or reviewed sections only.
 
 ```bash
 wm import assistant
 wm import notes --path ~/notes/assisto-seed --glob "*.md,*.txt" --limit 10 --dry-run
 ```
 
-In the Workbench Import tab, prepare triage for messy batches. Skip duplicates, split mixed notes, set source labels, set observed dates, and assign Context per unit. Kept units create one Event plus one pending Transaction each. Duplicates and skipped units do not write Events.
+Kept units create one Event plus one pending Transaction each. Duplicates and skipped units do not write Events.
 
-## 45-55 minutes: Make a disposable brief
+## 45-55 Minutes: Make A Disposable Brief
 
-Generate one Today or Context brief. Treat it as a reading view, not memory truth. If the brief reveals missing or wrong memory, capture the correction separately so it has source evidence and a pending Transaction.
+Generate one Today or Context brief. Treat it as a reading view, not memory truth. Capture corrections separately.
 
-## 55-60 minutes: Health and next loop
+## 55-60 Minutes: Health And Next Loop
 
-Run Health and look at high-severity findings. Stage one finding only if you are ready to review the resulting pending Transaction.
+Run Health and stage one finding only if ready to review the resulting pending Transaction.
 
-Tomorrow morning, use:
+Tomorrow morning:
 
 ```bash
 wm use-tomorrow
@@ -78,4 +75,4 @@ wm mode morning
 wm dogfood eval
 ```
 
-The goal is not to import everything. The goal is to create enough cited, reviewed memory that one real question, one review decision, and one brief are useful the next day.
+The goal is enough cited, reviewed memory that one real question, one review decision, and one brief are useful.
