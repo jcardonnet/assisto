@@ -27,11 +27,13 @@ import {
   createFrictionLog,
   createImportNotes,
   createSeedKit,
+  createSourceAdapterImport,
   previewCaptureNote,
   previewCaptureFeedback,
   previewFrictionLog,
   previewImportNotes,
   previewSeedKit,
+  previewSourceAdapterImport,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -51,6 +53,9 @@ import {
   type ReviewActionState,
   type SeedKitInput,
   type SeedKitResult,
+  type SourceAdapterCreateResult,
+  type SourceAdapterKind,
+  type SourceAdapterPreviewResult,
   type SessionBriefKind,
   type ValidationDocument,
   type ValidationResult
@@ -116,6 +121,10 @@ export async function main(
 
     if (command === "import") {
       return await commandImport(parsed.root, rest, io, cwd);
+    }
+
+    if (command === "source") {
+      return await commandSource(parsed.root, rest, io, cwd);
     }
 
     if (command === "seed") {
@@ -510,6 +519,52 @@ async function commandImport(root: string, args: string[], io: CliIo, cwd: strin
 
   printImportResult(result, io);
   return importValidationPassed(result) ? 0 : 1;
+}
+
+async function commandSource(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const [subcommand] = args;
+
+  if (subcommand !== "import") {
+    throw new Error("Usage: wm source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]");
+  }
+
+  const kind = parseSourceAdapterKind(optionValue(args, "--kind"));
+  const fromPath = optionValue(args, "--path");
+  const fromStdin = args.includes("--stdin");
+  const dryRun = args.includes("--dry-run");
+
+  if (fromPath && fromStdin) {
+    throw new Error("wm source import accepts either --path or --stdin, not both.");
+  }
+
+  if (!fromPath && !fromStdin) {
+    throw new Error("wm source import requires --path <file> or --stdin.");
+  }
+
+  const input = {
+    kind,
+    root,
+    path: fromPath ? path.resolve(cwd, fromPath) : undefined,
+    rawText: fromStdin ? (io.stdin ? await io.stdin() : await readProcessStdin()) : undefined,
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    observed_at: optionValue(args, "--observed-at") ?? undefined,
+    context: optionValue(args, "--context") ?? undefined,
+    limit: parseOptionalPositiveInt(optionValue(args, "--limit"), "--limit"),
+    dryRun
+  };
+  const result = dryRun ? await previewSourceAdapterImport(input) : await createSourceAdapterImport(input);
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  if (dryRun) {
+    io.stdout(`Dry run. No changes written to ${root}.\n`);
+  }
+
+  printSourceAdapterResult(result, io);
+  return 0;
 }
 
 async function commandSeed(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
@@ -1535,6 +1590,14 @@ function extractionProviderFromName(
   );
 }
 
+function parseSourceAdapterKind(value: string | null): SourceAdapterKind {
+  if (value === "markdown" || value === "text" || value === "email" || value === "calendar" || value === "chat") {
+    return value;
+  }
+
+  throw new Error("wm source import requires --kind <markdown|text|email|calendar|chat>.");
+}
+
 function parsePort(value: string): number {
   const parsed = Number.parseInt(value, 10);
 
@@ -1612,6 +1675,31 @@ function printImportResult(result: ImportNotesResult, io: CliIo): void {
     if (unit.staged_review_paths.length > 0) {
       io.stdout(`Staged review proposals: ${unit.staged_review_paths.join(", ")}\n`);
     }
+  }
+}
+
+function printSourceAdapterResult(result: SourceAdapterPreviewResult | SourceAdapterCreateResult, io: CliIo): void {
+  io.stdout(`Source adapter: ${result.adapter_kind}\n`);
+  io.stdout(`Units: ${result.review_load_forecast.total_units}\n`);
+  io.stdout(`Likely safe: ${result.review_load_forecast.likely_safe}\n`);
+  io.stdout(`Duplicates: ${result.review_load_forecast.duplicates}\n`);
+
+  if ("created_events" in result) {
+    io.stdout(`Created Events: ${result.created_events.length}\n`);
+    io.stdout(`Pending Transactions: ${result.pending_transactions.length}\n`);
+  }
+
+  for (const warning of result.warnings) {
+    io.stdout(`Warning: ${warning}\n`);
+  }
+
+  for (const unit of result.units) {
+    if (unit.duplicate_state === "duplicate") {
+      io.stdout(`Skipped duplicate source_hash: ${unit.source_hash} (${unit.unit_id})\n`);
+      continue;
+    }
+
+    io.stdout(`Unit: ${unit.unit_id} ${unit.source_hash} ${unit.source_label}\n`);
   }
 }
 
@@ -1817,6 +1905,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]',
       "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
+      '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",

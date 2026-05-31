@@ -266,6 +266,10 @@ export function sourceHashFor(rawText: string): string {
   return createHash("sha256").update(rawText).digest("hex");
 }
 
+function normalizeSourceHashForLookup(sourceHash: string): string {
+  return sourceHash.startsWith("sha256:") ? sourceHash : `sha256:${sourceHash}`;
+}
+
 async function collectImportTriageUnits(input: ImportTriageInput): Promise<ImportTriageUnitInput[]> {
   if (Array.isArray(input.units)) {
     return input.units
@@ -315,8 +319,9 @@ async function runImportNotes(
   for (const unit of units) {
     const rawText = unit.raw_text.trim();
     const sourceHash = sourceHashFor(rawText);
+    const sourceHashKey = normalizeSourceHashForLookup(sourceHash);
     const sourceLabel = options.source_label ?? unit.source_path ?? "pasted import";
-    const existing = seenSourceHashes.get(sourceHash);
+    const existing = seenSourceHashes.get(sourceHashKey);
 
     if (existing) {
       results.push({
@@ -358,7 +363,7 @@ async function runImportNotes(
     });
 
     results.push(result);
-    seenSourceHashes.set(sourceHash, {
+    seenSourceHashes.set(sourceHashKey, {
       event_id: ingest.event_id,
       event_path: ingest.event_path
     });
@@ -396,6 +401,7 @@ async function runImportTriage(
     const rawText = unit.raw_text.trim();
     const triageAction = normalizeTriageAction(unit.action);
     const sourceHash = sourceHashFor(rawText);
+    const sourceHashKey = normalizeSourceHashForLookup(sourceHash);
     const sourceLabel = unit.source_label?.trim() || options.source_label || unit.source_path || "pasted import";
     const observedAt = unit.observed_at ?? options.observed_at;
     const context = unit.context?.trim() || options.context;
@@ -416,7 +422,7 @@ async function runImportTriage(
       continue;
     }
 
-    const existing = seenSourceHashes.get(sourceHash);
+    const existing = seenSourceHashes.get(sourceHashKey);
 
     if (existing) {
       results.push({
@@ -464,7 +470,7 @@ async function runImportTriage(
       context,
       extraction_summary: extractionSummaryForImportedUnit(result)
     });
-    seenSourceHashes.set(sourceHash, {
+    seenSourceHashes.set(sourceHashKey, {
       event_id: ingest.event_id,
       event_path: ingest.event_path
     });
@@ -622,7 +628,7 @@ async function loadSourceHashIndex(root: string): Promise<Map<string, { event_id
     const sourceHash = stringValue(parsed.frontmatter.source_hash);
 
     if (sourceHash) {
-      hashes.set(sourceHash, {
+      hashes.set(normalizeSourceHashForLookup(sourceHash), {
         event_id: stringValue(parsed.frontmatter.id),
         event_path: file
       });

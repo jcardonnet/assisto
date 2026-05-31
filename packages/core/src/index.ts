@@ -22,5 +22,6 @@ export * from "./use-tomorrow";
 export * from "./workday-modes";
 export * from "./seed";
 export * from "./import";
+export * from "./source-adapters";
 export * from "./entities";
 export * from "./friction";

@@ -1,52 +1,55 @@
 # Source Adapters
 
-Source adapters normalize external material into Assisto's Event-first mutation loop.
+Source adapters normalize external source material into Assisto source-preserving import units. They are an adapter layer over the safe compiler core:
 
-They may handle Markdown/text imports, pasted notes, web clippings, document parser output, email/chat excerpts, calendar notes, code/project artifacts, and curated transcript excerpts.
-
-## SourceAdapterOutput
-
-```ts
-type SourceAdapterOutput = {
-  adapterId: string;
-  sourceLabel: string;
-  sourceHash: string;
-  observedAt?: string;
-  rawText: string;
-  units: SourceUnit[];
-  parserNotes: string[];
-};
+```text
+Raw input -> Event -> Candidate claims -> Transaction -> Validated mutation or staged review -> Current pages
 ```
 
-## SourceUnit
+Adapters may parse Markdown/text batches, pasted notes, email excerpts, calendar events, and chat excerpts. They do not write current Person, Topic, Context, FollowUp, ReviewItem, index, vector, graph, MCP, or generated-answer state directly.
+
+## Public Contract
 
 ```ts
-type SourceUnit = {
-  unitId: string;
-  rawText: string;
-  sourceSpan?: {
-    filePath?: string;
-    lineStart?: number;
-    lineEnd?: number;
-    page?: number;
-    timestampStart?: string;
-    timestampEnd?: string;
-  };
-  suggestedEventMetadata: Record<string, unknown>;
-};
+export type SourceAdapterKind = "markdown" | "text" | "email" | "calendar" | "chat";
+export interface SourceSpan { source_path?: string; start_line?: number; end_line?: number; start_offset?: number; end_offset?: number; label?: string; }
+export interface SourceAdapterInput { kind: SourceAdapterKind; root: string; path?: string; rawText?: string; source_label?: string; observed_at?: string; context?: string; limit?: number; dryRun?: boolean; }
+export interface SourceAdapterUnit { unit_id: string; adapter_kind: SourceAdapterKind; raw_text: string; source_label: string; source_hash: string; observed_at: string | null; contexts: string[]; source_spans: SourceSpan[]; metadata: Record<string, string>; duplicate_state: "new" | "duplicate"; skip_reason?: string; }
+export interface SourceAdapterPreviewResult { adapter_kind: SourceAdapterKind; units: SourceAdapterUnit[]; review_load_forecast: { total_units: number; likely_safe: number; likely_staged: number; likely_conflict: number; duplicates: number; }; warnings: string[]; }
+export interface SourceAdapterCreateResult extends SourceAdapterPreviewResult { created_events: string[]; pending_transactions: string[]; }
 ```
 
-## Rules
+## Adapter Behavior
 
-- Preserve raw text.
-- Use `source_hash` for duplicate detection.
-- Preserve `observed_at` and `source_label` when known.
-- Include parser notes when extraction is uncertain.
-- Keep source spans as evidence metadata.
-- Kept units create Events plus pending Transactions.
-- Skipped duplicates do not write Events.
-- Adapters never write Person, Topic, Context, FollowUp, or ReviewItem pages directly.
+- Markdown and text split batches on lines containing only `---`; empty units are skipped.
+- Email parses `From`, `To`, `Date`, and `Subject` headers when present, and strips quoted lines beginning with `>`.
+- Calendar parses `SUMMARY`, `DTSTART`, and `ATTENDEE` fields when present.
+- Chat parses lines like `[2026-05-31 09:10] Name: message` into one unit per message.
+- Every kept unit preserves raw unit text, `source_label`, optional `observed_at`, contexts, metadata, source spans, and a `sha256:<hex>` `source_hash`.
+- Duplicate detection scans existing Event frontmatter for `source_hash`; duplicate units are skipped and do not create Events.
+
+## Write Boundary
+
+Preview is read-only. Create writes one Event plus one pending Transaction per kept nonduplicate unit through the existing ingestion path with `apply: false`.
+
+The Event preserves source metadata. The pending Transaction may propose current-page mutations for review, but adapters themselves never apply Transactions and never edit current pages directly.
+
+## CLI And Workbench
+
+Minimal CLI support:
+
+```bash
+wm source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--dry-run] [--json]
+```
+
+Minimal Workbench JSON endpoints:
+
+```text
+POST /api/source/import/preview
+POST /api/source/import
+```
 
 ## Curated Transcript Boundary
 
 Assisto supports curated transcript excerpts or reviewed transcript sections. Full transcript ingestion remains out of scope unless designed as a separate high-volume workflow with chunking, source-span provenance, review-load forecasting, duplicate detection, and explicit user confirmation.
+

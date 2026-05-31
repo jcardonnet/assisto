@@ -52,7 +52,9 @@ Events may include:
 - parser notes;
 - optional source spans.
 
-`source_hash` is used for duplicate raw Markdown/text import detection. It does not promote unscoped claims into active truth.
+Source adapters must use `sha256:<hex>` source hashes, preserve raw unit text, and route create operations through Event plus pending Transaction writes only.
+
+`source_hash` is used for duplicate raw source-unit import detection. It does not promote unscoped claims into active truth.
 
 ## Repair actions
 
