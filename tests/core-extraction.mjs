@@ -396,6 +396,39 @@ related: []
     await rm(ontologyInvalidRoot, { recursive: true, force: true });
   }
 
+  const ontologyUnknownKindRoot = await makeTempVault();
+
+  try {
+    const result = await extraction.ingestWithExtractionProvider(ontologyUnknownKindRoot, "Inventory uses Redis.", {
+      provider: {
+        async extract() {
+          return {
+            frames: [
+              {
+                subject_kind: "Project",
+                subject_id: "ctx_inventory",
+                relation: "uses_technology",
+                object_kind: "Topic",
+                object_id: "top_redis",
+                statement: "Inventory uses Redis.",
+                scope: "ctx_inventory",
+                evidence: ["explicit note"]
+              }
+            ]
+          };
+        }
+      }
+    });
+    const tx = transactions.parseTransactionMarkdown(await readVaultFile(ontologyUnknownKindRoot, result.transaction_path));
+    const content = proposedWrites(tx).map((write) => write.content).join("\n");
+
+    assert.equal(result.deterministic_review_reasons.includes("ontology_domain_range_mismatch"), true);
+    assert.equal(proposedWrites(tx).every((write) => write.path.startsWith("memory/review/")), true);
+    assert.match(content, /subject_kind: Project/);
+  } finally {
+    await rm(ontologyUnknownKindRoot, { recursive: true, force: true });
+  }
+
   const ontologyHighRiskRoot = await makeTempVault();
 
   try {

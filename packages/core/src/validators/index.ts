@@ -18,7 +18,7 @@ import {
   type FrontmatterValue,
   type ParsedClaimBlockRecord
 } from "../markdown";
-import { defaultOntologyRegistry, validateOntologyFrame } from "../ontology";
+import { defaultOntologyRegistry, validateOntologyFrame, type OntologyRegistry } from "../ontology";
 
 export type ValidationErrorCode =
   | "MISSING_FRONTMATTER_FIELD"
@@ -43,7 +43,8 @@ export type ValidationErrorCode =
   | "TRANSACTION_WRITESET_MISSING"
   | "TRANSACTION_WRITE_PATH_INVALID"
   | "TRANSACTION_AFFECTED_FILE_MISMATCH"
-  | "ONTOLOGY_FRAME_INVALID";
+  | "ONTOLOGY_FRAME_INVALID"
+  | "ONTOLOGY_REGISTRY_INVALID";
 
 export type ValidationWarningCode = "SUMMARY_OMITTED" | "NO_CLAIM_BLOCKS";
 
@@ -83,6 +84,7 @@ export interface ValidationContext {
   existingPaths?: string[];
   newlyCreatedPaths?: string[];
   reviewedTransactionIds?: string[];
+  ontologyRegistry?: OntologyRegistry;
 }
 
 const allowedTypes = [
@@ -277,7 +279,10 @@ export function validateFrontmatter(document: ValidationDocument): ValidationRes
   return finalize(result);
 }
 
-export function validateClaimBlocks(document: ValidationDocument): ValidationResult {
+export function validateClaimBlocks(
+  document: ValidationDocument,
+  ontologyRegistry: OntologyRegistry = defaultOntologyRegistry
+): ValidationResult {
   const result = emptyResult();
   const claimRecords = parseClaimBlockRecords(document.body);
 
@@ -312,7 +317,7 @@ export function validateClaimBlocks(document: ValidationDocument): ValidationRes
     }
 
     if (hasOntologyFrameFields(claim.fields)) {
-      validateOntologyClaimFrame(result, document, claim);
+      validateOntologyClaimFrame(result, document, claim, ontologyRegistry);
     }
   }
 
@@ -615,7 +620,7 @@ export function validateDocuments(context: ValidationContext): ValidationResult 
 
   for (const document of context.documents) {
     results.push(validateFrontmatter(document));
-    results.push(validateClaimBlocks(document));
+    results.push(validateClaimBlocks(document, context.ontologyRegistry));
     results.push(validateNoCommittedFollowupWithoutTrigger(document, context));
     results.push(validateNoActiveSystemClaimWithScopeUnknown(document));
     results.push(validateSummaryBasis(document));
@@ -713,14 +718,22 @@ function hasOntologyFrameFields(fields: Record<string, FrontmatterValue>): boole
   return hasField(fields, "relation") || hasField(fields, "subject_kind") || hasField(fields, "object_kind");
 }
 
+function isStagedOntologyReviewCandidate(document: ValidationDocument, claim: ParsedClaimBlockRecord): boolean {
+  return stringValue(document.frontmatter.type) === "review_item" && claim.fields.claim_state === "staged";
+}
+
 function validateOntologyClaimFrame(
   result: ValidationResult,
   document: ValidationDocument,
-  claim: ParsedClaimBlockRecord
+  claim: ParsedClaimBlockRecord,
+  ontologyRegistry: OntologyRegistry = defaultOntologyRegistry
 ): void {
   const relation = stringValue(claim.fields.relation);
   const subjectKind = stringValue(claim.fields.subject_kind);
   const objectKind = stringValue(claim.fields.object_kind);
+  if (isStagedOntologyReviewCandidate(document, claim)) {
+    return;
+  }
 
   if (!relation || !subjectKind || !objectKind) {
     addError(result, {
@@ -746,7 +759,7 @@ function validateOntologyClaimFrame(
       evidence: isStringArray(claim.fields.evidence) ? claim.fields.evidence : [],
       change_type: claim.fields.change_type === "change" ? "change" : "new"
     },
-    defaultOntologyRegistry
+    ontologyRegistry
   );
 
   if (validation.passed && !validation.requires_review) {

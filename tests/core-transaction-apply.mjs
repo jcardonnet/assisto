@@ -255,6 +255,70 @@ export async function runCoreTransactionApplyTests() {
     await rm(invalidRoot, { recursive: true, force: true });
   }
 
+  const ontologyRegistryRoot = await makeTempVault();
+
+  try {
+    await mkdir(path.join(ontologyRegistryRoot, "memory", "schema", "ontology"), { recursive: true });
+    await writeFile(
+      path.join(ontologyRegistryRoot, "memory", "schema", "ontology", "registry.json"),
+      JSON.stringify({
+        ontology_version: "test.registry",
+        entity_kinds: ["Person", "Context", "Topic", "System", "Team", "Role"],
+        relations: [
+          {
+            relation: "reports_to",
+            domain: "Person",
+            range: "Person",
+            requires_scope: true,
+            review_risk: "high"
+          }
+        ]
+      }),
+      "utf8"
+    );
+    const relationClaimPage = joePage.replace(
+      "valid_to: null",
+      "valid_to: null\n  relation: owns\n  subject_kind: Person\n  subject_id: per_joe\n  object_kind: Context\n  object_id: ctx_inventory"
+    );
+    const validation = await transactions.validateTransaction(
+      ontologyRegistryRoot,
+      transactions.createTransactionDraft({
+        id: "tx_registry_unknown_relation",
+        created_at: "2026-05-20T12:00:00-03:00",
+        source_events: ["ev_2026_05_20_001"],
+        operations: ["ADD_EVENT", "UPSERT_CLAIM"],
+        affected_files: ["events/2026/2026-05/2026-05-20-001.md", "people/joe.md"],
+        rollback_notes: "No writes should happen.",
+        proposed_file_writes: [
+          { path: "memory/events/2026/2026-05/2026-05-20-001.md", content: eventPage },
+          { path: "memory/people/joe.md", content: relationClaimPage }
+        ]
+      })
+    );
+    assert.equal(validation.passed, false);
+    assert.equal(validation.errors.some((error) => error.code === "ONTOLOGY_FRAME_INVALID"), true);
+
+    await writeFile(path.join(ontologyRegistryRoot, "memory", "schema", "ontology", "registry.json"), "{ bad json", "utf8");
+    const malformedRegistryValidation = await transactions.validateTransaction(
+      ontologyRegistryRoot,
+      transactions.createTransactionDraft({
+        id: "tx_malformed_registry",
+        created_at: "2026-05-20T12:00:00-03:00",
+        source_events: ["ev_2026_05_20_001"],
+        operations: ["ADD_EVENT"],
+        affected_files: ["events/2026/2026-05/2026-05-20-001.md"],
+        rollback_notes: "No writes should happen.",
+        proposed_file_writes: [
+          { path: "memory/events/2026/2026-05/2026-05-20-001.md", content: eventPage }
+        ]
+      })
+    );
+    assert.equal(malformedRegistryValidation.passed, false);
+    assert.equal(malformedRegistryValidation.errors.some((error) => error.code === "ONTOLOGY_REGISTRY_INVALID"), true);
+  } finally {
+    await rm(ontologyRegistryRoot, { recursive: true, force: true });
+  }
+
   const unsupportedRoot = await makeTempVault();
 
   try {

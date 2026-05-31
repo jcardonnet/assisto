@@ -29,6 +29,7 @@ import {
   type ValidationError,
   type ValidationResult
 } from "../validators";
+import { loadOntologyRegistry } from "../ontology";
 import { loadVaultIndex } from "../vault";
 
 export class TransactionParseError extends Error {
@@ -267,6 +268,17 @@ export async function validateTransaction(
   transaction: Transaction
 ): Promise<ValidationResult> {
   const result = emptyValidationResult();
+  let ontologyRegistry: Awaited<ReturnType<typeof loadOntologyRegistry>> | undefined;
+
+  try {
+    ontologyRegistry = await loadOntologyRegistry(root);
+  } catch (error) {
+    addValidationError(result, {
+      code: "ONTOLOGY_REGISTRY_INVALID",
+      message: error instanceof Error ? error.message : String(error),
+      path: "memory/schema/ontology/registry.json"
+    });
+  }
   const operations = transaction.operations.map((operation) => operation.operation);
 
   for (const operation of operations) {
@@ -353,7 +365,8 @@ export async function validateTransaction(
       documents: proposedDocuments,
       existingEventIds,
       existingPaths,
-      newlyCreatedPaths
+      newlyCreatedPaths,
+      ontologyRegistry
     })
   );
   mergeValidationResult(result, validateNoDuplicateExistingIds(proposedDocuments, vaultIndex));
