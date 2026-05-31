@@ -17,6 +17,7 @@ import { runCoreActivationTests } from "./core-activation.mjs";
 import { runCoreDailyTests } from "./core-daily.mjs";
 import { runCoreUseTomorrowTests } from "./core-use-tomorrow.mjs";
 import { runCoreWorkdayModeTests } from "./core-workday-modes.mjs";
+import { runCoreSourceAdapterTests } from "./core-source-adapters.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -37,6 +38,7 @@ export async function runUnitTests() {
   await runCoreDailyTests();
   await runCoreUseTomorrowTests();
   await runCoreWorkdayModeTests();
+  await runCoreSourceAdapterTests();
 }
 
 export function assertRequiredPaths() {

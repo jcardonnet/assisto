@@ -567,6 +567,10 @@ function renderEventMarkdown(
     frontmatter.source_hash = context.sourceHash;
   }
 
+  if (context.sourceSpans && context.sourceSpans.length > 0) {
+    frontmatter.source_spans = context.sourceSpans;
+  }
+
   const body = [
     `# Event ${context.eventId}`,
     "",
@@ -610,7 +614,8 @@ function createPipelineContext(
     transactionId,
     captureContexts: contextsFromOption(options.context),
     sourceLabel: options.source_label,
-    sourceHash: options.source_hash
+    sourceHash: options.source_hash,
+    sourceSpans: options.source_spans
   };
 }
 

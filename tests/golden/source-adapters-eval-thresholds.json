@@ -1,0 +1,7 @@
+{
+  "unsafeCanonicalWritesMax": 0,
+  "eventRawTextRewriteMax": 0,
+  "duplicateImportPreventionMin": 1,
+  "sourceHashCoverageMin": 1,
+  "sourceSpanCoverageMin": 0.9
+}

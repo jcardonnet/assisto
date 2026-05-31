@@ -27,6 +27,7 @@ import {
   createImportNotes,
   createImportTriage,
   createSeedKit,
+  createSourceAdapterImport,
   createContextNoteTransaction,
   createEntityAliasTransaction,
   createEntityContextTransaction,
@@ -56,6 +57,7 @@ import {
   previewImportNotes,
   previewImportTriage,
   previewSeedKit,
+  previewSourceAdapterImport,
   updateDailySession,
   previewAnswerDraft,
   retrieveCitedAnswerContract,
@@ -98,6 +100,9 @@ import {
   type SessionBriefKind,
   type SessionBriefTarget,
   type SessionBriefTargetKind,
+  type SourceAdapterCreateResult,
+  type SourceAdapterKind,
+  type SourceAdapterPreviewResult,
   type TodayWorkbenchResult,
   type ValidationResult
 } from "@assisto/core";
@@ -816,6 +821,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createImportTriagePreview(root, input, true));
     }
 
+    if (pathname === "/api/source/import/preview") {
+      return jsonRoute(200, await createSourceAdapterPreview(root, input, false));
+    }
+
+    if (pathname === "/api/source/import") {
+      return jsonRoute(200, await createSourceAdapterPreview(root, input, true));
+    }
+
     if (pathname === "/api/review/apply-staged/preview") {
       return jsonRoute(200, await createReviewApplyPreview(root, input, false));
     }
@@ -1043,6 +1056,38 @@ async function createImportTriagePreview(
   const result = created ? await createImportTriage(root, importInput, options) : await previewImportTriage(root, importInput, options);
   const session = await writeImportSession(root, result);
   return { ...result, session_id: session.session_id };
+}
+
+async function createSourceAdapterPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<SourceAdapterPreviewResult | SourceAdapterCreateResult> {
+  const kind = sourceAdapterKindInput(input);
+  const adapterInput = {
+    kind,
+    root,
+    text: undefined,
+    path: optionalStringInput(input, "path") ?? undefined,
+    rawText: optionalStringInput(input, "rawText", "raw_text", "text") ?? undefined,
+    source_label: optionalStringInput(input, "sourceLabel", "source_label") ?? undefined,
+    observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
+    context: optionalStringInput(input, "context") ?? undefined,
+    limit: optionalPositiveIntegerInput(input, "limit"),
+    dryRun: !created
+  };
+
+  return created ? createSourceAdapterImport(adapterInput) : previewSourceAdapterImport(adapterInput);
+}
+
+function sourceAdapterKindInput(input: Record<string, unknown>): SourceAdapterKind {
+  const value = optionalStringInput(input, "kind");
+
+  if (value === "markdown" || value === "text" || value === "email" || value === "calendar" || value === "chat") {
+    return value;
+  }
+
+  throw new Error("Source adapter import requires kind markdown, text, email, calendar, or chat.");
 }
 
 interface ImportSessionRecord {

@@ -23,6 +23,7 @@ export interface IngestPipelineContext {
   captureContexts?: string[];
   sourceLabel?: string;
   sourceHash?: string;
+  sourceSpans?: string[];
 }
 
 export interface CandidateSpan {
