@@ -29,6 +29,15 @@ Use Capture or Seed Kit for facts you would want cited tomorrow:
 
 Seed/capture writes Events plus pending Transactions only.
 
+For fast dogfooding, use Workbench Quick capture from any tab or the CLI preview-first path:
+
+```bash
+wm capture presets
+wm capture quick --preset quick-note "Jeff is my manager."
+wm capture quick --preset follow-up --create "I need to ask Jeff about budgets."
+```
+
+
 Do not paste a generated answer back into memory as if it were evidence. If a generated answer reveals something useful, capture the underlying source note or an explicit user correction instead.
 Ask -> Entity -> Context is the first-day workflow: ask a cited question, inspect the cited entity, then open the relevant Context.
 

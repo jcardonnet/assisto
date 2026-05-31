@@ -28,6 +28,7 @@ import {
   createImportTriage,
   createSeedKit,
   createSourceAdapterImport,
+  createWorkdayCapture,
   createContextNoteTransaction,
   createEntityAliasTransaction,
   createEntityContextTransaction,
@@ -39,6 +40,7 @@ import {
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listSessionBriefTargets,
+  listWorkdayCapturePresets,
   listEntities,
   listMarkdownFiles,
   listReviewItems,
@@ -58,6 +60,7 @@ import {
   previewImportTriage,
   previewSeedKit,
   previewSourceAdapterImport,
+  previewWorkdayCapture,
   updateDailySession,
   previewAnswerDraft,
   retrieveCitedAnswerContract,
@@ -70,6 +73,8 @@ import {
   type CaptureFeedbackPreviewResult,
   type CaptureInboxResult,
   type CapturePreviewResult,
+  type WorkdayCaptureCreate,
+  type WorkdayCapturePreview,
   type ContextPackResult,
   type ContextNoteResult,
   type DailyQueueResult,
@@ -560,6 +565,10 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildCaptureInboxResult(root));
   }
 
+  if (requestUrl.pathname === "/api/capture/presets") {
+    return jsonRoute(200, await listWorkdayCapturePresets(root));
+  }
+
   if (requestUrl.pathname === "/api/import/session") {
     const sessionId = requestUrl.searchParams.get("id")?.trim();
 
@@ -781,6 +790,14 @@ async function handleWorkbenchPostRoute(
   }
 
   try {
+    if (pathname === "/api/capture/quick/preview") {
+      return jsonRoute(200, await createWorkdayCapturePreview(root, input, false));
+    }
+
+    if (pathname === "/api/capture/quick") {
+      return jsonRoute(200, await createWorkdayCapturePreview(root, input, true));
+    }
+
     if (pathname === "/api/capture/preview") {
       return jsonRoute(200, await createCapturePreview(root, input, false));
     }
@@ -973,6 +990,25 @@ async function handleWorkbenchPostRoute(
   } catch (error) {
     return jsonRoute(400, { error: error instanceof Error ? error.message : String(error) });
   }
+}
+
+async function createWorkdayCapturePreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<WorkdayCapturePreview | WorkdayCaptureCreate> {
+  const providerName = optionalStringInput(input, "provider") ?? "rule";
+  const workdayInput = {
+    preset_id: optionalStringInput(input, "preset", "presetId", "preset_id") ?? undefined,
+    note: requiredStringInput(input, "note"),
+    observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
+    source_label: optionalStringInput(input, "sourceLabel", "source_label") ?? undefined,
+    context: optionalStringInput(input, "context") ?? undefined,
+    provider: providerName === "openai" ? ("openai" as const) : ("rule" as const),
+    extractionProvider: captureProvider(providerName)
+  };
+
+  return created ? createWorkdayCapture(root, workdayInput) : previewWorkdayCapture(root, workdayInput);
 }
 
 async function createCapturePreview(
@@ -2516,8 +2552,20 @@ function workbenchHtml(): string {
           <form id="quick-capture-form" class="capture-form">
             <label class="field" for="quick-capture-note"><span>Quick capture note</span><textarea id="quick-capture-note" name="note" rows="6" placeholder="Capture a short work note"></textarea></label>
             <div class="action-row">
+              <label class="field" for="quick-capture-preset"><span>Preset</span><select id="quick-capture-preset" name="preset">
+                <option value="quick-note">quick note</option>
+                <option value="meeting-note">meeting note</option>
+                <option value="person-fact">person fact</option>
+                <option value="project-context">project context</option>
+                <option value="follow-up">follow-up</option>
+                <option value="retrieval-miss">retrieval miss</option>
+                <option value="correction">correction</option>
+                <option value="decision-as-claim">decision</option>
+                <option value="open-question-as-claim">open question</option>
+              </select></label>
               <label class="field" for="quick-capture-observed-at"><span>Quick observed at</span><input id="quick-capture-observed-at" name="observedAt" placeholder="YYYY-MM-DD"></label>
-              <label class="field" for="quick-capture-source-preset"><span>Source label preset</span><select id="quick-capture-source-preset" name="sourcePreset">
+              <label class="field" for="quick-capture-source-preset"><span>Source label override</span><select id="quick-capture-source-preset" name="sourcePreset">
+                <option value="">use preset label</option>
                 <option value="daily note">daily note</option>
                 <option value="meeting note">meeting note</option>
                 <option value="correction">correction</option>
@@ -3151,7 +3199,8 @@ quickCaptureForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const preview = event.submitter?.value === "preview";
-  await runQuickCapture(preview ? "/api/capture/preview" : "/api/capture", {
+  await runQuickCapture(preview ? "/api/capture/quick/preview" : "/api/capture/quick", {
+    preset_id: form.elements.preset.value,
     note: form.elements.note.value,
     observedAt: form.elements.observedAt.value,
     sourceLabel: quickCaptureSourceLabel(form),
@@ -3258,7 +3307,8 @@ async function loadQuickCaptureContextOptions() {
 
 function quickCaptureSourceLabel(form) {
   const custom = form.elements.customSourceLabel.value.trim();
-  return custom || form.elements.sourcePreset.value;
+  const preset = form.elements.sourcePreset.value;
+  return custom || preset || undefined;
 }
 
 async function runQuickCapture(path, body) {

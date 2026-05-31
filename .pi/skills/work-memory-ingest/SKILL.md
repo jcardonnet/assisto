@@ -30,6 +30,23 @@ Derived views may guide, preview, and propose. They may not write canonical memo
    wm ingest "<note>"
    ```
 
+## Workday Quick Capture
+
+Use quick capture for short ambient notes during the workday. It is preview-first by default:
+
+```bash
+wm capture quick --preset quick-note "Joe is the DBA."
+wm capture quick --preset meeting-note --context ctx_inventory_project --stdin
+```
+
+Create only after the preview shows Event evidence plus a pending Transaction:
+
+```bash
+wm capture quick --preset follow-up --create "I need to ask Jeff about budgets."
+```
+
+Presets guide source labels and templates; they are not canonical memory objects.
+
 ## Source Adapter Boundaries
 
 Source adapters may normalize Markdown/text, pasted notes, documents, and curated transcript excerpts. Candidate frames are not canonical claims. They become durable only through Event plus pending Transaction.

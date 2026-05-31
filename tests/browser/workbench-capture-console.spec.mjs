@@ -70,8 +70,9 @@ test("quick capture is available from any Workbench tab and stays transaction ba
     await page.getByRole("button", { name: "Quick capture" }).click();
     await expect(page.getByRole("heading", { name: "Quick capture" })).toBeVisible();
     await page.getByLabel("Quick capture note").fill("Joe is the DBA. We use MySQL.");
+    await page.locator("#quick-capture-preset").selectOption("meeting-note");
     await page.getByLabel("Quick observed at").fill("2026-05-22");
-    await page.getByLabel("Source label preset").selectOption("meeting note");
+    await expect(page.getByLabel("Source label override")).toHaveValue("");
     await page.getByLabel("Quick context").fill("ctx_inventory_project");
 
     await page.getByRole("button", { name: "Preview quick capture" }).click();
