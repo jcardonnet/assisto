@@ -28,7 +28,10 @@ import {
   createImportNotes,
   createSeedKit,
   createSourceAdapterImport,
+  createWorkdayCapture,
+  listWorkdayCapturePresets,
   previewCaptureNote,
+  previewWorkdayCapture,
   previewCaptureFeedback,
   previewFrictionLog,
   previewImportNotes,
@@ -369,6 +372,14 @@ async function commandCapture(root: string, args: string[], io: CliIo, cwd: stri
     return await commandCaptureFeedback(root, args.slice(1), io);
   }
 
+  if (args[0] === "presets") {
+    return await commandCapturePresets(root, args.slice(1), io);
+  }
+
+  if (args[0] === "quick") {
+    return await commandCaptureQuick(root, args.slice(1), io, cwd);
+  }
+
   const dryRun = args.includes("--dry-run");
   const note = await captureNoteFromArgs(args, io, cwd);
   const provider = captureProvider(optionValue(args, "--provider") ?? "rule");
@@ -405,6 +416,67 @@ async function commandCapture(root: string, args: string[], io: CliIo, cwd: stri
 
   if (result.proposed_file_writes.length > 0) {
     io.stdout(`Proposed file writes: ${result.proposed_file_writes.map((write) => write.path).join(", ")}\n`);
+  }
+
+  return result.validation.passed ? 0 : 1;
+}
+
+async function commandCapturePresets(root: string, args: string[], io: CliIo): Promise<number> {
+  if (args.some((arg) => arg !== "--json")) {
+    throw new Error("Usage: wm capture presets [--json]");
+  }
+
+  const presets = await listWorkdayCapturePresets(root);
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(presets, null, 2)}\n`);
+    return 0;
+  }
+
+  for (const preset of presets) {
+    io.stdout(`${preset.preset_id}: ${preset.label} (${preset.source_label})\n`);
+  }
+
+  return 0;
+}
+
+async function commandCaptureQuick(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const create = args.includes("--create");
+  const json = args.includes("--json");
+  const providerName = optionValue(args, "--provider") ?? "rule";
+  const note = await captureNoteFromArgs(args, io, cwd);
+  const input = {
+    preset_id: optionValue(args, "--preset") ?? undefined,
+    note,
+    observed_at: optionValue(args, "--observed-at") ?? undefined,
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    context: optionValue(args, "--context") ?? undefined,
+    provider: providerName === "openai" ? ("openai" as const) : ("rule" as const),
+    extractionProvider: captureProvider(providerName)
+  };
+  const result = create ? await createWorkdayCapture(root, input) : await previewWorkdayCapture(root, input);
+
+  if (json) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return result.validation.passed ? 0 : 1;
+  }
+
+  if (!create) {
+    io.stdout(`Preview only. No changes written to ${root}.\n`);
+  }
+
+  io.stdout(`Preset: ${result.preset?.preset_id ?? "quick-note"}\n`);
+  io.stdout(`Event: ${result.event_id} (${result.event_path})\n`);
+  io.stdout(`Pending transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+  io.stdout(`Provider: ${result.provider_name}\n`);
+  io.stdout(`Validation: ${result.validation.passed ? "passed" : "failed"}\n`);
+
+  if (result.pending_transaction_preview.affected_files.length > 0) {
+    io.stdout(`Affected files: ${result.pending_transaction_preview.affected_files.join(", ")}\n`);
+  }
+
+  if (result.likely_reviews.length > 0) {
+    io.stdout(`Likely reviews: ${result.likely_reviews.join(", ")}\n`);
   }
 
   return result.validation.passed ? 0 : 1;
@@ -1536,8 +1608,8 @@ async function readProcessStdin(): Promise<string> {
 }
 
 function positionalCaptureArgs(args: string[]): string[] {
-  const valueOptions = new Set(["--file", "--observed-at", "--source-label", "--context", "--provider"]);
-  const booleanOptions = new Set(["--stdin", "--dry-run"]);
+  const valueOptions = new Set(["--file", "--observed-at", "--source-label", "--context", "--provider", "--preset"]);
+  const booleanOptions = new Set(["--stdin", "--dry-run", "--create", "--json"]);
   const values: string[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
@@ -1902,6 +1974,8 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] tx reject <id> --reason <text>",
       '  wm [--root <path>] ingest [--dry-run] [--provider rule|llm-stub|openai] "<note>"',
       '  wm [--root <path>] capture [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--dry-run] "<note>"',
+      '  wm [--root <path>] capture presets [--json]',
+      '  wm [--root <path>] capture quick [--preset <id>] [--stdin|--file <path>] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] [--provider rule|openai] [--create] [--json] "<note>"',
       '  wm [--root <path>] capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]',
       "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',

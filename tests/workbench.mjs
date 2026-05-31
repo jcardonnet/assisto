@@ -729,7 +729,8 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /quick-capture-open/);
     assert.match(shell.body, /quick-capture-dialog/);
     assert.match(shell.body, /Preview quick capture/);
-    assert.match(shell.body, /Source label preset/);
+    assert.match(shell.body, /Source label override/);
+    assert.match(shell.body, /use preset label/);
     assert.match(shell.body, /data-tab="today" aria-pressed="true"/);
     assert.match(shell.body, /data-tab="capture"/);
     assert.match(shell.body, /data-tab="import"/);

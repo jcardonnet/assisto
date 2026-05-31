@@ -1,6 +1,7 @@
 import {
   applyTransaction,
   createCaptureNote,
+  createWorkdayCapture,
   createReviewApplyTransaction,
   createReviewStateTransaction,
   listMarkdownFiles,
@@ -11,6 +12,7 @@ import {
   readMarkdownPage,
   rejectTransaction,
   previewCaptureNote,
+  previewWorkdayCapture,
   showReviewItem,
   toValidationDocument,
   transactionFilePaths,
@@ -36,6 +38,7 @@ export type WorkMemoryToolName =
   | "wm_validate"
   | "wm_ingest_note"
   | "wm_capture_note"
+  | "wm_capture_quick"
   | "wm_list_transactions"
   | "wm_show_transaction"
   | "wm_apply_transaction"
@@ -52,6 +55,7 @@ export type WorkMemoryToolName =
 export type WorkMemoryCommandName =
   | "/wm-ingest"
   | "/wm-capture"
+  | "/wm-capture-quick"
   | "/wm-review"
   | "/wm-review-show"
   | "/wm-review-mark"
@@ -277,6 +281,25 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
       }
     },
     {
+      name: "wm_capture_quick",
+      description: "Preview or create a preset-based quick capture through Event plus pending Transaction.",
+      run: async (input) => {
+        const root = rootFromInput(input, vaultRoot);
+        const providerName = optionalStringInput(input, "provider") ?? "rule";
+        const captureInput = {
+          preset_id: optionalStringInput(input, "preset_id") ?? optionalStringInput(input, "presetId") ?? optionalStringInput(input, "preset"),
+          note: stringInput(input, "note"),
+          observed_at: optionalStringInput(input, "observed_at") ?? optionalStringInput(input, "observedAt"),
+          source_label: optionalStringInput(input, "source_label") ?? optionalStringInput(input, "sourceLabel"),
+          context: optionalStringInput(input, "context"),
+          provider: providerName === "openai" ? ("openai" as const) : ("rule" as const),
+          extractionProvider: extractionProviderFromInput(input, { allowLlmStub: false })
+        };
+
+        return input?.create === true ? createWorkdayCapture(root, captureInput) : previewWorkdayCapture(root, captureInput);
+      }
+    },
+    {
       name: "wm_list_transactions",
       description: "List work-memory transactions.",
       run: async (input) => listTransactions(rootFromInput(input, vaultRoot))
@@ -403,6 +426,31 @@ function createCommands(tools: WorkMemoryToolDefinition[]): WorkMemoryCommandDef
         return byName.get("wm_capture_note")!.run({
           note,
           dry_run: tokens.includes("--dry-run"),
+          provider: commandOption(tokens, "--provider"),
+          observed_at: commandOption(tokens, "--observed-at"),
+          source_label: commandOption(tokens, "--source-label"),
+          context: commandOption(tokens, "--context")
+        });
+      }
+    },
+    {
+      name: "/wm-capture-quick",
+      description:
+        'Preview or create a preset quick capture. Args: [--create] [--preset <id>] [--provider rule|openai] [--observed-at <date>] [--source-label <text>] [--context <id|path|name>] <note>',
+      run: async (input) => {
+        const tokens = commandTokens(input);
+        const note = commandNoteTokens(tokens, [
+          "--preset",
+          "--provider",
+          "--observed-at",
+          "--source-label",
+          "--context"
+        ]).join(" ");
+
+        return byName.get("wm_capture_quick")!.run({
+          note,
+          create: tokens.includes("--create"),
+          preset_id: commandOption(tokens, "--preset"),
           provider: commandOption(tokens, "--provider"),
           observed_at: commandOption(tokens, "--observed-at"),
           source_label: commandOption(tokens, "--source-label"),
@@ -654,6 +702,7 @@ function toolLabel(name: WorkMemoryToolName): string {
     wm_validate: "WM Validate",
     wm_ingest_note: "WM Ingest Note",
     wm_capture_note: "WM Capture Note",
+    wm_capture_quick: "WM Capture Quick",
     wm_list_transactions: "WM List Transactions",
     wm_show_transaction: "WM Show Transaction",
     wm_apply_transaction: "WM Apply Transaction",
@@ -708,6 +757,20 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
           source_label: sourceLabel,
           context,
           dry_run: dryRun
+        },
+        ["note"]
+      );
+    case "wm_capture_quick":
+      return objectSchema(
+        {
+          ...baseProperties,
+          note: captureNote,
+          preset_id: { type: "string", description: "Workday capture preset ID." },
+          provider: { type: "string", enum: ["rule", "openai"] },
+          observed_at: observedAt,
+          source_label: sourceLabel,
+          context,
+          create: { type: "boolean", description: "Create Event plus pending Transaction. Defaults to preview." }
         },
         ["note"]
       );
@@ -1139,7 +1202,7 @@ function commandOption(tokens: string[], name: string): string | undefined {
 }
 
 function commandNoteTokens(tokens: string[], valueOptions: string[]): string[] {
-  const optionNames = new Set([...valueOptions, "--dry-run"]);
+  const optionNames = new Set([...valueOptions, "--dry-run", "--create"]);
   const values: string[] = [];
 
   for (let index = 0; index < tokens.length; index += 1) {

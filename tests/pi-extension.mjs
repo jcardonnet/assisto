@@ -39,8 +39,8 @@ export async function runPiExtensionTests() {
     assert.equal(piEntry.default, piEntry.factory);
 
     const factoryExtension = piEntry.default({ vaultRoot: root });
-    assert.equal(factoryExtension.tools.length, 15);
-    assert.equal(factoryExtension.commands.length, 11);
+    assert.equal(factoryExtension.tools.length, 16);
+    assert.equal(factoryExtension.commands.length, 12);
 
     const nativeTools = [];
     const nativeCommands = [];
@@ -59,6 +59,7 @@ export async function runPiExtensionTests() {
       [
         "wm_apply_transaction",
         "wm_capture_note",
+        "wm_capture_quick",
         "wm_ingest_note",
         "wm_lint",
         "wm_list_review_items",
@@ -80,6 +81,7 @@ export async function runPiExtensionTests() {
         "wm-apply",
         "wm-ask",
         "wm-capture",
+        "wm-capture-quick",
         "wm-ingest",
         "wm-lint",
         "wm-event-reprocess",
@@ -118,6 +120,7 @@ export async function runPiExtensionTests() {
       [
         "wm_apply_transaction",
         "wm_capture_note",
+        "wm_capture_quick",
         "wm_ingest_note",
         "wm_lint",
         "wm_list_review_items",
@@ -139,6 +142,7 @@ export async function runPiExtensionTests() {
         "/wm-apply",
         "/wm-ask",
         "/wm-capture",
+        "/wm-capture-quick",
         "/wm-ingest",
         "/wm-lint",
         "/wm-event-reprocess",
@@ -150,8 +154,8 @@ export async function runPiExtensionTests() {
       ].sort()
     );
     assert.equal(registeredGuards.length, 1);
-    assert.equal(registered.tools.length, 15);
-    assert.equal(registered.commands.length, 11);
+    assert.equal(registered.tools.length, 16);
+    assert.equal(registered.commands.length, 12);
 
     const directCanonical = piExtension.checkWorkMemoryWrite({ path: "memory/people/joe.md" });
     assert.equal(directCanonical.allowed, false);
@@ -168,6 +172,16 @@ export async function runPiExtensionTests() {
     assert.match(piExtension.checkWorkMemoryWrite({ path: "notes/scratch.md" }).warnings[0], /outside memory\/ and \.pi\//);
 
     const tools = toolMap(piExtension.createWorkMemoryExtension({ vaultRoot: root }));
+    const quickPreview = await tools.get("wm_capture_quick").run({
+      preset_id: "meeting-note",
+      note: "Mike is my manager.",
+      context: "ctx_inventory_project"
+    });
+    assert.equal(quickPreview.created, false);
+    assert.equal(quickPreview.preset.preset_id, "meeting-note");
+    assert.equal(quickPreview.event_preview.source_label, "meeting note");
+    await assert.rejects(() => readVaultFile(root, quickPreview.event_path));
+
     const ingestResult = await tools.get("wm_ingest_note").run({ note: "Joe is the DBA. We use MySQL." });
     assert.equal(ingestResult.transaction_id, "tx_2026_05_20_001");
     assert.match(
@@ -176,6 +190,26 @@ export async function runPiExtensionTests() {
     );
 
     const nativeCommandOptions = commandMap(nativeCommands);
+    const commandRoot = await makeTempVault();
+    const commandNativeCommands = [];
+    piEntry.default(
+      {
+        registerTool: () => undefined,
+        registerCommand: (name, options) => commandNativeCommands.push({ name, options }),
+        on: () => undefined
+      },
+      { vaultRoot: commandRoot }
+    );
+    const commandNativeOptions = commandMap(commandNativeCommands);
+    const quickCommandPreview = await commandNativeOptions.get("wm-capture-quick").handler(
+      '--create --preset meeting-note Mike is my manager.',
+      { ui: { notify: () => undefined } }
+    );
+    assert.equal(quickCommandPreview.created, true);
+    assert.equal(quickCommandPreview.note, "Mike is my manager.");
+    assert.equal(quickCommandPreview.event_raw_text, "Mike is my manager.");
+    await rm(commandRoot, { recursive: true, force: true });
+
     const completions = await nativeCommandOptions.get("wm-apply").getArgumentCompletions("tx");
     assert.equal(completions.every((item) => typeof item.value === "string"), true);
     assert.equal(completions.every((item) => item.label === undefined || typeof item.label === "string"), true);

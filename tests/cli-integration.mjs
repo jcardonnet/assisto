@@ -99,6 +99,8 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
   assert.match(help.stdout, /capture feedback/);
+  assert.match(help.stdout, /capture presets/);
+  assert.match(help.stdout, /capture quick/);
 
   const doctorRoot = await makeTempVault();
 
@@ -122,6 +124,52 @@ export async function runCliIntegrationTests() {
     await rm(doctorRoot, { recursive: true, force: true });
   }
 
+  const quickCaptureRoot = await makeTempVault();
+
+  try {
+    const presetsResult = await runWm(quickCaptureRoot, ["capture", "presets", "--json"]);
+    const presets = JSON.parse(presetsResult.stdout);
+    assert.equal(presets.some((preset) => preset.preset_id === "meeting-note"), true);
+
+    const previewResult = await runWm(quickCaptureRoot, [
+      "capture",
+      "quick",
+      "--preset",
+      "meeting-note",
+      "--json",
+      "Joe",
+      "is",
+      "the",
+      "DBA."
+    ]);
+    const previewJson = JSON.parse(previewResult.stdout);
+    assert.equal(previewJson.created, false);
+    assert.equal(previewJson.event_preview.source_label, "meeting note");
+    await expectMissing(quickCaptureRoot, previewJson.event_path);
+    await expectMissing(quickCaptureRoot, previewJson.transaction_path);
+
+    const createResult = await runWm(quickCaptureRoot, [
+      "capture",
+      "quick",
+      "--preset",
+      "meeting-note",
+      "--create",
+      "--json",
+      "Mike",
+      "is",
+      "my",
+      "manager."
+    ]);
+    const createJson = JSON.parse(createResult.stdout);
+    assert.equal(createJson.created, true);
+    assert.equal(createJson.note, "Mike is my manager.");
+    assert.equal(createJson.event_raw_text, "Mike is my manager.");
+    assert.match(await readVaultFile(quickCaptureRoot, createJson.event_path), /source_label: meeting note/);
+    assert.match(await readVaultFile(quickCaptureRoot, createJson.transaction_path), /transaction_state: pending/);
+    await expectMissing(quickCaptureRoot, "memory/people/mike.md");
+  } finally {
+    await rm(quickCaptureRoot, { recursive: true, force: true });
+  }
   const txRoot = await makeTempVault();
 
   try {
