@@ -359,7 +359,6 @@ memory/
     duplicates.md
     unscoped-claims.md
     stale-items.md
-    lint-runs/
 
   transactions/
     pending/
@@ -406,7 +405,7 @@ The revised MVP collapses early-stage concepts:
 
 The folder layout is intentionally boring. It optimizes for implementation safety, not taxonomy completeness.
 
-The `memory/schema/ontology/`, `memory/indexes/ontology/`, `memory/indexes/symbolic/`, and `review/lint-runs/` folders are post-MVP additions. Ontology registry files are schema/policy, not user memory. Derived ontology and symbolic views are rebuildable indexes. Maintenance domain events belong in logs, not work Events. None of these folders replaces canonical markdown pages or authorizes autonomous mutation.
+The `memory/schema/ontology/`, `memory/indexes/ontology/`, and `memory/indexes/symbolic/` folders are post-MVP additions. Lint-run samples, seeds, and resumable state belong in noncanonical `.assisto-local/lint-runs/` or operational logs, not in canonical ReviewItem memory. Ontology registry files are schema/policy, not user memory. Derived ontology and symbolic views are rebuildable indexes. Maintenance domain events belong in logs, not work Events. None of these folders replaces canonical markdown pages or authorizes autonomous mutation.
 
 ---
 
@@ -2773,7 +2772,7 @@ Add lint modes:
 Lint runs are recorded under:
 
 ```text
-review/lint-runs/
+.assisto-local/lint-runs/
 ```
 
 Example lint-run metadata:

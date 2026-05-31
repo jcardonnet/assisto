@@ -85,7 +85,7 @@ pnpm check:memory-data
 ## Workbench Quickstart
 
 ```bash
-wm workbench serve
+pnpm --filter @assisto/cli wm workbench serve
 ```
 
 The server binds to `127.0.0.1:3721` by default. Workbench views are derived. Durable actions route through Events and/or pending Transactions.
@@ -93,12 +93,12 @@ The server binds to `127.0.0.1:3721` by default. Workbench views are derived. Du
 ## CLI Examples
 
 ```bash
-wm capture "Jeff is my manager for Inventory Project."
-wm ask --answer-contract "Who is my manager?"
-wm entities stewardship --kind person
-wm context operating-room ctx_inventory_project
-wm health check
-wm brief today
+pnpm --filter @assisto/cli wm capture "Jeff is my manager for Inventory Project."
+pnpm --filter @assisto/cli wm ask --answer-contract "Who is my manager?"
+pnpm --filter @assisto/cli wm entities stewardship --kind person
+pnpm --filter @assisto/cli wm context operating-room ctx_inventory_project
+pnpm --filter @assisto/cli wm health check
+pnpm --filter @assisto/cli wm brief today
 ```
 
 ## PR Workflow

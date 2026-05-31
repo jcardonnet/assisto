@@ -12,6 +12,8 @@ Before opening or merging a product PR:
 pnpm check:memory-data
 ```
 
+The current automated guard focuses on high-risk Event and Transaction data. Also inspect `git status --short` for other canonical user-memory paths listed below before staging a product PR.
+
 ## Memory path classes
 
 ### Product schema/policy paths
@@ -54,8 +56,10 @@ pnpm check:memory-data -- --json
 wm doctor memory-data --json
 ```
 
+
 Future guard work should add a strict mode:
 
 ```bash
 pnpm check:memory-data --strict
 ```
+

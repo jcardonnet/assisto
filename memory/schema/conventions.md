@@ -40,7 +40,7 @@ Ingestion, capture, and import logic may write Events and pending Transactions. 
 
 ## Claims
 
-Every active durable claim must cite at least one Event ID. Generated/symbolic/retrieval artifacts must not become active claims unless explicitly captured as evidence and routed through a validated Transaction.
+Every active durable claim must cite at least one Event ID. Generated, symbolic, retrieval, brief, or answer-contract artifacts must not become active claims from their own text alone. A saved generated artifact is evidence that the artifact was saved, not evidence that every factual statement inside it is true; those factual statements need independent Event evidence or must remain generated, explanatory, staged, or rejected.
 
 ## Source adapter metadata
 
