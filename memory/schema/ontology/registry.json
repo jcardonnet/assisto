@@ -1,0 +1,36 @@
+{
+  "ontology_version": "2026-05-31.1",
+  "entity_kinds": ["Person", "Context", "Topic", "System", "Team", "Role"],
+  "relations": [
+    {
+      "relation": "reports_to",
+      "domain": "Person",
+      "range": "Person",
+      "inverse": "manages",
+      "requires_scope": true,
+      "review_risk": "high"
+    },
+    {
+      "relation": "owns",
+      "domain": ["Person", "Team"],
+      "range": ["Context", "System", "Topic"],
+      "inverse": "owned_by",
+      "requires_scope": true,
+      "review_risk": "medium"
+    },
+    {
+      "relation": "uses_technology",
+      "domain": "Context",
+      "range": "Topic",
+      "requires_scope": true,
+      "review_risk": "medium"
+    },
+    {
+      "relation": "depends_on",
+      "domain": ["Context", "System"],
+      "range": ["Context", "System", "Topic"],
+      "requires_scope": true,
+      "review_risk": "medium"
+    }
+  ]
+}

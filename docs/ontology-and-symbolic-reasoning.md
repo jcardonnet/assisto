@@ -34,6 +34,26 @@ Examples:
 - `contradicts`;
 - `evidenced_by`.
 
+
+## Ontology-Aware Frames
+
+Ontology-aware frames are intermediate extraction artifacts. They are not canonical claim blocks and are not graph edges. A frame becomes durable only if converted into a valid Event-backed claim inside a pending Transaction, or if it is staged as a ReviewItem candidate.
+
+```ts
+type OntologyAwareFrame = {
+  subject_id?: string;
+  subject_kind: string;
+  relation: string;
+  object_id?: string;
+  object_kind: string;
+  statement: string;
+  scope?: string | null;
+  evidence: string[];
+};
+```
+
+Frames must stage review when the relation is unknown, the domain or range is invalid, required scope is missing, source evidence is missing, or the frame represents a high-risk relation change. Staging uses a pending Transaction with `STAGE_REVIEW`; ontology validation does not write current pages directly.
+
 ## InferencePath
 
 Every derived symbolic output needs an inference path:

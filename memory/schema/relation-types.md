@@ -28,20 +28,18 @@ If a relationship matters, store it as an Event-backed claim first:
   evidence: [ev_2026_05_21_001]
 ```
 
-## Post-MVP relation registry
+## Ontology registry
 
 The derived ontology registry lives under `memory/schema/ontology/`. Relation examples:
 
 - `reports_to`
 - `manages`
 - `owns`
-- `part_of`
+- `owned_by`
+- `uses_technology`
 - `depends_on`
-- `supersedes`
-- `contradicts`
-- `evidenced_by`
-- `has_open_followup`
-- `review_risk_for`
+
+Registry relations classify candidate frames and derived views. Canonical memory still stores readable Event-backed claim blocks. Inverse/transitive relations are derived unless separately captured through Event + Transaction.
 
 `related` is fallback only when no more specific relation applies.
 

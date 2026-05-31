@@ -28,6 +28,7 @@ import {
 import { resolveDetectorProposals } from "../ingest/entity-resolution";
 import { buildIngestExtractionDraft } from "../ingest/transaction-builder";
 import { contextsFromOption } from "../ingest/metadata";
+import { loadOntologyRegistry, validateOntologyFrame, type OntologyAwareFrame, type OntologyRegistry } from "../ontology";
 
 export type CandidateEntityResolution = "exact_match" | "alias_match" | "near_match" | "new_entity" | "ambiguous";
 
@@ -70,6 +71,7 @@ export interface ExtractionProviderOutput {
   claims?: CandidateClaimProposal[];
   followups?: CandidateFollowUpProposal[];
   entities?: CandidateEntityProposal[];
+  frames?: OntologyAwareFrame[];
   explanations?: CandidateExplanationProposal[];
   malformed_reason?: string;
 }
@@ -120,6 +122,8 @@ interface ProviderReviewReason {
   message: string;
   affectedFiles: string[];
   claim?: CandidateClaimProposal;
+  frame?: OntologyAwareFrame;
+  ontology_issues?: string[];
 }
 
 interface ProposedWrite {
@@ -281,7 +285,8 @@ export async function ingestWithExtractionProvider(
   const index = await loadIndexOrEmpty(root);
   const context = createPipelineContext(root, normalizedNote, now, index, { ...options, raw_note: rawNote });
   const providerOutput = await provider.extract({ note: context.note, now });
-  const providerCandidates = providerOutputToCandidates(context, providerOutput);
+  const ontologyRegistry = await loadOntologyRegistry(root);
+  const providerCandidates = providerOutputToCandidates(context, providerOutput, ontologyRegistry);
   const resolved = resolveDetectorProposals(providerCandidates.proposals, index);
   const extraction = buildIngestExtractionDraft(context, resolved);
   const reviewWrites = providerCandidates.reviewReasons.map((reason) => reviewWrite(context, reason));
@@ -339,7 +344,8 @@ export async function ingestWithExtractionProvider(
 
 function providerOutputToCandidates(
   context: IngestPipelineContext,
-  output: ExtractionProviderOutput
+  output: ExtractionProviderOutput,
+  ontologyRegistry: OntologyRegistry
 ): { proposals: DetectorProposal[]; reviewReasons: ProviderReviewReason[] } {
   const proposals: DetectorProposal[] = [];
   const reviewReasons: ProviderReviewReason[] = [];
@@ -379,6 +385,20 @@ function providerOutputToCandidates(
     }
 
     proposals.push(followUpProposalToCandidate(context, followup, followupIntent.trigger ?? followup.trigger ?? ""));
+  }
+
+  for (const frame of output.frames ?? []) {
+    const validation = validateOntologyFrame(frame, ontologyRegistry);
+
+    if (validation.requires_review) {
+      reviewReasons.push({
+        code: ontologyReviewCode(validation.review_reasons),
+        message: ontologyReviewMessage(frame, validation.review_reasons),
+        affectedFiles: ontologyAffectedFiles(frame),
+        frame,
+        ontology_issues: validation.review_reasons
+      });
+    }
   }
 
   for (const entity of entityHints) {
@@ -489,14 +509,15 @@ function reviewWrite(context: IngestPipelineContext, reason: ProviderReviewReaso
     "",
     "## Candidate",
     "",
-    reason.claim ? renderCandidateSummary(reason.claim) : "No durable candidate persisted.",
+    reason.claim ? renderCandidateSummary(reason.claim) : reason.frame ? renderOntologyFrameSummary(reason.frame, reason.ontology_issues ?? []) : "No durable candidate persisted.",
     "",
     "## Policy",
     "",
     "- Provider output is candidate data only.",
     "- Deterministic validators and staging policies remain authoritative.",
     "- No canonical pages were written by extraction.",
-    "- Generated explanations are omitted unless explicitly saved."
+    "- Generated explanations are omitted unless explicitly saved.",
+    "- Ontology-aware frames are candidate-only and invalid frames stage review."
   ].join("\n");
 
   return {
@@ -688,6 +709,14 @@ function normalizeProviderOutput(value: unknown): ExtractionProviderOutput {
     output.entities = value.entities.map(normalizeEntityProposal);
   }
 
+  if (value.frames !== undefined) {
+    if (!Array.isArray(value.frames)) {
+      return { malformed_reason: "LLM ontology frames must be a list." };
+    }
+
+    output.frames = value.frames.map(normalizeOntologyFrame);
+  }
+
   if (value.explanations !== undefined) {
     if (!Array.isArray(value.explanations)) {
       return { malformed_reason: "LLM explanations must be a list." };
@@ -753,6 +782,28 @@ function normalizeEntityProposal(value: unknown): CandidateEntityProposal {
   };
 }
 
+function normalizeOntologyFrame(value: unknown): OntologyAwareFrame {
+  if (!isRecord(value)) {
+    throw new Error("Each LLM ontology frame must be an object.");
+  }
+
+  const evidence = value.evidence === undefined ? [] : stringArray(value.evidence, "evidence");
+  const scope = typeof value.scope === "string" ? value.scope : value.scope === null ? null : undefined;
+  const changeType = optionalEnumString(value.change_type, ["new", "change"]);
+
+  return {
+    subject_id: optionalNonEmptyString(value.subject_id),
+    subject_kind: requiredString(value.subject_kind, "subject_kind"),
+    relation: requiredString(value.relation, "relation"),
+    object_id: optionalNonEmptyString(value.object_id),
+    object_kind: requiredString(value.object_kind, "object_kind"),
+    statement: requiredString(value.statement, "statement"),
+    scope,
+    evidence,
+    change_type: changeType
+  };
+}
+
 function normalizeExplanationProposal(value: unknown): CandidateExplanationProposal {
   if (!isRecord(value)) {
     throw new Error("Each LLM explanation must be an object.");
@@ -768,6 +819,51 @@ function normalizeExplanationProposal(value: unknown): CandidateExplanationPropo
 function claimIdFor(claim: CandidateClaimProposal): string {
   const base = `${claim.entity_name}_${claim.statement}`.toLowerCase();
   return `clm_${idSlug(base).slice(0, 72)}`;
+}
+
+function renderOntologyFrameSummary(frame: OntologyAwareFrame, issues: string[]): string {
+  return [
+    `- subject_kind: ${frame.subject_kind}`,
+    `- subject_id: ${frame.subject_id ?? "unspecified"}`,
+    `- relation: ${frame.relation}`,
+    `- object_kind: ${frame.object_kind}`,
+    `- object_id: ${frame.object_id ?? "unspecified"}`,
+    `- statement: ${frame.statement}`,
+    `- scope: ${frame.scope ?? "null"}`,
+    `- evidence: ${frame.evidence.join(", ") || "none"}`,
+    `- change_type: ${frame.change_type ?? "new"}`,
+    `- ontology_issues: ${issues.join(", ") || "none"}`
+  ].join("\n");
+}
+
+function ontologyReviewCode(reasons: string[]): string {
+  if (reasons.includes("ONTOLOGY_HIGH_RISK_RELATION_CHANGE")) {
+    return "ontology_high_risk_relation_change";
+  }
+
+  if (reasons.includes("ONTOLOGY_RELATION_UNKNOWN")) {
+    return "ontology_relation_unknown";
+  }
+
+  if (reasons.includes("ONTOLOGY_DOMAIN_INVALID") || reasons.includes("ONTOLOGY_RANGE_INVALID")) {
+    return "ontology_domain_range_mismatch";
+  }
+
+  if (reasons.includes("ONTOLOGY_SCOPE_REQUIRED")) {
+    return "ontology_scope_required";
+  }
+
+  return "ontology_frame_review";
+}
+
+function ontologyReviewMessage(frame: OntologyAwareFrame, reasons: string[]): string {
+  return `Ontology frame "${frame.statement}" requires review: ${reasons.join(", ")}.`;
+}
+
+function ontologyAffectedFiles(frame: OntologyAwareFrame): string[] {
+  return [frame.subject_id, frame.object_id]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((id) => `ontology-frame:${id}`);
 }
 
 function renderCandidateSummary(claim: CandidateClaimProposal): string {
@@ -825,6 +921,18 @@ function enumString<T extends string>(value: unknown, allowed: readonly T[], fie
   return value as T;
 }
 
+function optionalNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`LLM extraction field must be a list of non-empty strings: ${field}.`);
+  }
+
+  return value.map((item) => item.trim());
+}
+
 function optionalEnumString<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -843,6 +951,7 @@ function openAiExtractionSystemPrompt(): string {
     "The deterministic markdown pipeline is authoritative; do not claim that anything has been saved or applied.",
     "Return only a JSON object with optional arrays: claims, followups, entities, explanations.",
     "claims items: entity_kind person|topic|context|system, entity_name, statement, optional claim_kind fact|inference|assumption|preference|commitment, optional evidence_strength explicit|inferred|weak, optional scope string|null, optional scope_state complete|partial|unknown, optional entity_resolution exact_match|alias_match|near_match|new_entity|ambiguous.",
+    "frames items are optional ontology-aware relation candidates: subject_id, subject_kind, relation, object_id, object_kind, statement, scope string|null, evidence string[], optional change_type new|change.",
     "followups items require action and followup_state candidate|committed; committed followups require explicit trigger text in the source note.",
     "entities items require kind, name, resolution_state, and optional candidates.",
     "Do not invent source facts, scopes, dates, aliases, or explanations.",

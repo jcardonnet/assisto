@@ -17,18 +17,24 @@ Validators reject:
 - active system/context claims with `scope_state: unknown`;
 - unsupported Current summary text;
 - ambiguous entity updates without staging;
-- Transactions without rollback/repair notes.
+- Transactions without rollback/repair notes;
+- malformed ontology registry JSON;
+- ontology frames with unknown relations;
+- ontology frames whose subject/object kinds violate relation domain/range;
+- ontology frames missing scope when the relation has `requires_scope`;
+- active canonical claims that cite only ontology, symbolic, retrieval, answer, or brief artifacts.
 
 ## Designed / post-MVP rules
 
 Future validators should also enforce:
 
-- no active canonical claim may cite only a derived artifact;
 - no symbolic output may be written as an active claim;
 - saved explanations require explicit capture plus a reviewed Transaction;
 - adversarial review stages through pending `STAGE_REVIEW` Transactions;
 - source adapters preserve raw text and `source_hash`;
 - ontology changes invalidate derived indexes, not canonical claims;
+- invalid ontology frames stage review through pending Transactions;
+- high-risk relation changes stage review and never auto-promote;
 - repair actions cannot directly edit current pages;
 - semantic/vector/symbolic retrieval results cannot outrank cited claims and source Events.
 
