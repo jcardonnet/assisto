@@ -70,6 +70,17 @@ export async function runCoreOntologyTests() {
     assert.equal(domainMismatch.passed, false);
     assert.equal(domainMismatch.review_reasons.includes("ONTOLOGY_DOMAIN_INVALID"), true);
 
+    const unknownSubjectKind = ontology.validateOntologyFrame({
+      subject_kind: "Project",
+      relation: "uses_technology",
+      object_kind: "Topic",
+      statement: "Inventory uses Redis.",
+      scope: "ctx_inventory",
+      evidence: ["ev_2026_05_31_001"]
+    }, registry);
+    assert.equal(unknownSubjectKind.passed, false);
+    assert.equal(unknownSubjectKind.review_reasons.includes("ONTOLOGY_DOMAIN_INVALID"), true);
+
     const missingScope = ontology.validateOntologyFrame({
       subject_kind: "Context",
       relation: "uses_technology",

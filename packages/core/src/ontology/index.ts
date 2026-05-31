@@ -144,8 +144,8 @@ export function validateOntologyFrame(
 ): OntologyFrameValidationResult {
   const errors: OntologyFrameValidationIssue[] = [];
   const relation = registry.relations.find((candidate) => candidate.relation === frame.relation);
-  const subjectKind = normalizeEntityKind(frame.subject_kind);
-  const objectKind = normalizeEntityKind(frame.object_kind);
+  const subjectKind = safeNormalizeEntityKind(frame.subject_kind);
+  const objectKind = safeNormalizeEntityKind(frame.object_kind);
 
   if (!relation) {
     errors.push({
@@ -154,7 +154,13 @@ export function validateOntologyFrame(
       message: `Ontology relation is not registered: ${frame.relation}.`
     });
   } else {
-    if (!kindAllowed(subjectKind, relation.domain)) {
+    if (!subjectKind) {
+      errors.push({
+        code: "ONTOLOGY_DOMAIN_INVALID",
+        field: "subject_kind",
+        message: `Relation ${frame.relation} has unknown subject kind ${frame.subject_kind}.`
+      });
+    } else if (!kindAllowed(subjectKind, relation.domain)) {
       errors.push({
         code: "ONTOLOGY_DOMAIN_INVALID",
         field: "subject_kind",
@@ -162,7 +168,13 @@ export function validateOntologyFrame(
       });
     }
 
-    if (!kindAllowed(objectKind, relation.range)) {
+    if (!objectKind) {
+      errors.push({
+        code: "ONTOLOGY_RANGE_INVALID",
+        field: "object_kind",
+        message: `Relation ${frame.relation} has unknown object kind ${frame.object_kind}.`
+      });
+    } else if (!kindAllowed(objectKind, relation.range)) {
       errors.push({
         code: "ONTOLOGY_RANGE_INVALID",
         field: "object_kind",
@@ -205,6 +217,14 @@ export function validateOntologyFrame(
 
 export function normalizeEntityKind(value: string): OntologyEntityKind {
   return parseEntityKind(value.replace(/[^a-z0-9]+/gi, " ").trim());
+}
+
+function safeNormalizeEntityKind(value: string): OntologyEntityKind | undefined {
+  try {
+    return normalizeEntityKind(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function parseRelationDefinition(value: unknown): OntologyRelationDefinition {

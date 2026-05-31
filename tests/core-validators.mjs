@@ -248,6 +248,47 @@ export async function runCoreValidatorTests() {
     "ONTOLOGY_FRAME_INVALID"
   ]);
 
+  const stagedReviewOntologyFrame = validators.toValidationDocument(
+    "review/reporting-change.md",
+    `---
+id: rev_reporting_change
+type: review_item
+object_state: active
+review_state: staged
+review_reason: ontology_high_risk_relation_change
+created_at: 2026-05-20T12:00:00-03:00
+source_events:
+  - ev_2026_05_20_001
+affected_files:
+  - people/joe.md
+---
+
+# Review: Reporting change
+
+## Staged claim
+
+- claim_id: clm_joe_reports_to_ann
+  statement: Joe reports to Ann.
+  claim_kind: fact
+  claim_state: staged
+  evidence_strength: explicit
+  scope: ctx_inventory
+  scope_state: complete
+  evidence: [ev_2026_05_20_001]
+  recorded_at: 2026-05-20T12:00:00-03:00
+  observed_at: null
+  valid_from: null
+  valid_to: null
+  relation: reports_to
+  subject_kind: Person
+  subject_id: per_joe
+  object_kind: Person
+  object_id: per_ann
+  change_type: change
+`
+  );
+  assert.equal(validators.validateClaimBlocks(stagedReviewOntologyFrame).passed, true);
+
   const transaction = validators.toValidationDocument(
     "transactions/pending/tx-2026-05-20-001.md",
     transactionWithoutRollback
