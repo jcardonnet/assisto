@@ -64,6 +64,7 @@ import {
   updateDailySession,
   previewAnswerDraft,
   retrieveCitedAnswerContract,
+  retrieveCitedAnswerContractV3,
   retrieveContextForAnswer,
   validateTransaction,
   type AnswerDraftResult,
@@ -76,6 +77,7 @@ import {
   type WorkdayCaptureCreate,
   type WorkdayCapturePreview,
   type ContextPackResult,
+  type CitedAnswerContractV3,
   type ContextNoteResult,
   type DailyQueueResult,
   type DogfoodHomeResult,
@@ -127,10 +129,12 @@ export interface WorkbenchSnapshot {
   ask: ContextPackResult | null;
 }
 
+export type WorkbenchAskBasis = ContextPackResult | CitedAnswerContractV3;
+
 export interface WorkbenchAskSession {
   generated_at: string;
   query?: string;
-  basis: ContextPackResult | null;
+  basis: WorkbenchAskBasis | null;
   pinned_questions: string[];
   citation_explorer: WorkbenchAskCitationExplorer;
   matched_page_previews: WorkbenchAskPagePreview[];
@@ -626,6 +630,13 @@ export async function handleWorkbenchRoute(
     const query = optionalQuery(requestUrl);
     return query
       ? jsonRoute(200, await retrieveCitedAnswerContract(root, query))
+      : jsonRoute(400, { error: "Missing required query parameter: q." });
+  }
+
+  if (requestUrl.pathname === "/api/ask/contract-v3") {
+    const query = optionalQuery(requestUrl);
+    return query
+      ? jsonRoute(200, await retrieveCitedAnswerContractV3(root, query))
       : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
@@ -1175,7 +1186,7 @@ function askQuestionsPath(root: string): string {
   return path.join(root, ".assisto-local", "retrieval", "questions.json");
 }
 
-function buildCitationExplorer(basis: ContextPackResult): WorkbenchAskCitationExplorer {
+function buildCitationExplorer(basis: WorkbenchAskBasis): WorkbenchAskCitationExplorer {
   const claims = [
     ...(basis.answerCandidates ?? []).map((candidate) => candidate.claim_id),
     ...(basis.supportingClaims ?? []).map((claim) => claim.claim_id),
@@ -1210,9 +1221,10 @@ function emptyCitationExplorer(): WorkbenchAskCitationExplorer {
   };
 }
 
-function matchedPagePreviews(basis: ContextPackResult): WorkbenchAskPagePreview[] {
+function matchedPagePreviews(basis: WorkbenchAskBasis): WorkbenchAskPagePreview[] {
+  const loadedPages = "pages" in basis ? basis.pages ?? [] : [];
   return (basis.matchedPages ?? []).map((page) => {
-    const loaded = (basis.pages ?? []).find((candidate) => candidate.path === page.path);
+    const loaded = loadedPages.find((candidate) => candidate.path === page.path);
     return {
       path: page.path,
       id: page.id,
@@ -1224,10 +1236,11 @@ function matchedPagePreviews(basis: ContextPackResult): WorkbenchAskPagePreview[
   });
 }
 
-async function sourceEventPreviews(root: string, basis: ContextPackResult): Promise<WorkbenchAskEventPreview[]> {
+async function sourceEventPreviews(root: string, basis: WorkbenchAskBasis): Promise<WorkbenchAskEventPreview[]> {
+  const loadedEvents = "events" in basis ? basis.events ?? [] : [];
   return Promise.all(
     (basis.evidenceEvents ?? []).map(async (event) => {
-      const loaded = (basis.events ?? []).find((candidate) => candidate.path === event.path);
+      const loaded = loadedEvents.find((candidate) => candidate.path === event.path);
       let body = loaded?.body ?? "";
 
       if (!body) {
@@ -1250,8 +1263,9 @@ async function sourceEventPreviews(root: string, basis: ContextPackResult): Prom
   );
 }
 
-function missingMemoryActions(basis: ContextPackResult): WorkbenchAskMissingMemoryAction[] {
-  if (!(basis.missingInformation ?? []).length && !(basis.manualActions ?? []).some((action) => action.action === "log_friction")) {
+function missingMemoryActions(basis: WorkbenchAskBasis): WorkbenchAskMissingMemoryAction[] {
+  const actions = "manualActions" in basis ? basis.manualActions ?? [] : basis.repairActions ?? [];
+  if (!(basis.missingInformation ?? []).length && !actions.some((action) => action.action === "log_friction")) {
     return [];
   }
 
@@ -1401,7 +1415,7 @@ async function createAskDraftPreview(root: string, input: Record<string, unknown
 }
 
 async function buildAskSession(root: string, query?: string): Promise<WorkbenchAskSession> {
-  const basis = query ? await retrieveContextForAnswer(root, query) : null;
+  const basis = query ? await retrieveCitedAnswerContractV3(root, query) : null;
   return {
     generated_at: new Date().toISOString(),
     query: basis?.query ?? query,
@@ -6050,14 +6064,14 @@ function citationExplorerFromBasis(result) {
   const claimIds = [
     ...Object.keys(citationMap.claims ?? {}),
     ...(result.answerCandidates ?? []).map((candidate) => candidate.claim_id),
-    ...(result.directAnswers ?? []).flatMap((answer) => answer.citations?.claim_ids ?? []),
+    ...(result.directAnswers ?? []).flatMap((answer) => citationValues(answer.citations, "claim")),
     ...(result.supportingClaims ?? []).map((claim) => claim.claim_id),
     ...(result.uncertainClaims ?? []).map((claim) => claim.claim_id)
   ];
   const eventIds = [
     ...Object.keys(citationMap.events ?? {}),
     ...(result.evidenceEvents ?? []).map((event) => event.id),
-    ...(result.directAnswers ?? []).flatMap((answer) => answer.citations?.event_ids ?? []),
+    ...(result.directAnswers ?? []).flatMap((answer) => citationValues(answer.citations, "event")),
     ...(result.answerCandidates ?? []).flatMap((candidate) => candidate.evidence ?? []),
     ...(result.supportingClaims ?? []).flatMap((claim) => claim.evidence ?? [])
   ];
@@ -6068,13 +6082,36 @@ function citationExplorerFromBasis(result) {
     page_paths: uniqueClientStrings([
       ...Object.keys(citationMap.pages ?? {}),
       ...(result.matchedPages ?? []).map((page) => page.path),
-      ...(result.directAnswers ?? []).flatMap((answer) => answer.citations?.page_paths ?? []),
+      ...(result.directAnswers ?? []).flatMap((answer) => citationValues(answer.citations, "page")),
       ...(result.answerCandidates ?? []).map((candidate) => candidate.page_path),
       ...(result.supportingClaims ?? []).map((claim) => claim.page_path)
     ]),
     review_item_ids: uniqueClientStrings((result.linkedReviewItems ?? []).map((item) => item.id)),
     followup_ids: uniqueClientStrings((result.linkedFollowUps ?? []).map((item) => item.id))
   };
+}
+
+function citationValues(citations, kind) {
+  if (Array.isArray(citations)) {
+    return citations
+      .filter((citation) => citation.kind === kind)
+      .map((citation) => citation.claim_id ?? citation.event_id ?? citation.page_path ?? citation.path ?? citation.id)
+      .filter(Boolean);
+  }
+
+  if (!citations) {
+    return [];
+  }
+
+  if (kind === "claim") {
+    return citations.claim_ids ?? [];
+  }
+
+  if (kind === "event") {
+    return citations.event_ids ?? [];
+  }
+
+  return citations.page_paths ?? [];
 }
 
 function citationExplorerHtml(explorer) {
@@ -6642,12 +6679,23 @@ function claimCitationLines(claim) {
 }
 
 function answerCitationLines(answer) {
+  const citationLines = Array.isArray(answer.citations)
+    ? [
+      "claim_id: " + (answer.claim_id || citationValues(answer.citations, "claim").join(", ") || "unknown"),
+      "page: " + (answer.page_path || citationValues(answer.citations, "page").join(", ") || "unknown"),
+      "events: " + (citationValues(answer.citations, "event").join(", ") || "none")
+    ]
+    : [
+      "claim_id: " + (answer.claim_id ?? "unknown"),
+      "page: " + (answer.page_path ?? "unknown"),
+      "events: " + ((answer.citations?.event_ids ?? []).join(", ") || "none")
+    ];
+
   return [
-    \`claim_id: \${answer.claim_id}\`,
-    \`page: \${answer.page_path}\`,
-    \`events: \${(answer.citations?.event_ids ?? []).join(", ") || "none"}\`,
-    \`scope: \${answer.scope ?? "null"}\`,
-    \`scope_state: \${answer.scope_state ?? "unknown"}\`
+    ...citationLines,
+    "scope: " + (answer.scope ?? "null"),
+    "scope_state: " + (answer.scope_state ?? "unknown"),
+    ...(answer.inference_paths?.length ? ["inference_paths: " + answer.inference_paths.join(", ")] : [])
   ];
 }
 
@@ -6656,11 +6704,21 @@ function citationSetLines(citations) {
     return [];
   }
 
+  if (Array.isArray(citations)) {
+    return citations.map((citation) => citationLine(citation));
+  }
+
   return [
-    \`claims: \${(citations.claim_ids ?? []).join(", ") || "none"}\`,
-    \`events: \${(citations.event_ids ?? []).join(", ") || "none"}\`,
-    \`pages: \${(citations.page_paths ?? []).join(", ") || "none"}\`
+    "claims: " + ((citations.claim_ids ?? []).join(", ") || "none"),
+    "events: " + ((citations.event_ids ?? []).join(", ") || "none"),
+    "pages: " + ((citations.page_paths ?? []).join(", ") || "none")
   ];
+}
+
+function citationLine(citation) {
+  const id = citation.claim_id ?? citation.event_id ?? citation.page_path ?? citation.id ?? "unknown";
+  const path = citation.path && citation.path !== id ? " (" + citation.path + ")" : "";
+  return (citation.kind ?? "citation") + ": " + id + path;
 }
 
 function entityKindForPagePath(pagePath) {

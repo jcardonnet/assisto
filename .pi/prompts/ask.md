@@ -7,7 +7,7 @@ command: /wm-ask
 
 # /wm-ask <question>
 
-Prefer `wm ask --answer-contract "<question>"`.
+Prefer `wm ask --contract-v3 "<question>"`.
 
 Surface:
 

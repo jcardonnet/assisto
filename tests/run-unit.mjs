@@ -8,6 +8,7 @@ import { runCorePolicyTests } from "./core-policies.mjs";
 import { runCoreIngestPipelineTests } from "./core-ingest-pipeline.mjs";
 import { runCoreExtractionTests } from "./core-extraction.mjs";
 import { runCoreRetrievalTests } from "./core-retrieval.mjs";
+import { runCoreAnswerContractV3Tests } from "./core-answer-contract-v3.mjs";
 import { runCoreHealthTests } from "./core-health.mjs";
 import { runCoreBriefTests } from "./core-briefs.mjs";
 import { runCoreTodayTests } from "./core-today.mjs";
@@ -30,6 +31,7 @@ export async function runUnitTests() {
   await runCoreIngestPipelineTests();
   await runCoreExtractionTests();
   await runCoreRetrievalTests();
+  await runCoreAnswerContractV3Tests();
   await runCoreHealthTests();
   await runCoreBriefTests();
   await runCoreTodayTests();
