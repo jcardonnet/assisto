@@ -18,6 +18,7 @@ import {
   type FrontmatterValue,
   type ParsedClaimBlockRecord
 } from "../markdown";
+import { defaultOntologyRegistry, validateOntologyFrame } from "../ontology";
 
 export type ValidationErrorCode =
   | "MISSING_FRONTMATTER_FIELD"
@@ -41,7 +42,8 @@ export type ValidationErrorCode =
   | "TRANSACTION_ROLLBACK_MISSING"
   | "TRANSACTION_WRITESET_MISSING"
   | "TRANSACTION_WRITE_PATH_INVALID"
-  | "TRANSACTION_AFFECTED_FILE_MISMATCH";
+  | "TRANSACTION_AFFECTED_FILE_MISMATCH"
+  | "ONTOLOGY_FRAME_INVALID";
 
 export type ValidationWarningCode = "SUMMARY_OMITTED" | "NO_CLAIM_BLOCKS";
 
@@ -307,6 +309,10 @@ export function validateClaimBlocks(document: ValidationDocument): ValidationRes
         id: stringValue(claim.fields.claim_id),
         line: claim.line
       });
+    }
+
+    if (hasOntologyFrameFields(claim.fields)) {
+      validateOntologyClaimFrame(result, document, claim);
     }
   }
 
@@ -701,6 +707,60 @@ function validateClaimEnumField(
       line: claim.line
     });
   }
+}
+
+function hasOntologyFrameFields(fields: Record<string, FrontmatterValue>): boolean {
+  return hasField(fields, "relation") || hasField(fields, "subject_kind") || hasField(fields, "object_kind");
+}
+
+function validateOntologyClaimFrame(
+  result: ValidationResult,
+  document: ValidationDocument,
+  claim: ParsedClaimBlockRecord
+): void {
+  const relation = stringValue(claim.fields.relation);
+  const subjectKind = stringValue(claim.fields.subject_kind);
+  const objectKind = stringValue(claim.fields.object_kind);
+
+  if (!relation || !subjectKind || !objectKind) {
+    addError(result, {
+      code: "ONTOLOGY_FRAME_INVALID",
+      message: "Ontology-aware claim frames require relation, subject_kind, and object_kind.",
+      path: document.path,
+      field: "relation",
+      id: stringValue(claim.fields.claim_id),
+      line: claim.line
+    });
+    return;
+  }
+
+  const validation = validateOntologyFrame(
+    {
+      subject_id: stringValue(claim.fields.subject_id),
+      subject_kind: subjectKind,
+      relation,
+      object_id: stringValue(claim.fields.object_id),
+      object_kind: objectKind,
+      statement: stringValue(claim.fields.statement) ?? "",
+      scope: typeof claim.fields.scope === "string" ? claim.fields.scope : null,
+      evidence: isStringArray(claim.fields.evidence) ? claim.fields.evidence : [],
+      change_type: claim.fields.change_type === "change" ? "change" : "new"
+    },
+    defaultOntologyRegistry
+  );
+
+  if (validation.passed && !validation.requires_review) {
+    return;
+  }
+
+  addError(result, {
+    code: "ONTOLOGY_FRAME_INVALID",
+    message: `Ontology-aware claim frame must stage review: ${validation.review_reasons.join(", ")}.`,
+    path: document.path,
+    field: "relation",
+    id: stringValue(claim.fields.claim_id),
+    line: claim.line
+  });
 }
 
 function checkDuplicate(

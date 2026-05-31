@@ -228,6 +228,26 @@ export async function runCoreValidatorTests() {
     true
   );
 
+  const validOntologyFrame = validators.toValidationDocument(
+    "people/joe.md",
+    personWithActiveClaim.replace(
+      "valid_to: null",
+      "valid_to: null\n  relation: owns\n  subject_kind: Person\n  subject_id: per_joe\n  object_kind: Context\n  object_id: ctx_inventory"
+    )
+  );
+  assert.equal(validators.validateClaimBlocks(validOntologyFrame).passed, true);
+
+  const invalidOntologyFrame = validators.toValidationDocument(
+    "people/joe.md",
+    personWithActiveClaim.replace(
+      "valid_to: null",
+      "valid_to: null\n  relation: uses_technology\n  subject_kind: Person\n  subject_id: per_joe\n  object_kind: Topic\n  object_id: top_mysql"
+    )
+  );
+  assert.deepEqual(errorCodes(validators.validateClaimBlocks(invalidOntologyFrame)), [
+    "ONTOLOGY_FRAME_INVALID"
+  ]);
+
   const transaction = validators.toValidationDocument(
     "transactions/pending/tx-2026-05-20-001.md",
     transactionWithoutRollback

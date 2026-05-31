@@ -362,6 +362,70 @@ related: []
     await rm(newContextRoot, { recursive: true, force: true });
   }
 
+  const ontologyInvalidRoot = await makeTempVault();
+
+  try {
+    const result = await extraction.ingestWithExtractionProvider(ontologyInvalidRoot, "Alice uses Redis.", {
+      now: "2026-05-21T12:00:00-03:00",
+      provider: mockProvider(extraction, {
+        frames: [
+          {
+            subject_kind: "Person",
+            subject_id: "per_alice",
+            relation: "uses_technology",
+            object_kind: "Topic",
+            object_id: "top_redis",
+            statement: "Alice uses Redis.",
+            scope: "ctx_inventory_project",
+            evidence: ["source_note"]
+          }
+        ]
+      })
+    });
+    const tx = transactions.parseTransactionMarkdown(await readVaultFile(ontologyInvalidRoot, result.transaction_path));
+    const content = proposedWrites(tx).map((write) => write.content).join("\n");
+
+    assert.equal(result.deterministic_review_reasons.includes("ontology_domain_range_mismatch"), true);
+    assert.equal(proposedWrites(tx).some((write) => write.path.startsWith("memory/people/")), false);
+    assert.equal(proposedWrites(tx).some((write) => write.path.startsWith("memory/topics/")), false);
+    assert.equal(proposedWrites(tx).every((write) => write.path.startsWith("memory/review/")), true);
+    assert.match(content, /review_reason: ontology_domain_range_mismatch/);
+    assert.match(content, /source_events:\n {2}- ev_2026_05_21_001/);
+    assert.match(content, /relation: uses_technology/);
+  } finally {
+    await rm(ontologyInvalidRoot, { recursive: true, force: true });
+  }
+
+  const ontologyHighRiskRoot = await makeTempVault();
+
+  try {
+    const result = await extraction.ingestWithExtractionProvider(ontologyHighRiskRoot, "Alice now reports to Bob.", {
+      now: "2026-05-21T12:00:00-03:00",
+      provider: mockProvider(extraction, {
+        frames: [
+          {
+            subject_kind: "Person",
+            subject_id: "per_alice",
+            relation: "reports_to",
+            object_kind: "Person",
+            object_id: "per_bob",
+            statement: "Alice reports to Bob.",
+            scope: "ctx_inventory_project",
+            evidence: ["source_note"],
+            change_type: "change"
+          }
+        ]
+      })
+    });
+    const tx = transactions.parseTransactionMarkdown(await readVaultFile(ontologyHighRiskRoot, result.transaction_path));
+
+    assert.equal(result.deterministic_review_reasons.includes("ontology_high_risk_relation_change"), true);
+    assert.equal(proposedWrites(tx).every((write) => write.path.startsWith("memory/review/")), true);
+    assert.match(proposedWrites(tx).map((write) => write.content).join("\n"), /ONTOLOGY_HIGH_RISK_RELATION_CHANGE/);
+  } finally {
+    await rm(ontologyHighRiskRoot, { recursive: true, force: true });
+  }
+
   const malformedRoot = await makeTempVault();
 
   try {

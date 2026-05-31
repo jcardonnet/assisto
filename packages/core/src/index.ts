@@ -12,6 +12,7 @@ export * from "./capture-feedback";
 export * from "./review";
 export * from "./retrieval";
 export * from "./answers";
+export * from "./ontology";
 export * from "./health";
 export * from "./briefs";
 export * from "./today";
