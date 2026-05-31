@@ -1,101 +1,77 @@
 # Cited Work Memory
 
-Assisto's v8 work-memory surface is built around a single loop:
+Assisto's cited work-memory surface follows:
 
+ASCII shorthand: `Ask -> Entity -> Context -> Repair`.
 ```text
-Ask -> Entity -> Context -> Repair
+Ask → Entity → Context → Repair
 ```
 
-The loop is intentionally deterministic. It turns markdown memory into cited answer
-basis, entity risk views, and Context operating rooms. It does not persist generated
-answers, create graph/vector state, merge entities, resolve contradictions, or write
-canonical pages directly from UI/API handlers.
+Generated answers stay disposable; cited answer contracts and briefs are derived reading surfaces, not memory truth.
+The loop is deterministic. It turns markdown memory into cited answer contracts, entity risk views, and Context operating rooms. It does not persist generated answers, create canonical graph/vector state, merge entities, resolve contradictions, or write canonical pages directly from UI/API handlers.
 
-Generated answers stay disposable, and cited markdown remains the source of record.
+## CitedAnswerContract
 
-## Answer contract
-
-Use the cited answer contract when the question needs a grounded answer instead of a
-raw context pack:
+Use:
 
 ```bash
 wm ask --answer-contract "Who is my manager?"
 ```
 
-The contract separates:
+Conceptual shape:
 
-- `directAnswers`: claims the current memory can support;
-- `cannotConfirm`: missing or unsupported facts;
-- `conflicts`: contested, superseded, staged, or otherwise conflicting signals;
-- `staleSignals`: claims with stale states or temporal endings;
-- `citationMap`: claim, Event, and page citations keyed by ID;
-- `repairActions`: safe manual next steps such as capture, friction logging,
-  opening ReviewItems, opening FollowUps, or inspecting an entity/Context page;
-- `contextPack`: the backward-compatible text pack.
+```ts
+type CitedAnswerContract = {
+  question: string;
+  directAnswers: DirectAnswer[];
+  cannotConfirm: CannotConfirmItem[];
+  conflicts: ConflictSignal[];
+  staleSignals: StaleSignal[];
+  citationMap: AnswerCitationMap;
+  repairActions: RepairAction[];
+  contextPack: string;
+};
+```
 
-Each direct answer carries its own claim IDs, Event IDs, and page paths. The Ask tab
-renders those citations beside the answer and includes a citation explorer with source
-Event previews. Optional draft answers may read this deterministic basis, but generated
-answers stay disposable and must not become memory.
+`contextPack` remains available for compatibility. The contract is derived output, not memory.
 
-## Ask -> Entity -> Context
+## Evidence hydration
 
-When an answer is incomplete or risky, follow the trace instead of guessing:
+Before emitting a direct answer, Assisto hydrates the source Events for cited claims when the answer is high-impact, contested, stale, sparse, temporal, or used for repair.
 
-1. Ask the question and inspect "What memory can say" plus "What memory cannot confirm."
-2. Open the cited Person, Topic, or Context page from the answer.
-3. Check entity stewardship for alias conflicts, near duplicates, role/reporting
-   changes, stale claims, linked ReviewItems, and FollowUps.
+## Ask → Entity → Context
+
+1. Ask the question and inspect what memory can say plus what it cannot confirm.
+2. Open the cited Person, Topic, or Context.
+3. Check entity stewardship for alias conflicts, near duplicates, role/reporting changes, stale claims, ReviewItems, and FollowUps.
 4. Open the Context operating room for project-state questions.
-5. Use repair actions to capture missing evidence, log a retrieval miss, stage an
-   identity review, or stage a role/reporting/context correction.
+5. Use repair actions to capture missing evidence, log a retrieval miss, stage identity review, or stage role/reporting/context correction.
 
-All durable repairs create pending Transactions or Events plus pending Transactions.
-Preview actions run against derived or temporary state and must not edit canonical
-memory.
+## Repair action boundary
 
-## Entity stewardship
+Repair actions are previews. Durable repair writes use Events and/or pending Transactions. No repair action edits current pages directly.
 
-Entity stewardship is a command center for identity and relationship risk:
+## Semantic search boundary
 
-```bash
-wm entities stewardship --kind person
-wm entities stewardship --kind context --json
-```
+Semantic search may find candidate pages. It does not supply direct answers unless backed by canonical claims and source Events.
 
-Risk lanes are read-only until a human explicitly stages a repair. The UI and API may
-surface near duplicates, alias conflicts, role/reporting/ownership changes, stale
-claims, and conflicting claims, but they do not merge, split, delete, or supersede
-without an explicit staged Transaction. Identity ambiguity stays staged.
+## Saved explanations
 
-## Context operating rooms
+A saved explanation is evidence that the explanation was saved, not evidence that every fact inside it is true. Any factual claims inside it need independent Event evidence or must remain generated/explanatory.
 
-Context operating rooms are derived project views:
+## Entity Stewardship
 
-```bash
-wm context operating-room ctx_inventory_project
-wm context timeline ctx_inventory_project --json
-```
+Entity stewardship risk lanes are read-only until a human explicitly stages a repair. They may surface near duplicates, alias conflicts, role/reporting/ownership changes, stale claims, and conflicting claims. They do not merge, split, delete, or supersede without explicit staged Transactions.
 
-They show current state, owners, systems, decisions-as-claims, open
-questions-as-claims, risks, recent changes, stale claims, ReviewItems, FollowUps,
-answerable questions, missing-memory prompts, quick actions, and a source timeline.
-The timeline uses existing `recorded_at`, `observed_at`, `valid_from`, and `valid_to`
-fields without inventing new temporal meaning.
+## Context Operating Rooms
 
-Use Context rooms to decide what to review or capture next. Treat the room itself as a
-reading view, not canonical truth.
+Context rooms are derived project views. They show current state, owners, systems, decisions-as-claims, open questions-as-claims, risks, recent changes, stale claims, ReviewItems, FollowUps, answerable questions, missing-memory prompts, quick actions, and source timeline.
 
-## Safety checks
-
-The v8 hardening gate is:
+## Safety Checks
 
 ```bash
 pnpm eval:answers
 pnpm eval:v8
 ```
 
-It checks that cited answers do not claim unsupported facts, no-match queries surface
-missing-memory guidance, entity risk detection remains read-only, repair actions stage
-pending Transactions only, Context rooms/timelines stay derived, generated text is not
-persisted, and canonical Event raw text is not rewritten.
+These gates check unsupported answers, no-match guidance, entity risk read-only behavior, repair staging, Context room derivation, no generated persistence, and no Event raw-text rewrites.

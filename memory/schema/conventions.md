@@ -1,8 +1,21 @@
-# Memory Conventions
+# Memory conventions
 
-Canonical memory lives under `memory/`. Markdown files are the durable source of record; indexes, caches, embeddings, and runtime state are derived.
+Canonical memory lives under `memory/`. Markdown files are the durable source of record.
 
-## MVP Object Types
+Derived artifacts may guide, explain, preview, rank, and propose. Only Events, Transactions, validation, and review create durable memory.
+
+## canonical vs derived
+
+| Canonical | Derived |
+|---|---|
+| Events | CitedAnswerContract |
+| People, Contexts, Topics, FollowUps | ContextPack, HotPack, ExportPack, BriefPack |
+| ReviewItems | Workbench views and session state |
+| Transactions | Health summaries |
+| Logs | Semantic/symbolic/ontology indexes |
+| `memory/schema/**` policy | `.assisto-local/**` |
+
+## MVP object types
 
 Allowed top-level object types:
 
@@ -15,69 +28,43 @@ Allowed top-level object types:
 - `transaction`
 - `log_entry`
 
-Do not create standalone Decision, OpenQuestion, Explanation, graph, vector, or MCP objects in the MVP.
+Do not create standalone Decision, OpenQuestion, Explanation, OntologyView, SymbolicFact, Brief, EvalSession, or WorkbenchSession objects without a documented migration.
 
 ## Required Mutation Flow
 
-All ingestion follows this loop:
-
 ```text
-Raw input -> Event -> Candidate claims -> Transaction -> Validated mutation or staged review -> Current pages
+Raw input → Event → Candidate claims → Transaction → Validated mutation or staged review → Current pages
 ```
 
-Ingestion and capture logic may write Events and pending Transactions. It must not directly write canonical People, Contexts, Topics, FollowUps, or ReviewItems outside proposed transaction writes.
-
-Events may include optional capture/import metadata such as `source_label`, `contexts`, and `source_hash`. `source_hash` is a SHA-256 hash of a curated raw Markdown/text import unit and is used only for duplicate import detection. These fields describe the human capture surface and must not by themselves promote unscoped claims into active truth.
+Ingestion, capture, and import logic may write Events and pending Transactions. They must not directly write People, Contexts, Topics, FollowUps, ReviewItems, or Logs outside proposed transaction writes.
 
 ## Claims
 
-Every claim block must include:
+Every active durable claim must cite at least one Event ID. Generated, symbolic, retrieval, brief, or answer-contract artifacts must not become active claims from their own text alone. A saved generated artifact is evidence that the artifact was saved, not evidence that every factual statement inside it is true; those factual statements need independent Event evidence or must remain generated, explanatory, staged, or rejected.
 
-```yaml
-- claim_id: clm_example
-  statement: Example statement.
-  claim_kind: fact
-  claim_state: active
-  evidence_strength: explicit
-  scope: current-work-context
-  scope_state: partial
-  evidence: [ev_2026_05_20_001]
-  recorded_at: 2026-05-20T12:00:00-03:00
-  observed_at: null
-  valid_from: null
-  valid_to: null
-```
+## Source adapter metadata
 
-Active durable claims must cite at least one Event ID. Existing page content must be preserved during claim upserts; duplicate `claim_id` values are deduped rather than appended again.
+Events may include:
 
-## Time Fields
+- `source_label`;
+- `contexts`;
+- `source_hash`;
+- parser notes;
+- optional source spans.
 
-Use only these time fields:
+`source_hash` is used for duplicate raw Markdown/text import detection. It does not promote unscoped claims into active truth.
 
-```yaml
-recorded_at: <when the memory system recorded the item>
-observed_at: <when the event happened, if known>
-valid_from: <when the claim became true, if known>
-valid_to: <when the claim stopped being true, if known>
-```
+## Repair actions
 
-Do not infer `valid_from` from `recorded_at` or `observed_at`.
+Repair actions are previews or transaction-backed writes. They are not direct memory edits.
 
-## Follow-Ups
+Durable write modes:
 
-Committed follow-ups require explicit trigger language such as `Remind me to`, `I need to`, `I will`, `Please track`, `Add a follow-up`, `asked me to`, or `Due by`.
+- `none`;
+- `event_plus_pending_transaction`;
+- `pending_transaction`;
+- `validated_transaction_apply`.
 
-Casual discussion phrases such as `we discussed`, `mentioned`, or `came up` must not create committed follow-ups.
+## Local State
 
-## Review
-
-Stage review for ambiguous or high-risk changes:
-
-- unknown system/context scope;
-- new, near, or ambiguous context scope;
-- near or ambiguous entity resolution;
-- role or reporting changes;
-- claim ID conflicts;
-- generated explanations that have not been explicitly saved.
-
-Human review may create a transaction that applies a staged claim, creates an explicit context, or supersedes an old claim. That is still transaction-backed and validated before application.
+`.assisto-local/**` is noncanonical local state. It may store UI/session preferences, pinned questions, import sessions, and personal eval question sets. It must not store canonical claims, generated answer truth, generated briefs as memory, or transaction substitutes.

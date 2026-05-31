@@ -1,34 +1,21 @@
-# Relation Types
+# Relation types
 
-The MVP uses readable markdown links and simple frontmatter lists before any graph database.
+The MVP uses readable markdown links and Event-backed claim blocks before any graph database.
 
-## Frontmatter Relations
+## MVP Relations
 
 - `source_events`: Event IDs that support the page or review item.
-- `related`: wikilinks to related People, Contexts, Topics, FollowUps, ReviewItems, or Events.
+- `related`: fallback wikilinks to related objects.
 - `participants`: Event-level Person IDs.
 - `topics`: Event-level Topic IDs.
 - `contexts`: Event-level Context IDs.
 - `transactions`: Transaction IDs that created or changed the object.
-- `affected_files`: ReviewItem or Transaction paths affected by the issue.
-- `linked_transaction`: pending/applied Transaction ID related to a ReviewItem.
+- `affected_files`: ReviewItem or Transaction paths affected by an issue.
+- `linked_transaction`: Transaction ID related to a ReviewItem.
 
-## Wikilinks
+## Event-backed claims, not graph edges
 
-Use wikilinks for human navigation:
-
-```markdown
-[[people/joe]]
-[[topics/mysql]]
-[[contexts/inventory-project]]
-[[events/2026/2026-05/2026-05-20-001]]
-```
-
-Wikilinks must resolve to markdown files. Broken links are lint issues.
-
-## Deferred Relations
-
-Do not add graph-specific relation schemas in the MVP. If a relationship is important, store it as an Event-backed claim first, for example:
+If a relationship matters, store it as an Event-backed claim first:
 
 ```yaml
 - claim_id: clm_kuastav_reports_to_jeff
@@ -39,8 +26,23 @@ Do not add graph-specific relation schemas in the MVP. If a relationship is impo
   scope: current-work-context
   scope_state: partial
   evidence: [ev_2026_05_21_001]
-  recorded_at: 2026-05-21T12:00:00-03:00
-  observed_at: null
-  valid_from: null
-  valid_to: null
 ```
+
+## Post-MVP relation registry
+
+The derived ontology registry lives under `memory/schema/ontology/`. Relation examples:
+
+- `reports_to`
+- `manages`
+- `owns`
+- `part_of`
+- `depends_on`
+- `supersedes`
+- `contradicts`
+- `evidenced_by`
+- `has_open_followup`
+- `review_risk_for`
+
+`related` is fallback only when no more specific relation applies.
+
+derived inverse or transitive relations require inference paths. They are not active canonical claims unless explicitly captured and transaction-backed.

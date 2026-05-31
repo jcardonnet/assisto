@@ -1,44 +1,65 @@
 # Dogfood Vault Hygiene
 
-Assisto can be developed from the same checkout that contains personal dogfood memory, but the two roles need a hard boundary.
+Assisto can be developed from the same checkout that contains personal dogfood memory, but product code/docs and user memory need a hard boundary.
 
-## Development repo
+## Development Repo
 
-Use the development repo for product code, tests, docs, scripts, and Workbench UI changes. Product PRs should not stage or commit real user-memory files.
+Product PRs should not stage or commit real user-memory files.
 
-Before opening or merging a product PR, run:
+Before opening or merging a product PR:
 
 ```bash
 pnpm check:memory-data
 ```
 
-The guard blocks staged, unstaged, or committed changes under:
+The current automated guard focuses on high-risk Event and Transaction data. Also inspect `git status --short` for other canonical user-memory paths listed below before staging a product PR.
 
-```text
-memory/events/**
-memory/transactions/**
-```
+## Memory path classes
 
-These folders contain source Events and pending/applied Transactions. Treat them as user data, not fixture data.
+### Product schema/policy paths
 
-## Personal dogfood data
+These may be changed in product PRs:
 
-During real use, `wm capture`, imports, feedback logging, and review flows may create untracked files under `memory/events/**` and `memory/transactions/**`. The guard reports those files as `untracked_user_memory_paths` so you can see they exist without blocking product development.
+- `memory/schema/**`
+- `memory/indexes/README.md`
 
-Do not stage `memory/events/**` or `memory/transactions/**` during product PRs. If a PR truly needs fixture-like memory data, place it under `tests/` or a documented scenario fixture instead.
+### Canonical user-memory paths
 
-## Useful commands
+These should not be changed in product PRs unless explicitly approved:
+
+- `memory/events/**`
+- `memory/people/**`
+- `memory/contexts/**`
+- `memory/topics/**`
+- `memory/followups/**`
+- `memory/review/**`
+- `memory/transactions/**`
+- `memory/logs/**`
+
+### Derived/local/generated paths
+
+These should normally be ignored or regenerated:
+
+- `memory/indexes/**`
+- `.assisto-local/**`
+
+## Personal Dogfood Data
+
+During real use, capture/import/feedback/review flows may create untracked files under `memory/events/**` and `memory/transactions/**`. Treat them as local dogfood data unless the user explicitly says otherwise.
+
+Maintenance logs and domain events are operational evidence about Assisto behavior. They are not source Events for work-memory claims.
+
+## Useful Commands
 
 ```bash
 pnpm check:memory-data -- --json
 wm doctor memory-data --json
 ```
 
-`wm doctor memory-data` is a read-only CLI wrapper for the same guard. Both commands separate:
 
-- `tracked_diff_paths`
-- `staged_paths`
-- `unstaged_paths`
-- `untracked_user_memory_paths`
+Future guard work should add a strict mode:
 
-`--allow` and `ASSISTO_ALLOW_MEMORY_DATA_CHANGES=1` remain explicit escape hatches for rare intentional memory-data edits. Prefer not to use them during product implementation PRs.
+```bash
+pnpm check:memory-data --strict
+```
+

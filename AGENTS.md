@@ -1,27 +1,22 @@
 # AGENTS.md
 
-## Project invariant
+## Project Invariant
 
 This repository implements a local-first markdown work-memory assistant.
 
-Canonical state lives under `memory/`. Markdown files are the durable source of record. Indexes, search artifacts, embeddings, graphs, caches, and runtime session state are derived artifacts.
+Canonical state lives under `memory/`. Markdown files are the durable source of record. Indexes, search artifacts, embeddings, graphs, caches, answer contracts, packs, briefs, Workbench/session state, and `.assisto-local/**` are derived artifacts.
 
-The first implementation is a transaction-safe MVP, not a fully autonomous memory agent.
-
-## MVP scope
-
-Build only the source-backed markdown mutation loop:
+The safe compiler core is:
 
 ```text
-Raw input
-→ Event
-→ Candidate claims
-→ Transaction
-→ Validated mutation or staged review
-→ Current pages
+Raw input → Event → Candidate claims → Transaction → Validated mutation or staged review → Current pages
 ```
 
-The MVP object types are:
+Derived artifacts may guide, explain, preview, rank, and propose. Only Events, Transactions, validation, and review create durable memory.
+
+## MVP Scope
+
+MVP object types:
 
 - `Event`
 - `Person`
@@ -32,7 +27,7 @@ The MVP object types are:
 - `Transaction`
 - `LogEntry`
 
-The MVP folders are:
+MVP folders:
 
 ```text
 memory/
@@ -48,25 +43,61 @@ memory/
   indexes/
 ```
 
-## Non-negotiable rules
+## Non-Negotiable Rules
 
-- Do not implement vector search in the MVP.
-- Do not implement a graph database in the MVP.
-- Do not implement MCP in the MVP.
+- Do not implement vector search as canonical memory.
+- Do not implement a graph database as canonical memory.
+- Do not implement MCP as canonical memory.
 - Do not implement autonomous entity merges.
 - Do not implement autonomous contradiction resolution.
 - Do not implement full meeting-transcript ingestion.
 - Do not implement autonomous background linting.
 - Do not create standalone Decision, OpenQuestion, or Explanation pages in the MVP.
 - Do not write canonical memory pages directly from ingestion logic.
-- All multi-file mutations must go through transactions.
+- All multi-file mutations must go through Transactions.
 - Every durable claim must cite at least one Event ID.
 - Unknown system/project/context scope must be staged, not promoted as active truth.
-- Do not create committed follow-ups without explicit trigger phrases.
+- Do not create committed FollowUps without explicit trigger phrases.
 - Do not auto-merge people or topics.
-- Do not delete memory in the MVP; use `archived` or `rejected` states.
+- Do not delete memory in the MVP; use `archived`, `rejected`, or `superseded`.
 
-## Canonical state model
+## Global Boundary For Derived/Intelligent Layers
+
+Cited answers, context packs, Workbench views, briefs, health summaries, entity stewardship views, Context operating rooms, ontology views, symbolic reasoning outputs, semantic search results, and eval sessions are derived unless explicitly routed through Events and Transactions.
+
+They may guide, explain, preview, rank, and propose. They may not directly create or modify canonical memory.
+
+## Inference Laundering
+
+Inference laundering is a P1 bug: generated, inferred, weakly supported, or retrieval-assembled text becoming durable truth without Event evidence and a validated Transaction.
+
+Flag as P1 any change that:
+
+- persists generated answers, generated explanations, briefs, context packs, symbolic outputs, or Workbench state as canonical memory without Event/Transaction flow;
+- creates ReviewItems directly from adversarial review instead of pending `STAGE_REVIEW` Transactions;
+- treats maintenance domain events as source Events;
+- stores ontology policy as user memory instead of schema/policy under `memory/schema/ontology/`;
+- makes semantic/vector/symbolic retrieval outrank cited claims or source Events;
+- introduces new canonical object types without a documented migration;
+- persists repeated generated explanations without explicit save plus reviewed Transaction.
+
+## Write permission matrix
+
+| Actor / Layer | Events | Pending Transactions | Apply Transactions | Current pages directly | Derived indexes/state |
+|---|---:|---:|---:|---:|---:|
+| Ingestion | Yes | Yes | No | No | No |
+| Capture UI | Yes | Yes | No | No | No |
+| Import adapter | Yes | Yes | No | No | No |
+| Review UI | Explicit note capture only | Yes | Validated helper only | No | No |
+| Transaction applier | No | No | Yes | Yes, via transaction only | No |
+| Health checker | No | Optional | No | No | Yes |
+| Adversarial review | No | `STAGE_REVIEW` only | No | No | Yes |
+| Symbolic reasoner | No | Optional review candidate | No | No | Yes |
+| Retrieval / Ask | No | Explicit repair preview only | No | No | Optional query cache |
+| Brief builder | No | No | No | No | No |
+| Workbench session state | No | No | No | No | `.assisto-local/**` only |
+
+## Canonical State Model
 
 Only these top-level object states are allowed:
 
@@ -75,7 +106,7 @@ object_state: active | archived
 review_state: none | staged | reviewed | contested
 ```
 
-Every claim block must use exactly these state fields:
+Every claim block must use:
 
 ```yaml
 claim_state: active | staged | superseded | rejected
@@ -86,60 +117,28 @@ scope_state: complete | partial | unknown
 
 Do not introduce generic `status`, `classification`, or `confidence` fields for MVP memory objects.
 
-## Temporal model
+## Temporal Model
 
-Use these four time fields only:
+Use only:
 
 ```yaml
-recorded_at: <when the memory system recorded the item>
-observed_at: <when the event happened, if known>
-valid_from: <when the claim became true, if known>
-valid_to: <when the claim stopped being true, if known>
+recorded_at
+observed_at
+valid_from
+valid_to
 ```
 
-Rules:
+Do not treat `recorded_at` or `observed_at` as `valid_from`.
 
-- `recorded_at` must not be automatically treated as `valid_from`.
-- `observed_at` must not be automatically treated as `valid_from`.
-- `"Joe is the DBA"` does not imply when Joe became DBA.
-- `"Today I talked with Joe"` gives `observed_at` for the interaction, not `valid_from` for any derived claim.
+## Follow-Up Extraction Policy
 
-## Follow-up extraction policy
+Committed FollowUps require explicit trigger language such as `Remind me to`, `I need to`, `I will`, `Please track`, `Add a follow-up`, `asked me to`, or `Due by`.
 
-Committed follow-ups require explicit trigger language, such as:
+Do not create FollowUps from casual phrases such as `we discussed`, `mentioned`, `came up`, or `we talked with`.
 
-- `Remind me to X`
-- `I need to X`
-- `I have to X`
-- `I will X`
-- `I'll X`
-- `Please track X`
-- `Add a follow-up to X`
-- `Joe asked me to X`
-- `Due by DATE`
-- `By DATE I need to X`
+## Entity Resolution Policy
 
-Candidate follow-ups may be created only for weaker intent, such as:
-
-- `Maybe I should X`
-- `We should probably X`
-- `It might be worth asking X`
-- `Need to understand X` without owner
-- `I wonder if we should X`
-- `Could follow up on X`
-
-Do not create a follow-up from statements like:
-
-- `Today I talked about X`
-- `We discussed X`
-- `Joe mentioned X`
-- `Mike cares about X`
-- `X came up`
-- `We talked with Joe about X`
-
-## Entity resolution policy
-
-Entity resolution states:
+Entity states:
 
 - `exact_match`
 - `alias_match`
@@ -147,17 +146,9 @@ Entity resolution states:
 - `new_entity`
 - `ambiguous`
 
-Rules:
+Only exact and already-canonical alias matches can update automatically. Near and ambiguous matches stage review. False splits are tolerable; false merges corrupt memory.
 
-- `exact_match` can update automatically.
-- `alias_match` can update automatically only if the alias is already canonical.
-- `near_match` must stage review.
-- `ambiguous` must stage review.
-- `new_entity` can be automatic only for low-risk Person or Topic creation.
-- Entity merges are deferred and require review.
-- False splits are tolerable; false merges corrupt memory.
-
-## Supported MVP mutation operations
+## Supported MVP Mutation Operations
 
 Allowed:
 
@@ -168,7 +159,7 @@ Allowed:
 - `SUPERSEDE_CLAIM`
 - `CLOSE_FOLLOWUP`
 
-Explicitly deferred:
+Deferred:
 
 - `MERGE`
 - `SPLIT`
@@ -177,32 +168,32 @@ Explicitly deferred:
 
 If a task asks for a deferred operation, implement staging/detection only.
 
-## Validation requirements
+## Validation Requirements
 
-Before applying any transaction, validate:
+Before applying any Transaction, validate frontmatter, claim blocks, source Event links, wikilinks, unique IDs, FollowUp trigger evidence, active unknown-scope claims, summary basis, ambiguous entity updates, and rollback/repair notes.
 
-- frontmatter validity;
-- claim block validity;
-- source Event links;
-- wikilinks;
-- unique IDs;
-- no committed follow-up without explicit trigger;
-- no active system/context claim with `scope_state: unknown`;
-- summary basis;
-- no ambiguous entity update without staging;
-- transaction rollback/repair notes.
-
-Validation failure behavior:
+Validation failure:
 
 1. Do not apply canonical page edits.
 2. Preserve the Event.
-3. Keep the transaction `pending` or mark it `failed`.
-4. Create or update a ReviewItem.
-5. Append a log entry.
+3. Keep the Transaction pending or mark it failed.
+4. Create or update ReviewItem through transaction-backed paths.
+5. Append a LogEntry.
 
-## Required commands
+## Mixedbread retrieval protocol for Codex
 
-Before completing any coding task, run:
+Use Mixedbread before non-trivial edits.
+
+1. Search docs for invariants.
+2. Search tests/evals for expected behavior.
+3. Search source for implementation sites.
+4. Open local files before patching.
+5. Never patch from snippets alone.
+6. Run validation after edits.
+
+## Required Commands
+
+Before completing coding tasks:
 
 ```bash
 pnpm lint
@@ -210,83 +201,27 @@ pnpm typecheck
 pnpm test
 ```
 
-If the task changes ingestion, validation, transactions, follow-up extraction, retrieval, entity resolution, linting, or evaluation, also run:
-
-```bash
-pnpm eval:mvp
-```
-
-If a command cannot run because the repo is not scaffolded yet, document why and add the missing scaffold as part of the task only if it is in scope.
-
-For WSL/Codex local validation, prefer:
+For behavior touching ingestion, validation, transactions, follow-ups, retrieval, entity resolution, linting, or evaluation, also run relevant evals. Prefer:
 
 ```bash
 pnpm validate:local
 ```
 
-This wrapper runs the full local suite with Linux temp/cache paths. Use `pnpm validate:ci-parity` when the exact GitHub Actions command order matters.
+Before staging/committing, run:
 
-## Required tests for behavior changes
+```bash
+pnpm check:memory-data
+```
 
-Add or update tests for any change touching:
-
-- transaction application;
-- partial write failure;
-- schema validation;
-- committed follow-up detection;
-- entity resolution;
-- unscoped claim staging;
-- current-summary generation;
-- retrieval context packing.
-
-## Review guidelines
-
-Flag as P1 any change that:
-
-- bypasses transactions;
-- writes active claims without Event evidence;
-- promotes unscoped claims;
-- creates committed follow-ups without trigger phrases;
-- introduces vector/graph/MCP dependencies into MVP code;
-- auto-merges people or topics;
-- auto-resolves contradictions;
-- deletes memory instead of archiving/rejecting;
-- writes to `.obsidian/`;
-- lets summaries become canonical truth.
-
-## PR process
-
-For every implementation PR:
-
-1. Create a task-scoped branch.
-2. Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm eval:mvp`.
-3. Open the PR with a concise summary, validation results, and known limitations.
-4. Request `@codex` review.
-5. Wait 3-5 minutes before the first review-thread check so Copilot has time to finish. For large PRs, wait 8-10 minutes.
-6. If Copilot reports a transient review error or no threads are present, wait one more short interval and re-check before classifying it as non-actionable.
-7. Fix P0/P1 findings only unless a human reviewer explicitly asks for broader cleanup.
-8. Merge only after human inspection confirms the transaction, validation, and review invariants still hold.
-
-Use `pnpm pr:review-wait <pr-number-or-url>` to perform the delayed review-thread check. If the helper reports no unresolved threads after the retry window and CI is green, a Copilot review failure may be treated as non-actionable.
-Before merge, run `pnpm check:memory-data` to confirm no accidental changes to `memory/events/**` or `memory/transactions/**`. `pnpm pr:closeout <pr-number-or-url>` can perform the delayed review-thread check plus mergeability/CI inspection, and only merges when explicit merge flags are supplied.
-
-## Coding style
+## Coding Style
 
 - Prefer simple deterministic code over clever LLM-dependent behavior.
-- Keep core logic independent from Pi, Obsidian, and Codex runtime APIs.
-- Put deterministic semantics in `packages/core`.
-- Put CLI wrappers in `packages/cli`.
-- Put Pi-specific integration in `packages/pi-extension` or `.pi/extensions/work-memory`.
-- Keep file formats readable by both humans and LLMs.
-- Avoid introducing dependencies unless they simplify parsing, validation, or testing materially.
+- Keep deterministic semantics in `packages/core`.
+- Keep CLI wrappers in `packages/cli`.
+- Keep Pi-specific integration in `packages/pi-extension` or `.pi/extensions/work-memory`.
+- Keep file formats readable by humans and LLMs.
+- Avoid dependencies unless they materially simplify parsing, validation, or testing.
 
-## Definition of done
+## Definition Of Done
 
-A task is complete only when:
-
-- it stays inside the authorized scope;
-- it preserves the MVP constraints;
-- required commands pass;
-- relevant tests are added or updated;
-- behavior changes are documented;
-- known limitations are stated explicitly.
+A task is complete only when it stays in scope, preserves invariants, adds/updates relevant tests or docs, runs required validation, and states known limitations.

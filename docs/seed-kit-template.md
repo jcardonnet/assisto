@@ -1,32 +1,56 @@
-# Assisto Seed Kit Template
+# Seed Kit Template
 
-Use this template for `wm seed kit --file seed.md --dry-run`. Keep entries as short source-backed statements. Assisto stores each non-empty section as an Event plus pending Transaction; it does not apply claims directly.
+Use this template to seed only source-backed statements you would want cited later.
 
-## My role
+Do not paste generated answers, briefs, model explanations, or inferred summaries into the Seed Kit. Use source-backed statements only.
 
-I am an AI Engineer at SmartEquip.
+Prefer scoped facts: `Inventory Project uses MySQL` is better than `We use MySQL.`
 
-## Manager team
+If you want Assisto to remember an explanation style, write an explicit source note such as: `Save this explanation framing for X.` Otherwise generated explanations remain disposable.
 
-Jeff is my manager.
-Kuastav reports to Jeff.
+## My Role
 
-## Current projects
+```text
+I am ...
+```
 
-Inventory Project uses MySQL.
+## Manager And Team
 
-## Important people
+```text
+My manager for <scope> is ...
+<Person> reports to <Person> for <scope>.
+```
 
-Priya owns the API migration.
+## Current Contexts
 
-## Systems topics
+```text
+<Context> is ...
+<Context> uses ...
+```
 
-Solr powers product search.
+## Important People
 
-## Open loops
+```text
+<Person> works on ...
+```
 
-I need to ask Jeff about onboarding.
+## Systems And Topics
 
-## Things I keep forgetting
+```text
+<Topic/System> matters because ...
+```
 
-I keep forgetting who owns reporting.
+## Open Loops
+
+Use explicit trigger language for committed FollowUps.
+
+```text
+I need to ...
+Remind me to ...
+```
+
+## Things I Keep Forgetting
+
+```text
+I keep forgetting ...
+```
