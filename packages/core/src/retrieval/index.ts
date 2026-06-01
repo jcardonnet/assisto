@@ -8,7 +8,7 @@ import {
   type ParsedClaimBlockRecord
 } from "../markdown";
 import { loadVaultIndex, type VaultIndex, type VaultIndexEntry } from "../vault";
-import { buildCitedAnswerContractV3, type CitedAnswerContractV3 } from "../answers";
+import { buildCitedAnswerContractV3, buildCitedAnswerContractV4, type CitedAnswerContractV3, type CitedAnswerContractV4 } from "../answers";
 import { buildSymbolicIndex, querySymbolicFacts, type SymbolicQueryResult } from "../symbolic";
 
 export type RetrievalTargetKind = "person" | "topic" | "context";
@@ -483,6 +483,21 @@ export async function retrieveCitedAnswerContractV3(root: string, query: string)
   const basis = await retrieveContextForAnswer(root, query);
   const symbolicMatches = await symbolicMatchesForAnswerBasis(root, basis);
   return buildCitedAnswerContractV3(basis, { symbolicMatches });
+}
+
+export async function retrieveCitedAnswerContractV4(root: string, query: string): Promise<CitedAnswerContractV4> {
+  const basis = await retrieveContextForAnswer(root, query);
+  const symbolicResult = await symbolicReasoningForAnswerBasis(root, basis);
+  return buildCitedAnswerContractV4(basis, { symbolicResult });
+}
+
+async function symbolicReasoningForAnswerBasis(root: string, basis: AnswerBasisResult): Promise<SymbolicQueryResult> {
+  const symbolicIndex = await buildSymbolicIndex({ root });
+  return querySymbolicFacts({
+    facts: symbolicIndex.derived_facts,
+    proofs: symbolicIndex.proofs,
+    query: basis.query
+  });
 }
 
 async function symbolicMatchesForAnswerBasis(

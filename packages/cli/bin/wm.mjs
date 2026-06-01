@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import crypto from "node:crypto";
+import os from "node:os";
 import path from "node:path";
-import { Buffer } from "node:buffer";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import process from "node:process";
 import ts from "typescript";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const moduleUrlCache = new Map();
+const outputRoot = path.join(os.tmpdir(), `assisto-wm-loader-${process.pid}-${Date.now()}`);
 const importSpecifierPattern = /((?:from\s+|import\s*\(\s*)["'])([^"']+)(["'])/g;
 
 const cliModule = await import(await getModuleUrl(path.join(workspaceRoot, "packages/cli/src/index.ts")));
@@ -56,7 +58,17 @@ async function buildModuleUrl(filePath) {
     output = output.replaceAll(`'${specifier}'`, `'${moduleUrl}'`);
   }
 
-  return `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`;
+  const outputPath = transpiledOutputPath(filePath);
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, output, "utf8");
+
+  return pathToFileURL(outputPath).href;
+}
+
+function transpiledOutputPath(filePath) {
+  const hash = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 16);
+  const basename = path.basename(filePath).replace(/\.ts$/, ".mjs");
+  return path.join(outputRoot, `${hash}-${basename}`);
 }
 
 function shouldRewriteSpecifier(specifier) {

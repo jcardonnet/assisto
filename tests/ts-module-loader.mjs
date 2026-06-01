@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import crypto from "node:crypto";
+import os from "node:os";
 import path from "node:path";
-import { Buffer } from "node:buffer";
+import { pathToFileURL } from "node:url";
 import ts from "typescript";
 
 const moduleUrlCache = new Map();
+const outputRoot = path.join(os.tmpdir(), `assisto-ts-loader-${process.pid}-${Date.now()}`);
 const importSpecifierPattern = /(from\s+["'])([^"']+)(["'])/g;
 const workspacePackages = new Map([
   ["@assisto/core", "packages/core/src/index.ts"],
@@ -60,7 +63,17 @@ async function buildModuleUrl(filePath) {
     output = output.replaceAll(`'${specifier}'`, `'${moduleUrl}'`);
   }
 
-  return `data:text/javascript;base64,${Buffer.from(output).toString("base64")}`;
+  const outputPath = transpiledOutputPath(filePath);
+  mkdirSync(path.dirname(outputPath), { recursive: true });
+  writeFileSync(outputPath, output, "utf8");
+
+  return pathToFileURL(outputPath).href;
+}
+
+function transpiledOutputPath(filePath) {
+  const hash = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 16);
+  const basename = path.basename(filePath).replace(/\.ts$/, ".mjs");
+  return path.join(outputRoot, `${hash}-${basename}`);
 }
 
 function resolveRelativeSpecifier(fromPath, specifier) {

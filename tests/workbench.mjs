@@ -1606,6 +1606,19 @@ export async function runWorkbenchTests() {
     assert.equal(answerContractV3Alias.version, "answer-contract-v3");
     assert.equal(answerContractV3Alias.directAnswers.some((answer) => (answer.proof_paths ?? []).length > 0), true);
 
+    const contractV4 = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/ask/contract-v4?q=Who%20is%20my%20manager%3F"
+        })
+      ).body
+    );
+    assert.equal(contractV4.version, "answer-contract-v4");
+    assert.equal(contractV4.queryPlan.symbolic.intent, "reporting_lookup");
+    assert.equal(Array.isArray(contractV4.reasoningSteps), true);
+    assert.equal(contractV4.sourceExcerpts.some((excerpt) => excerpt.event_id === "ev_2026_05_21_001"), true);
+
     const askSession = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask/session?q=Who%20is%20my%20manager%3F" }))
         .body

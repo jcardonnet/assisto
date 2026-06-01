@@ -625,6 +625,21 @@ summary_generated_from:
     assert.equal(typeof contractV3.citationIndex, "object");
     assert.match(contractV3.contextPack, /# Context pack/);
 
+    const contractV4Result = await runWm(askRoot, [
+      "ask",
+      "--contract-v4",
+      "How should I explain Joe and Mike the difference between Solr and Qdrant?"
+    ]);
+    const contractV4 = JSON.parse(contractV4Result.stdout);
+    assert.equal(contractV4.version, "answer-contract-v4");
+    assert.equal(typeof contractV4.queryPlan.retrieval.intent.primary, "string");
+    assert.equal(Array.isArray(contractV4.reasoningSteps), true);
+    assert.equal(Array.isArray(contractV4.proofTree), true);
+    assert.equal(Array.isArray(contractV4.sourceExcerpts), true);
+    assert.equal(Array.isArray(contractV4.missingMemoryDiagnostics), true);
+    assert.equal(Array.isArray(contractV4.suggestedSourceImports), true);
+    assert.match(contractV4.contextPack, /# Context pack/);
+
     const oldOpenAiKey = process.env.OPENAI_API_KEY;
     const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;
 
