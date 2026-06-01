@@ -1,4 +1,4 @@
-export type FrameEntityKind = "Person" | "Context" | "Topic" | "System" | "Team" | "Role";
+export type FrameEntityKind = "Person" | "Context" | "Topic" | "System" | "Service" | "Repository" | "Artifact" | "Incident" | "Risk" | "Meeting" | "Decision" | "OpenQuestion" | "Commitment" | "DueDate" | "Team" | "Role";
 
 export type MemoryFrameKind =
   | "relation"

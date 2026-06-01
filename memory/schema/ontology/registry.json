@@ -1,10 +1,20 @@
 {
-  "ontology_version": "2026-06-01.1",
+  "ontology_version": "2026-06-01.2",
   "entity_kinds": [
     "Person",
     "Context",
     "Topic",
     "System",
+    "Service",
+    "Repository",
+    "Artifact",
+    "Incident",
+    "Risk",
+    "Meeting",
+    "Decision",
+    "OpenQuestion",
+    "Commitment",
+    "DueDate",
     "Team",
     "Role"
   ],
@@ -30,6 +40,15 @@
       "cardinality": "one_to_many"
     },
     {
+      "relation": "role_in",
+      "domain": "Person",
+      "range": "Role",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "role_change",
+      "cardinality": "many_to_many"
+    },
+    {
       "relation": "owns",
       "domain": [
         "Person",
@@ -38,6 +57,9 @@
       "range": [
         "Context",
         "System",
+        "Service",
+        "Repository",
+        "Artifact",
         "Topic"
       ],
       "inverse": "owned_by",
@@ -49,7 +71,11 @@
     {
       "relation": "owns_system",
       "domain": "Person",
-      "range": "Topic",
+      "range": [
+        "System",
+        "Service",
+        "Topic"
+      ],
       "inverse": "owned_by",
       "requires_scope": true,
       "review_risk": "medium",
@@ -58,9 +84,55 @@
     },
     {
       "relation": "owned_by",
-      "domain": "Topic",
-      "range": "Person",
-      "inverse": "owns_system",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic"
+      ],
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "owns",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "maintains",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": [
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "inverse": "maintained_by",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "maintained_by",
+      "domain": [
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "maintains",
       "requires_scope": true,
       "review_risk": "medium",
       "review_lane": "ownership_change",
@@ -68,8 +140,18 @@
     },
     {
       "relation": "uses_technology",
-      "domain": "Context",
-      "range": "Topic",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "range": [
+        "Topic",
+        "System",
+        "Service"
+      ],
       "requires_scope": true,
       "review_risk": "medium",
       "review_lane": "technology_change",
@@ -79,17 +161,367 @@
       "relation": "depends_on",
       "domain": [
         "Context",
-        "System"
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
       ],
       "range": [
         "Context",
         "System",
+        "Service",
+        "Repository",
+        "Artifact",
         "Topic"
       ],
+      "inverse": "depended_on_by",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "dependency_change",
+      "cardinality": "many_to_many",
+      "transitive": true
+    },
+    {
+      "relation": "depended_on_by",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "inverse": "depends_on",
       "requires_scope": true,
       "review_risk": "medium",
       "review_lane": "dependency_change",
       "cardinality": "many_to_many"
+    },
+    {
+      "relation": "blocks",
+      "domain": [
+        "Risk",
+        "Incident",
+        "OpenQuestion",
+        "System",
+        "Service",
+        "Context",
+        "Topic"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Commitment",
+        "OpenQuestion"
+      ],
+      "inverse": "blocked_by",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "blocker_change",
+      "cardinality": "many_to_many",
+      "transitive": true
+    },
+    {
+      "relation": "blocked_by",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Commitment",
+        "OpenQuestion"
+      ],
+      "range": [
+        "Risk",
+        "Incident",
+        "OpenQuestion",
+        "System",
+        "Service",
+        "Context",
+        "Topic"
+      ],
+      "inverse": "blocks",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "blocker_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "raises_risk",
+      "domain": [
+        "Person",
+        "Team",
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "range": "Risk",
+      "inverse": "risk_affects",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "risk_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "risk_affects",
+      "domain": "Risk",
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Commitment"
+      ],
+      "inverse": "raises_risk",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "risk_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "participant_in",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": "Meeting",
+      "inverse": "has_participant",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "meeting_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "has_participant",
+      "domain": "Meeting",
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "participant_in",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "meeting_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "discussed_in",
+      "domain": [
+        "Person",
+        "Team",
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic",
+        "Decision",
+        "OpenQuestion",
+        "Risk",
+        "Commitment"
+      ],
+      "range": "Meeting",
+      "inverse": "has_discussion_subject",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "discussion_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "has_discussion_subject",
+      "domain": "Meeting",
+      "range": [
+        "Person",
+        "Team",
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic",
+        "Decision",
+        "OpenQuestion",
+        "Risk",
+        "Commitment"
+      ],
+      "inverse": "discussed_in",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "discussion_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "has_decision",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "range": "Decision",
+      "inverse": "decision_for",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "decision_change",
+      "cardinality": "one_to_many"
+    },
+    {
+      "relation": "decision_for",
+      "domain": "Decision",
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "inverse": "has_decision",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "decision_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "has_open_question",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "range": "OpenQuestion",
+      "inverse": "open_question_for",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "open_question_change",
+      "cardinality": "one_to_many"
+    },
+    {
+      "relation": "open_question_for",
+      "domain": "OpenQuestion",
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "inverse": "has_open_question",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "open_question_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "committed_to",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": "Commitment",
+      "inverse": "commitment_owner",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "commitment_owner",
+      "domain": "Commitment",
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "committed_to",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "due_on",
+      "domain": "Commitment",
+      "range": "DueDate",
+      "inverse": "due_for",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "due_for",
+      "domain": "DueDate",
+      "range": "Commitment",
+      "inverse": "due_on",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "one_to_many"
+    },
+    {
+      "relation": "part_of",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Team"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Team"
+      ],
+      "inverse": "has_part",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "structure_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "has_part",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Team"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Team"
+      ],
+      "inverse": "part_of",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "structure_change",
+      "cardinality": "one_to_many"
     }
   ]
 }

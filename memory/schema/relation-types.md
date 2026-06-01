@@ -38,9 +38,23 @@ The derived ontology registry lives under `memory/schema/ontology/`. Relation ex
 - `owned_by`
 - `uses_technology`
 - `depends_on`
+- `depended_on_by`
+- `blocks`
+- `blocked_by`
+- `raises_risk`
+- `participant_in`
+- `discussed_in`
+- `has_decision`
+- `has_open_question`
+- `committed_to`
+- `due_on`
+- `part_of`
 
 Registry relations classify candidate frames and derived views. Canonical memory still stores readable Event-backed claim blocks. Inverse/transitive relations are derived unless separately captured through Event + Transaction.
 
 `related` is fallback only when no more specific relation applies.
 
 derived inverse or transitive relations require inference paths. They are not active canonical claims unless explicitly captured and transaction-backed.
+
+
+The expanded work ontology covers services, repositories, artifacts, incidents/risks, meetings, commitments, decisions-as-claims, and open-questions-as-claims. These relation names classify frames and derived views only. They do not create standalone Decision, OpenQuestion, Commitment, DueDate, Meeting, Risk, Repository, Artifact, or Service pages.

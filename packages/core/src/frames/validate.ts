@@ -19,7 +19,7 @@ const FRAME_KINDS: MemoryFrameKind[] = [
   "followup_signal"
 ];
 
-const ENTITY_KINDS: FrameEntityKind[] = ["Person", "Context", "Topic", "System", "Team", "Role"];
+const ENTITY_KINDS: FrameEntityKind[] = ["Person", "Context", "Topic", "System", "Service", "Repository", "Artifact", "Incident", "Risk", "Meeting", "Decision", "OpenQuestion", "Commitment", "DueDate", "Team", "Role"];
 const EVIDENCE_STRENGTHS: MemoryFrameEvidenceStrength[] = ["explicit", "inferred", "weak"];
 const SCOPE_STATES: MemoryFrameScopeState[] = ["complete", "partial", "unknown"];
 

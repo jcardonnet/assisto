@@ -77,6 +77,54 @@ export async function runCoreOntologyAwareFrameTests() {
   assert.equal(unknownScopeOwnership.review_reasons.includes("FRAME_UNKNOWN_SCOPE"), true);
   assert.equal(unknownScopeOwnership.review_reasons.includes("ONTOLOGY_SCOPE_REQUIRED"), true);
 
+
+  const validServiceDependency = frames.validateMemoryFrame(
+    {
+      frame_id: "frame_search_depends_billing_repo",
+      frame_kind: "relation",
+      relation: "depends_on",
+      subject: {
+        entity_id: "svc_search_api",
+        entity_kind: "Service"
+      },
+      object: {
+        entity_id: "repo_billing",
+        entity_kind: "Repository"
+      },
+      statement: "Search API depends on the Billing repository.",
+      source_events: ["ev_ontology_003"],
+      scope: "ctx_search",
+      scope_state: "complete",
+      evidence_strength: "explicit"
+    },
+    { ontology: registry }
+  );
+  assert.equal(validServiceDependency.passed, true);
+  assert.equal(validServiceDependency.requires_review, false);
+
+  const invalidBlockerScope = frames.validateMemoryFrame(
+    {
+      frame_id: "frame_risk_blocks_service",
+      frame_kind: "relation",
+      relation: "blocks",
+      subject: {
+        entity_id: "risk_latency",
+        entity_kind: "Risk"
+      },
+      object: {
+        entity_id: "svc_search_api",
+        entity_kind: "Service"
+      },
+      statement: "Latency blocks Search API rollout.",
+      source_events: ["ev_ontology_004"],
+      scope_state: "unknown",
+      evidence_strength: "explicit"
+    },
+    { ontology: registry }
+  );
+  assert.equal(invalidBlockerScope.passed, false);
+  assert.equal(invalidBlockerScope.review_reasons.includes("ONTOLOGY_SCOPE_REQUIRED"), true);
+
   const highRiskChange = frames.validateMemoryFrame(
     reportsToFrame({
       change_type: "change"
