@@ -2111,6 +2111,32 @@ summary_generated_from:
     assert.deepEqual(identityReviewPreview.operations, ["STAGE_REVIEW"]);
     assert.match(identityReviewPreview.proposed_file_writes[0].path, /^memory\/review\/rev_entity_identity_review_/);
 
+    const blockedRepairV2 = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/repair-v2/preview",
+          body: JSON.stringify({ kind: "reporting", id: "per_jeff", newTargetId: "per_dana" })
+        })
+      ).body
+    );
+    assert.equal(blockedRepairV2.allowed, false);
+    assert.equal(blockedRepairV2.errors[0].code, "supersede_claim_required");
+    assert.deepEqual(blockedRepairV2.canonical_writes, []);
+
+    const identityRepairV2 = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/entities/repair-v2/preview",
+          body: JSON.stringify({ kind: "identity_review", id: "per_jeff", note: "Jeff may be duplicated with Jeffrey." })
+        })
+      ).body
+    );
+    assert.equal(identityRepairV2.allowed, true);
+    assert.equal(identityRepairV2.transaction.operations[0].op, "STAGE_REVIEW");
+    assert.equal(identityRepairV2.canonical_writes.length, 0);
+
     const identityReviewStageRoot = await makeTempVault("assisto-workbench-identity-review-route-");
 
     try {
@@ -2128,6 +2154,18 @@ summary_generated_from:
       assert.equal(identityReviewStage.action, "stage_entity_identity_review");
       assert.equal(identityReviewStage.created, true);
       assert.match(await readVaultFile(identityReviewStageRoot, identityReviewStage.transaction_path), /STAGE_REVIEW/);
+      const repairV2Stage = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(identityReviewStageRoot, {
+            method: "POST",
+            url: "/api/entities/repair-v2/stage",
+            body: JSON.stringify({ kind: "identity_review", id: "per_jeff", note: "V2 identity review." })
+          })
+        ).body
+      );
+      assert.equal(repairV2Stage.allowed, true);
+      assert.equal(repairV2Stage.staged.action, "stage_entity_identity_review");
+      assert.match(await readVaultFile(identityReviewStageRoot, repairV2Stage.staged.transaction_path), /STAGE_REVIEW/);
       assert.equal(await readVaultFile(identityReviewStageRoot, "memory/people/jeff.md"), beforeIdentityPage);
     } finally {
       await rm(identityReviewStageRoot, { recursive: true, force: true });

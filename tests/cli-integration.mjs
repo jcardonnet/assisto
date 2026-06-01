@@ -95,6 +95,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /context operating-room/);
   assert.match(help.stdout, /context timeline/);
   assert.match(help.stdout, /entities stewardship/);
+  assert.match(help.stdout, /entities repair-v2/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
   assert.match(help.stdout, /friction log/);
@@ -744,6 +745,21 @@ summary_generated_from:
     const entityStewardship = await runWm(todayRoot, ["entities", "stewardship", "--kind", "person"]);
     assert.match(entityStewardship.stdout, /Entity stewardship: person/);
     assert.match(entityStewardship.stdout, /Identity ambiguity: 2/);
+
+    const entityRepairV2Result = await runWm(todayRoot, [
+      "entities",
+      "repair-v2",
+      "--kind",
+      "identity_review",
+      "--id",
+      "per_jeff",
+      "--note",
+      "May be duplicated with Jeffrey.",
+      "--json"
+    ]);
+    const entityRepairV2Json = JSON.parse(entityRepairV2Result.stdout);
+    assert.equal(entityRepairV2Json.allowed, true);
+    assert.equal(entityRepairV2Json.transaction.operations[0].op, "STAGE_REVIEW");
 
     const entityStewardshipJsonResult = await runWm(todayRoot, ["entities", "stewardship", "--kind", "person", "--json"]);
     const entityStewardshipJson = JSON.parse(entityStewardshipJsonResult.stdout);

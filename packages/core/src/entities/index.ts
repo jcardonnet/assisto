@@ -2162,3 +2162,4 @@ function stringArrayValue(value: FrontmatterValue | undefined): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 export * from "./stewardship-v2";
+export * from "./repair-actions-v2";
