@@ -85,3 +85,6 @@ jobs:
 
       - name: v8 eval
         run: pnpm eval:v8
+
+      - name: v9 eval
+        run: pnpm eval:v9

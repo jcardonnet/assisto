@@ -39,7 +39,19 @@ wm capture quick --preset follow-up --create "I need to ask Jeff about budgets."
 
 
 Do not paste a generated answer back into memory as if it were evidence. If a generated answer reveals something useful, capture the underlying source note or an explicit user correction instead.
-Ask -> Entity -> Context is the first-day workflow: ask a cited question, inspect the cited entity, then open the relevant Context.
+
+## Ask -> Entity -> Context -> Repair
+
+The first-day evidence-to-reasoning workflow is:
+
+1. Ask a cited question in Workbench Ask.
+2. Inspect the direct answer, `cannotConfirm` items, citation explorer, proof paths, and repair actions.
+3. Open the cited Person, Topic, or Context page from the answer.
+4. For people/topics, inspect entity stewardship risk: alias conflicts, near duplicates, stale claims, role/reporting changes, ReviewItems, FollowUps, and evidence Events.
+5. For projects, open the Context operating room and timeline: owners, roles, systems, decisions, open questions, review queue, follow-up queue, source Events, and proof-backed symbolic facts.
+6. If memory is missing or wrong, use the preview-first repair action: capture missing evidence, log a retrieval miss, stage identity review, stage role/reporting correction, or stage a Context note.
+
+All repair actions are still Events and/or pending Transactions. The answer, proof path, brief, and Context room remain disposable derived output.
 
 ## 15-25 Minutes: Review One Thing
 
@@ -55,7 +67,7 @@ Ask:
 - "What project is MySQL tied to?"
 - "What do I need to review?"
 
-Use citations, `cannotConfirm`, conflicts, stale signals, and inference paths. Repair actions are previews until you confirm creation of an Event or pending Transaction.
+Use citations, `cannotConfirm`, conflicts, stale signals, inference paths, and proof paths. Repair actions are previews until you confirm creation of an Event or pending Transaction.
 
 ## 35-45 Minutes: Import 10 Curated Notes
 
