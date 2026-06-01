@@ -26,6 +26,7 @@ import {
   createCaptureNote,
   createCaptureFeedback,
   createFrictionLog,
+  createDogfoodFeedback,
   createHealthReviewTransaction,
   createImportNotes,
   createImportTriage,
@@ -60,6 +61,7 @@ import {
   previewCaptureFeedback,
   previewEntityRepairActionV2,
   previewFrictionLog,
+  previewDogfoodFeedbackTransaction,
   previewImportNotes,
   previewImportTriage,
   previewSeedKit,
@@ -93,6 +95,8 @@ import {
   type EntityClaimSummary,
   type EntityStewardshipPreview,
   type EntityStewardshipV2Result,
+  type DogfoodFeedbackCreateResult,
+  type DogfoodFeedbackPreviewResult,
   type FrictionLogCreateResult,
   type FrictionLogPreviewResult,
   type FrontmatterValue,
@@ -936,6 +940,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createFrictionLogPreview(root, input, true));
     }
 
+    if (pathname === "/api/dogfood/feedback/preview") {
+      return jsonRoute(200, await createDogfoodFeedbackPreview(root, input, false));
+    }
+
+    if (pathname === "/api/dogfood/feedback") {
+      return jsonRoute(200, await createDogfoodFeedbackPreview(root, input, true));
+    }
+
     if (pathname === "/api/dogfood/eval/run") {
       return jsonRoute(200, await createDogfoodEvalRun(root, input));
     }
@@ -1509,6 +1521,20 @@ async function createFrictionLogPreview(
   };
 
   return created ? createFrictionLog(root, frictionInput) : previewFrictionLog(root, frictionInput);
+}
+
+async function createDogfoodFeedbackPreview(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<DogfoodFeedbackPreviewResult | DogfoodFeedbackCreateResult> {
+  const feedbackInput = {
+    kind: requiredStringInput(input, "kind"),
+    note: requiredStringInput(input, "note"),
+    question: optionalStringInput(input, "question", "q") ?? undefined
+  };
+
+  return created ? createDogfoodFeedback(root, feedbackInput) : previewDogfoodFeedbackTransaction(root, feedbackInput);
 }
 
 async function createCaptureFeedbackPreview(

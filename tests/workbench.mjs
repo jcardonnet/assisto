@@ -1644,6 +1644,59 @@ export async function runWorkbenchTests() {
       await rm(frictionCreateRoot, { recursive: true, force: true });
     }
 
+    const dogfoodFeedbackPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/dogfood/feedback/preview",
+          body: JSON.stringify({
+            kind: "retrieval_miss",
+            question: "Who owns backups?",
+            note: "Expected Atlas backup owner."
+          })
+        })
+      ).body
+    );
+    assert.equal(dogfoodFeedbackPreview.action, "log_dogfood_feedback");
+    assert.equal(dogfoodFeedbackPreview.created, false);
+    assert.equal(dogfoodFeedbackPreview.kind, "retrieval_miss");
+    assert.deepEqual(dogfoodFeedbackPreview.operations, ["NOOP"]);
+    assert.equal(dogfoodFeedbackPreview.validation.passed, true);
+    await assert.rejects(() => readVaultFile(root, dogfoodFeedbackPreview.event_path), /ENOENT/);
+
+    const dogfoodFeedbackCreateRoot = await makeTempVault("assisto-workbench-dogfood-feedback-route-");
+
+    try {
+      const dogfoodFeedbackCreate = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(dogfoodFeedbackCreateRoot, {
+            method: "POST",
+            url: "/api/dogfood/feedback",
+            body: JSON.stringify({
+              kind: "bad_answer",
+              question: "Who owns backups?",
+              note: "The answer cited the wrong owner."
+            })
+          })
+        ).body
+      );
+      assert.equal(dogfoodFeedbackCreate.action, "log_dogfood_feedback");
+      assert.equal(dogfoodFeedbackCreate.created, true);
+      assert.equal(dogfoodFeedbackCreate.kind, "bad_answer");
+      assert.match(await readVaultFile(dogfoodFeedbackCreateRoot, dogfoodFeedbackCreate.event_path), /source_label: dogfood:bad_answer/);
+      assert.match(await readVaultFile(dogfoodFeedbackCreateRoot, dogfoodFeedbackCreate.transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(dogfoodFeedbackCreateRoot, "memory/review/dogfood-feedback.md"), /ENOENT/);
+
+      const dogfoodFeedbackHome = JSON.parse(
+        (await workbench.handleWorkbenchRoute(dogfoodFeedbackCreateRoot, { method: "GET", url: "/api/dogfood/home" })).body
+      );
+      assert.equal(dogfoodFeedbackHome.recent_dogfood_feedback.length, 1);
+      assert.equal(dogfoodFeedbackHome.recent_dogfood_feedback[0].kind, "bad_answer");
+      assert.equal(dogfoodFeedbackHome.recent_dogfood_feedback[0].question, "Who owns backups?");
+    } finally {
+      await rm(dogfoodFeedbackCreateRoot, { recursive: true, force: true });
+    }
+
     const feedbackPreview = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {

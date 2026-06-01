@@ -12,6 +12,7 @@ import { listMarkdownFiles, readMarkdownPage } from "../fs";
 import { getSection, parseMarkdownFile, type FrontmatterValue } from "../markdown";
 import { parseCaptureFeedbackRawText, type CaptureFeedbackKind } from "../capture-feedback";
 import { parseFrictionRawText, type FrictionLogKind } from "../friction";
+import { parseDogfoodFeedbackRawText, type DogfoodFeedbackKind } from "./feedback";
 
 export interface DogfoodHomeResult {
   generated_at: string;
@@ -28,6 +29,7 @@ export interface DogfoodHomeResult {
   recent_transactions: TodayTransactionSummary[];
   recent_friction_logs: DogfoodFrictionLogSummary[];
   recent_capture_feedback: DogfoodCaptureFeedbackSummary[];
+  recent_dogfood_feedback: DogfoodFeedbackSummary[];
   health_warnings: string[];
   suggested_manual_actions: string[];
   warnings: string[];
@@ -95,6 +97,16 @@ export interface DogfoodCaptureFeedbackSummary {
   note: string;
 }
 
+export interface DogfoodFeedbackSummary {
+  id: string;
+  path: string;
+  recorded_at?: string;
+  source_label: string;
+  kind: DogfoodFeedbackKind | string;
+  question?: string;
+  note: string;
+}
+
 const totalDailySteps = 5;
 
 export async function buildDogfoodHomeResult(
@@ -104,6 +116,7 @@ export async function buildDogfoodHomeResult(
   const today = await buildTodayWorkbenchResult(root, options);
   const recentFrictionLogs = await collectRecentFrictionLogs(root, options.recentLimit ?? 8);
   const recentCaptureFeedback = await collectRecentCaptureFeedback(root, options.recentLimit ?? 8);
+  const recentDogfoodFeedback = await collectRecentDogfoodFeedback(root, options.recentLimit ?? 8);
 
   return {
     generated_at: today.generated_at,
@@ -155,11 +168,48 @@ export async function buildDogfoodHomeResult(
     recent_transactions: today.recent_transactions,
     recent_friction_logs: recentFrictionLogs,
     recent_capture_feedback: recentCaptureFeedback,
+    recent_dogfood_feedback: recentDogfoodFeedback,
     health_warnings: today.health_warnings,
     suggested_manual_actions: today.suggested_manual_actions,
     warnings: today.warnings,
     today
   };
+}
+
+async function collectRecentDogfoodFeedback(root: string, limit: number): Promise<DogfoodFeedbackSummary[]> {
+  const feedbackItems: DogfoodFeedbackSummary[] = [];
+
+  for (const file of await listEventFilesOrEmpty(root)) {
+    try {
+      const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+      const sourceLabel = stringValue(parsed.frontmatter.source_label);
+
+      if (!sourceLabel?.startsWith("dogfood:")) {
+        continue;
+      }
+
+      const rawText = getSection(parsed.body, "Raw text") ?? "";
+      const feedback = parseDogfoodFeedbackRawText(rawText);
+
+      if (!feedback) {
+        continue;
+      }
+
+      feedbackItems.push({
+        id: stringValue(parsed.frontmatter.id) ?? file,
+        path: file,
+        recorded_at: stringValue(parsed.frontmatter.recorded_at),
+        source_label: sourceLabel,
+        kind: feedback.kind,
+        question: feedback.question,
+        note: feedback.note
+      });
+    } catch {
+      // Health/lint surfaces malformed Event pages; Dogfood Home keeps reading.
+    }
+  }
+
+  return feedbackItems.sort(newestDogfoodFeedbackFirst).slice(0, limit);
 }
 
 async function collectRecentCaptureFeedback(root: string, limit: number): Promise<DogfoodCaptureFeedbackSummary[]> {
@@ -233,6 +283,10 @@ async function collectRecentFrictionLogs(root: string, limit: number): Promise<D
   }
 
   return logs.sort(newestFrictionLogFirst).slice(0, limit);
+}
+
+function newestDogfoodFeedbackFirst(left: DogfoodFeedbackSummary, right: DogfoodFeedbackSummary): number {
+  return (right.recorded_at ?? "").localeCompare(left.recorded_at ?? "") || left.id.localeCompare(right.id);
 }
 
 function newestFeedbackFirst(left: DogfoodCaptureFeedbackSummary, right: DogfoodCaptureFeedbackSummary): number {

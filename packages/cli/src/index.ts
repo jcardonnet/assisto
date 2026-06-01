@@ -29,6 +29,7 @@ import {
   createCaptureNote,
   createHealthReviewTransaction,
   createFrictionLog,
+  createDogfoodFeedback,
   createImportNotes,
   createSeedKit,
   createSourceAdapterImport,
@@ -39,6 +40,7 @@ import {
   previewCaptureFeedback,
   previewEntityRepairActionV2,
   previewFrictionLog,
+  previewDogfoodFeedbackTransaction,
   previewImportNotes,
   previewSeedKit,
   previewSourceAdapterImport,
@@ -1263,8 +1265,41 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   const [subcommand] = args;
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    io.stdout("Usage: wm dogfood <status|eval> [--questions <path>] [--json]\n");
+    io.stdout("Usage: wm dogfood <status|eval|feedback> [--questions <path>] [--json]\n");
+    io.stdout("       wm dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]\n");
     return 0;
+  }
+
+  if (subcommand === "feedback") {
+    const kind = optionValue(args, "--kind");
+    const note = optionValue(args, "--note");
+    const question = optionValue(args, "--question") ?? undefined;
+    const dryRun = args.includes("--dry-run");
+
+    if (!kind || !note) {
+      throw new Error("Usage: wm dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]");
+    }
+
+    const result = dryRun
+      ? await previewDogfoodFeedbackTransaction(root, { kind, note, question })
+      : await createDogfoodFeedback(root, { kind, note, question });
+
+    if (args.includes("--json")) {
+      io.stdout(JSON.stringify(result, null, 2) + "\n");
+      return result.validation.passed ? 0 : 1;
+    }
+
+    if (dryRun) {
+      io.stdout("Dry run. No changes written to " + root + ".\n");
+    }
+
+    io.stdout("Dogfood feedback event: " + result.event_id + " (" + result.event_path + ")\n");
+    io.stdout("Pending dogfood feedback transaction: " + result.transaction_id + " (" + result.transaction_path + ")\n");
+    io.stdout("Kind: " + result.kind + "\n");
+    io.stdout("Validation: " + (result.validation.passed ? "passed" : "failed") + "\n");
+    io.stdout("Operations: " + (result.operations.join(", ") || "NOOP") + "\n");
+
+    return result.validation.passed ? 0 : 1;
   }
 
   if (subcommand === "eval") {
@@ -1274,23 +1309,23 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
     });
 
     if (args.includes("--json")) {
-      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      io.stdout(JSON.stringify(result, null, 2) + "\n");
       return 0;
     }
 
-    io.stdout(`Dogfood eval (${result.generated_at})\n`);
-    io.stdout(`Questions: ${result.metrics.total_questions}\n`);
-    io.stdout(`Answerability: ${formatPercent(result.metrics.answerability)}\n`);
-    io.stdout(`Citation coverage: ${formatPercent(result.metrics.citation_coverage)}\n`);
-    io.stdout(`Irrelevant inclusions: ${result.metrics.irrelevant_inclusion_count}\n`);
-    io.stdout(`Missing-memory guidance: ${result.metrics.missing_memory_guidance_count}\n`);
-    io.stdout(`Review/follow-up surfacing: ${result.metrics.review_followup_surfacing_count}\n`);
-    io.stdout(`Generated persistence violations: ${result.metrics.generated_persistence_violations}\n`);
+    io.stdout("Dogfood eval (" + result.generated_at + ")\n");
+    io.stdout("Questions: " + result.metrics.total_questions + "\n");
+    io.stdout("Answerability: " + formatPercent(result.metrics.answerability) + "\n");
+    io.stdout("Citation coverage: " + formatPercent(result.metrics.citation_coverage) + "\n");
+    io.stdout("Irrelevant inclusions: " + result.metrics.irrelevant_inclusion_count + "\n");
+    io.stdout("Missing-memory guidance: " + result.metrics.missing_memory_guidance_count + "\n");
+    io.stdout("Review/follow-up surfacing: " + result.metrics.review_followup_surfacing_count + "\n");
+    io.stdout("Generated persistence violations: " + result.metrics.generated_persistence_violations + "\n");
 
     if (result.warnings.length > 0) {
       io.stdout("\nWarnings\n");
       for (const warning of result.warnings) {
-        io.stdout(`- ${warning}\n`);
+        io.stdout("- " + warning + "\n");
       }
     }
 
@@ -1298,35 +1333,35 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   }
 
   if (subcommand !== "status") {
-    throw new Error("Usage: wm dogfood <status|eval> [--questions <path>] [--json]");
+    throw new Error("Usage: wm dogfood <status|eval|feedback> [--questions <path>] [--json]");
   }
 
   const home = await buildDogfoodHomeResult(root);
 
   if (args.includes("--json")) {
-    io.stdout(`${JSON.stringify(home, null, 2)}\n`);
+    io.stdout(JSON.stringify(home, null, 2) + "\n");
     return 0;
   }
 
-  io.stdout(`Dogfood Home (${home.generated_at})\n`);
-  io.stdout(`Daily progress: ${home.daily_progress.completed ? "complete" : "needs attention"}\n`);
+  io.stdout("Dogfood Home (" + home.generated_at + ")\n");
+  io.stdout("Daily progress: " + (home.daily_progress.completed ? "complete" : "needs attention") + "\n");
   io.stdout(
-    `Next action: ${home.next_recommended_action.label}${
-      home.next_recommended_action.target_id ? ` (${home.next_recommended_action.target_id})` : ""
-    }\n\n`
+    "Next action: " + home.next_recommended_action.label +
+      (home.next_recommended_action.target_id ? " (" + home.next_recommended_action.target_id + ")" : "") +
+      "\n\n"
   );
   io.stdout("Counts\n");
 
   for (const [key, value] of Object.entries(home.counts)) {
-    io.stdout(`${key}\t${value}\n`);
+    io.stdout(key + "\t" + value + "\n");
   }
 
-  io.stdout(`\nCapture prompt: ${home.capture_prompt.prompt}\n`);
+  io.stdout("\nCapture prompt: " + home.capture_prompt.prompt + "\n");
 
   if (home.suggested_manual_actions.length > 0) {
     io.stdout("\nSuggested manual actions\n");
     for (const action of home.suggested_manual_actions) {
-      io.stdout(`- ${action}\n`);
+      io.stdout("- " + action + "\n");
     }
   }
 
@@ -2224,6 +2259,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",
       "  wm [--root <path>] dogfood eval [--questions <path>] [--json]",
+      "  wm [--root <path>] dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]",
       "  wm [--root <path>] doctor memory-data [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',
