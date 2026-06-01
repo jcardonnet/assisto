@@ -1735,6 +1735,7 @@ function printImportResult(result: ImportNotesResult, io: CliIo): void {
   io.stdout(`Imported: ${result.units_imported}\n`);
   io.stdout(`Skipped: ${result.units_skipped}\n`);
   io.stdout(`Provider: ${result.provider_name}\n`);
+  io.stdout(`Canonical writes: ${result.canonical_writes.length}\n`);
 
   for (const unit of result.units) {
     if (unit.skipped) {
@@ -1761,6 +1762,7 @@ function printSourceAdapterResult(result: SourceAdapterPreviewResult | SourceAda
   io.stdout(`Units: ${result.review_load_forecast.total_units}\n`);
   io.stdout(`Likely safe: ${result.review_load_forecast.likely_safe}\n`);
   io.stdout(`Duplicates: ${result.review_load_forecast.duplicates}\n`);
+  io.stdout(`Canonical writes: ${result.canonical_writes.length}\n`);
 
   if ("created_events" in result) {
     io.stdout(`Created Events: ${result.created_events.length}\n`);

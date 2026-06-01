@@ -23,6 +23,8 @@ test("import tab previews, creates pending transactions, and dedupes by source h
     await page.getByRole("button", { name: "Preview import" }).click();
     await expect(page.getByRole("heading", { name: "Preview import" })).toBeVisible();
     await expect(page.getByText("Skipped duplicate")).toBeVisible();
+    await expect(page.getByText("Canonical writes")).toBeVisible();
+    await expect(page.getByText("0").first()).toBeVisible();
     await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-05/2026-05-20-001.md"), /ENOENT/);
 
     await page.getByRole("button", { name: "Create pending imports" }).click();
@@ -67,6 +69,7 @@ test("import tab triages units with split, skip, and per-unit metadata", async (
     await expect(importOutput.getByText("Likely safe")).toBeVisible();
     await expect(importOutput.getByText("Likely staged")).toBeVisible();
     await expect(importOutput.getByText("Estimated review units")).toBeVisible();
+    await expect(importOutput.getByText("Canonical writes")).toBeVisible();
     await expect(importOutput.getByText("Duplicate groups")).toBeVisible();
     await expect(importOutput.getByText("unit_1, unit_3")).toBeVisible();
     await expect(importOutput.getByText("Likely outcome").first()).toBeVisible();

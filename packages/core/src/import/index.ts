@@ -64,6 +64,7 @@ export interface ImportNotesResult {
   units_skipped: number;
   provider_name: string;
   units: ImportUnitResult[];
+  canonical_writes: string[];
 }
 
 export type ImportPreviewResult = ImportNotesResult & { created: false };
@@ -105,6 +106,7 @@ export interface ImportTriageResult {
   duplicate_groups: ImportDuplicateGroup[];
   estimated_review_load: ImportEstimatedReviewLoad;
   likely_counts: ImportLikelyCounts;
+  canonical_writes: string[];
 }
 
 export type ImportTriagePreviewResult = ImportTriageResult & { created: false };
@@ -376,7 +378,8 @@ async function runImportNotes(
     units_imported: results.filter((unit) => !unit.skipped).length,
     units_skipped: results.filter((unit) => unit.skipped).length,
     provider_name: providerName,
-    units: results
+    units: results,
+    canonical_writes: []
   };
 }
 
@@ -486,7 +489,8 @@ async function runImportTriage(
     units: results,
     duplicate_groups: duplicateGroups(results),
     estimated_review_load: estimatedReviewLoad(results),
-    likely_counts: likelyCounts(results)
+    likely_counts: likelyCounts(results),
+    canonical_writes: []
   };
 }
 
