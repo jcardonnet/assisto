@@ -2978,6 +2978,7 @@ function workbenchHtml(): string {
         <button type="button" data-tab="dogfood-eval" aria-pressed="false">Dogfood Eval</button>
         <button type="button" data-tab="capture" aria-pressed="false">Capture</button>
         <button type="button" data-tab="import" aria-pressed="false">Import</button>
+        <button type="button" data-tab="source-inbox" aria-pressed="false">Source Inbox</button>
         <button type="button" data-tab="entities" aria-pressed="false">People/Topics/Contexts</button>
         <button type="button" data-tab="review" aria-pressed="false">Review</button>
         <button type="button" data-tab="transactions" aria-pressed="false">Transactions</button>
@@ -3626,6 +3627,8 @@ let entityList = null;
 let entityDetail = null;
 let importTriageUnits = [];
 let captureInbox = null;
+let sourceInboxList = null;
+let sourceInboxSession = null;
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -3845,6 +3848,11 @@ function render() {
 
   if (activeTab === "import") {
     renderImport();
+    return;
+  }
+
+  if (activeTab === "source-inbox") {
+    void renderSourceInbox();
     return;
   }
 
@@ -4871,6 +4879,213 @@ function bindCaptureInboxActions(inbox) {
       document.querySelector("#capture-observed-at").value = button.dataset.date ?? "";
     });
   }
+}
+
+async function renderSourceInbox() {
+  if (!sourceInboxList) {
+    view.innerHTML = '<article class="item"><h2>Loading Source Inbox</h2><p class="meta">Reading local noncanonical source sessions.</p></article>';
+    sourceInboxList = await fetchJson('/api/source-inbox');
+
+    if (activeTab !== 'source-inbox') {
+      return;
+    }
+  }
+
+  view.innerHTML = \`<article class="item">
+    <h2>Source Inbox</h2>
+    <p class="meta">Inspect local export sessions before any Event or pending Transaction is created.</p>
+    <div class="metrics">
+      <div class="metric"><span>Sessions</span><strong>\${escapeHtml(sourceInboxList.session_count)}</strong></div>
+      <div class="metric"><span>Units</span><strong>\${escapeHtml(sourceInboxList.sessions.reduce((sum, session) => sum + session.unit_count, 0))}</strong></div>
+      <div class="metric"><span>Duplicate units</span><strong>\${escapeHtml(sourceInboxList.sessions.reduce((sum, session) => sum + session.duplicate_units, 0))}</strong></div>
+    </div>
+  </article>
+  <section class="transaction-layout">
+    <div class="grid">
+      \${renderSourceInboxSessionList(sourceInboxList)}
+    </div>
+    <div id="source-inbox-detail" class="detail-panel">
+      \${sourceInboxSession ? renderSourceInboxSession(sourceInboxSession) : '<article class="item"><h2>No session selected</h2><p class="meta">Open a session to inspect source units, spans, metadata, and duplicate state.</p></article>'}
+    </div>
+  </section>
+  <article class="item">
+    <h2>Preview source export</h2>
+    <form id="source-inbox-preview-form" class="capture-form">
+      <div class="action-row">
+        <label class="field" for="source-inbox-kind"><span>Adapter kind</span><select id="source-inbox-kind" name="kind">
+          <option value="eml">eml</option>
+          <option value="mbox">mbox</option>
+          <option value="ics">ics</option>
+          <option value="slack_json">slack_json</option>
+          <option value="teams_json">teams_json</option>
+          <option value="github_json">github_json</option>
+          <option value="tracker_csv">tracker_csv</option>
+          <option value="repo_markdown">repo_markdown</option>
+          <option value="markdown">markdown</option>
+          <option value="text">text</option>
+          <option value="email">email</option>
+          <option value="calendar">calendar</option>
+          <option value="chat">chat</option>
+        </select></label>
+        <label class="field" for="source-inbox-source-label"><span>Source label</span><input id="source-inbox-source-label" name="sourceLabel" placeholder="github export, slack export, calendar export"></label>
+      </div>
+      <label class="field" for="source-inbox-raw-text"><span>Raw source export</span><textarea id="source-inbox-raw-text" name="rawText" rows="8" placeholder="Paste a local export snippet for preview"></textarea></label>
+      <div class="action-row">
+        <label class="field" for="source-inbox-path"><span>Path</span><input id="source-inbox-path" name="path" placeholder="Optional local export path"></label>
+        <label class="field" for="source-inbox-observed-at"><span>Observed at</span><input id="source-inbox-observed-at" name="observedAt" placeholder="YYYY-MM-DD"></label>
+        <label class="field" for="source-inbox-context"><span>Context</span><input id="source-inbox-context" name="context" placeholder="Optional context id"></label>
+        <label class="field" for="source-inbox-limit"><span>Limit</span><input id="source-inbox-limit" name="limit" inputmode="numeric" placeholder="Optional"></label>
+      </div>
+      <div class="action-row">
+        <button type="submit" class="secondary">Preview source export</button>
+      </div>
+    </form>
+  </article>
+  <div id="source-inbox-output" class="action-output"></div>\`;
+  bindSourceInboxActions();
+}
+
+function renderSourceInboxSessionList(result) {
+  if (!result.sessions.length) {
+    return '<article class="item"><h2>No source sessions</h2><p class="meta">Preview a local export to create a noncanonical Source Inbox session.</p></article>';
+  }
+
+  return result.sessions.map((session) => \`<article class="item">
+    <h2>\${escapeHtml(session.session_id)}</h2>
+    <p class="pill">\${escapeHtml(session.adapter_kind)} · \${escapeHtml(session.import_status)}</p>
+    \${detailListHtml([
+      ['Source label', session.source_label ?? 'none'],
+      ['Source path', session.source_path ?? 'none'],
+      ['Updated', session.updated_at],
+      ['Units', String(session.unit_count)],
+      ['New units', String(session.new_units)],
+      ['Duplicate units', String(session.duplicate_units)],
+      ['Source hashes', session.source_hashes.slice(0, 3).join(', ') || 'none']
+    ])}
+    \${plainListHtml('Warnings', session.warnings)}
+    <div class="action-row"><button type="button" class="secondary source-inbox-open" data-session-id="\${escapeHtml(session.session_id)}">Open session</button></div>
+  </article>\`).join('');
+}
+
+function bindSourceInboxActions() {
+  for (const button of document.querySelectorAll('.source-inbox-open')) {
+    button.addEventListener('click', async () => {
+      const detail = document.querySelector('#source-inbox-detail');
+      detail.innerHTML = '<article class="item"><h2>Loading session</h2></article>';
+
+      try {
+        sourceInboxSession = await fetchJson(\`/api/source-inbox/session?id=\${encodeURIComponent(button.dataset.sessionId ?? '')}\`);
+        detail.innerHTML = renderSourceInboxSession(sourceInboxSession);
+      } catch (error) {
+        detail.innerHTML = \`<article class="item"><h2>Session error</h2><pre>\${escapeHtml(error.message)}</pre></article>\`;
+      }
+    });
+  }
+
+  document.querySelector('#source-inbox-preview-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = document.querySelector('#source-inbox-output');
+    output.innerHTML = '<pre>Running</pre>';
+
+    try {
+      const result = await postJson('/api/source-inbox/preview', {
+        kind: form.elements.kind.value,
+        rawText: form.elements.rawText.value,
+        path: form.elements.path.value,
+        sourceLabel: form.elements.sourceLabel.value,
+        observedAt: form.elements.observedAt.value,
+        context: form.elements.context.value,
+        limit: form.elements.limit.value
+      });
+      sourceInboxList = await fetchJson('/api/source-inbox');
+      sourceInboxSession = result.source_inbox_session;
+      await renderSourceInbox();
+      document.querySelector('#source-inbox-output').innerHTML = renderSourceInboxPreviewResult(result);
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+}
+
+function renderSourceInboxSession(session) {
+  return \`<article class="item">
+    <h2>Session \${escapeHtml(session.session_id)}</h2>
+    <p class="pill">\${escapeHtml(session.adapter_kind)} · \${escapeHtml(session.import_status)}</p>
+    \${detailListHtml([
+      ['Source label', session.source_label ?? 'none'],
+      ['Source path', session.source_path ?? 'none'],
+      ['Created', session.created_at],
+      ['Updated', session.updated_at],
+      ['Units', String(session.unit_count)],
+      ['Review forecast', sourceInboxReviewForecastLabel(session.review_load_forecast)]
+    ])}
+    \${plainListHtml('Warnings', session.warnings)}
+    <section>
+      <h3>Source units</h3>
+      <div class="grid">\${session.units.map(renderSourceInboxUnit).join('')}</div>
+    </section>
+  </article>\`;
+}
+
+function renderSourceInboxPreviewResult(result) {
+  return \`<article class="item">
+    <h2>Source preview saved</h2>
+    <p class="pill">\${escapeHtml(result.adapter_kind)}</p>
+    \${detailListHtml([
+      ['Session', result.source_inbox_session?.session_id ?? 'none'],
+      ['Units', String(result.units?.length ?? 0)],
+      ['Likely safe', String(result.review_load_forecast?.likely_safe ?? 0)],
+      ['Likely staged', String(result.review_load_forecast?.likely_staged ?? 0)],
+      ['Likely conflicts', String(result.review_load_forecast?.likely_conflict ?? 0)],
+      ['Duplicates', String(result.review_load_forecast?.duplicates ?? 0)],
+      ['Canonical writes', String(result.canonical_writes?.length ?? 0)]
+    ])}
+    \${plainListHtml('Warnings', result.warnings)}
+    <section>
+      <h3>Previewed units</h3>
+      <div class="grid">\${(result.units ?? []).map(renderSourceInboxUnit).join('')}</div>
+    </section>
+  </article>\`;
+}
+
+function renderSourceInboxUnit(unit) {
+  const excerpt = (unit.raw_text ?? '').slice(0, 260);
+
+  return \`<article class="item">
+    <h3>\${escapeHtml(unit.unit_id)}</h3>
+    <p class="pill">\${escapeHtml(unit.duplicate_state ?? 'new')}\${unit.skip_reason ? \` · \${escapeHtml(unit.skip_reason)}\` : ''}</p>
+    \${detailListHtml([
+      ['Adapter', unit.adapter_kind ?? 'unknown'],
+      ['Source label', unit.source_label ?? 'none'],
+      ['Observed', unit.observed_at ?? 'unknown'],
+      ['Contexts', (unit.contexts ?? []).join(', ') || 'none'],
+      ['Triage state', unit.triage_state ?? 'untriaged'],
+      ['Source hash', unit.source_hash ?? 'none'],
+      ['Raw excerpt', excerpt || 'none']
+    ])}
+    \${plainListHtml('Source spans', (unit.source_spans ?? []).map(sourceInboxSpanLabel))}
+    \${plainListHtml('Metadata', Object.entries(unit.metadata ?? {}).map(([key, value]) => \`\${key}: \${value}\`))}
+  </article>\`;
+}
+
+function sourceInboxSpanLabel(span) {
+  const path = span.source_path ?? 'source';
+  const range = span.start_line && span.end_line
+    ? \`:\${span.start_line}-\${span.end_line}\`
+    : span.start_line
+      ? \`:\${span.start_line}\`
+      : '';
+  const offsets = span.start_offset !== undefined && span.end_offset !== undefined ? \` offsets \${span.start_offset}-\${span.end_offset}\` : '';
+  return \`\${span.label ? \`\${span.label}: \` : ''}\${path}\${range}\${offsets}\`;
+}
+
+function sourceInboxReviewForecastLabel(forecast) {
+  if (!forecast) {
+    return 'none';
+  }
+
+  return \`\${forecast.total_units} units · \${forecast.likely_safe} safe · \${forecast.likely_staged} staged · \${forecast.likely_conflict} conflicts · \${forecast.duplicates} duplicates\`;
 }
 
 function renderImport() {

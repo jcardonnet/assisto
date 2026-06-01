@@ -734,6 +734,7 @@ export async function runWorkbenchTests() {
     assert.match(shell.body, /data-tab="today" aria-pressed="true"/);
     assert.match(shell.body, /data-tab="capture"/);
     assert.match(shell.body, /data-tab="import"/);
+    assert.match(shell.body, /data-tab="source-inbox"/);
     assert.match(shell.body, /data-tab="entities"/);
     assert.match(shell.body, /data-tab="review" aria-pressed="false"/);
     assert.match(shell.body, /data-tab="transactions"/);
@@ -785,6 +786,12 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /Split unit/);
     assert.match(client.body, /Merge next/);
     assert.match(client.body, /renderImportResult/);
+    assert.match(client.body, /renderSourceInbox/);
+    assert.match(client.body, /source-inbox-preview-form/);
+    assert.match(client.body, /\/api\/source-inbox\/preview/);
+    assert.match(client.body, /Source preview saved/);
+    assert.match(client.body, /Source spans/);
+    assert.match(client.body, /Open session/);
     assert.match(client.body, /renderEntities/);
     assert.match(client.body, /entity-alias-form/);
     assert.match(client.body, /entity-context-form/);
