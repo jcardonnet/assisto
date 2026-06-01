@@ -30,3 +30,4 @@ export * from "./source-adapters";
 export * from "./workday-capture";
 export * from "./entities";
 export * from "./friction";
+export * from "./symbolic";
