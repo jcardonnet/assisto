@@ -31,6 +31,7 @@ import { runEntityStewardshipV2Tests } from "./entity-stewardship-v2.mjs";
 import { runEntityRepairActionsV2Tests } from "./entity-repair-actions-v2.mjs";
 import { runContextOperatingRoomV3Tests } from "./context-operating-room-v3.mjs";
 import { runDogfoodFeedbackV2Tests } from "./dogfood-feedback-v2.mjs";
+import { runReviewAccelerationTests } from "./review-acceleration.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -65,6 +66,7 @@ export async function runUnitTests() {
   await runEntityRepairActionsV2Tests();
   await runContextOperatingRoomV3Tests();
   await runDogfoodFeedbackV2Tests();
+  await runReviewAccelerationTests();
 }
 
 export function assertRequiredPaths() {

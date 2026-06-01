@@ -512,3 +512,5 @@ function stringValue(value: FrontmatterValue | undefined): string | undefined {
 function stringArrayValue(value: FrontmatterValue | undefined): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
+
+export * from "./acceleration";
