@@ -104,7 +104,9 @@ domain/range, transitivity, inverse relations, or Event file existence.
 
 Ontology-aware validation is a separate policy layer. A frame can be syntactically
 valid and still require review when the ontology marks the relation as high-risk,
-scope-sensitive, ambiguous, or unsupported.
+scope-sensitive, ambiguous, or unsupported. When supplied with the ontology registry,
+validateMemoryFrame also reports relation-domain, relation-range, missing-scope,
+unknown-relation, and high-risk relation-change review reasons.
 
 ## Deterministic Extraction
 
