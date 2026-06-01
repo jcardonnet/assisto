@@ -102,6 +102,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /capture feedback/);
   assert.match(help.stdout, /capture presets/);
   assert.match(help.stdout, /capture quick/);
+  assert.match(help.stdout, /source inbox/);
 
   const doctorRoot = await makeTempVault();
 
@@ -412,6 +413,33 @@ export async function runCliIntegrationTests() {
     assert.equal(JSON.parse(assistantJson.stdout).suggested_next_batch_size, 10);
   } finally {
     await rm(importRoot, { recursive: true, force: true });
+  }
+
+  const sourceInboxRoot = await makeTempVault();
+
+  try {
+    const inbox = await loadTsModule("packages/core/src/source-inbox/index.ts");
+    await inbox.createSourceInboxSession(sourceInboxRoot, {
+      session_id: "srcin_20260601120000_cli",
+      adapter_kind: "markdown",
+      source_label: "cli inbox",
+      now: "2026-06-01T12:00:00Z",
+      units: [{ unit_id: "markdown_1", source_hash: "sha256:" + "c".repeat(64), source_label: "cli inbox" }]
+    });
+
+    const inboxList = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "list", "--json"])).stdout);
+    assert.equal(inboxList.session_count, 1);
+    assert.equal(inboxList.sessions[0].session_id, "srcin_20260601120000_cli");
+
+    const inboxShow = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "show", "srcin_20260601120000_cli", "--json"])).stdout);
+    assert.equal(inboxShow.units[0].source_hash, "sha256:" + "c".repeat(64));
+
+    const inboxClear = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "clear", "--id", "srcin_20260601120000_cli", "--json"])).stdout);
+    assert.equal(inboxClear.cleared_count, 1);
+    assert.equal(JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "list", "--json"])).stdout).session_count, 0);
+    await expectMissing(sourceInboxRoot, "memory/events/2026/2026-06/2026-06-01-001.md");
+  } finally {
+    await rm(sourceInboxRoot, { recursive: true, force: true });
   }
 
   const askRoot = await makeTempVault();

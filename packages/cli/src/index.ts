@@ -33,6 +33,9 @@ import {
   createImportNotes,
   createSeedKit,
   createSourceAdapterImport,
+  clearSourceInboxSessions,
+  listSourceInboxSessions,
+  readSourceInboxSession,
   createWorkdayCapture,
   listWorkdayCapturePresets,
   previewCaptureNote,
@@ -611,10 +614,14 @@ async function commandImport(root: string, args: string[], io: CliIo, cwd: strin
 }
 
 async function commandSource(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
-  const [subcommand] = args;
+  const [subcommand, ...rest] = args;
+
+  if (subcommand === "inbox") {
+    return commandSourceInbox(root, rest, io);
+  }
 
   if (subcommand !== "import") {
-    throw new Error("Usage: wm source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]");
+    throw new Error(sourceCommandUsage());
   }
 
   const kind = parseSourceAdapterKind(optionValue(args, "--kind"));
@@ -654,6 +661,53 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
 
   printSourceAdapterResult(result, io);
   return 0;
+}
+
+async function commandSourceInbox(root: string, args: string[], io: CliIo): Promise<number> {
+  const [action] = args;
+  const json = args.includes("--json");
+
+  if (!action || action === "list") {
+    const result = await listSourceInboxSessions(root);
+
+    if (json) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    printSourceInboxList(result, io);
+    return 0;
+  }
+
+  if (action === "show") {
+    const sessionId = sourceInboxSessionArg(args);
+    const result = await readSourceInboxSession(root, sessionId);
+
+    if (json) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    printSourceInboxSession(result, io);
+    return 0;
+  }
+
+  if (action === "clear") {
+    const result = await clearSourceInboxSessions(root, { session_id: optionValue(args, "--id") ?? optionalSourceInboxPositional(args) });
+
+    if (json) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    io.stdout(`Cleared Source Inbox sessions: ${result.cleared_count}\n`);
+    for (const sessionId of result.removed_sessions) {
+      io.stdout(`- ${sessionId}\n`);
+    }
+    return 0;
+  }
+
+  throw new Error(sourceCommandUsage());
 }
 
 async function commandReason(root: string, args: string[], io: CliIo): Promise<number> {
@@ -1930,6 +1984,44 @@ function parseSourceAdapterKind(value: string | null): SourceAdapterKind {
   throw new Error("wm source import requires --kind <markdown|text|email|calendar|chat>.");
 }
 
+function sourceCommandUsage(): string {
+  return "Usage: wm source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json]";
+}
+
+function sourceInboxSessionArg(args: string[]): string {
+  const value = optionValue(args, "--id") ?? optionalSourceInboxPositional(args);
+
+  if (!value) {
+    throw new Error("wm source inbox show requires a session id or --id <id>.");
+  }
+
+  return value;
+}
+
+function optionalSourceInboxPositional(args: string[]): string | undefined {
+  const valueOptions = new Set(["--id"]);
+  const booleanOptions = new Set(["--json"]);
+
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (valueOptions.has(arg)) {
+      index += 1;
+      continue;
+    }
+
+    if (booleanOptions.has(arg)) {
+      continue;
+    }
+
+    if (arg && !arg.startsWith("--")) {
+      return arg;
+    }
+  }
+
+  return undefined;
+}
+
 function parsePort(value: string): number {
   const parsed = Number.parseInt(value, 10);
 
@@ -2008,6 +2100,25 @@ function printImportResult(result: ImportNotesResult, io: CliIo): void {
     if (unit.staged_review_paths.length > 0) {
       io.stdout(`Staged review proposals: ${unit.staged_review_paths.join(", ")}\n`);
     }
+  }
+}
+
+function printSourceInboxList(result: Awaited<ReturnType<typeof listSourceInboxSessions>>, io: CliIo): void {
+  io.stdout(`Source Inbox sessions: ${result.session_count}\n`);
+  for (const session of result.sessions) {
+    io.stdout(
+      `- ${session.session_id} ${session.adapter_kind} units=${session.unit_count} duplicates=${session.duplicate_units} status=${session.import_status}\n`
+    );
+  }
+}
+
+function printSourceInboxSession(result: Awaited<ReturnType<typeof readSourceInboxSession>>, io: CliIo): void {
+  io.stdout(`Source Inbox session: ${result.session_id}\n`);
+  io.stdout(`Adapter: ${result.adapter_kind}\n`);
+  io.stdout(`Units: ${result.unit_count}\n`);
+  io.stdout(`Status: ${result.import_status}\n`);
+  for (const unit of result.units) {
+    io.stdout(`- ${unit.unit_id} ${unit.source_hash} ${unit.source_label} triage=${unit.triage_state} duplicate=${unit.duplicate_state}\n`);
   }
 }
 
@@ -2242,6 +2353,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
+      '  wm [--root <path>] source inbox <list|show|clear> [id|--id <id>] [--json]',
       "  wm [--root <path>] indexes rebuild-symbolic [--json]",
       "  wm [--root <path>] reason query --relation <relation> [--subject <id>] [--object <id>] [--json]",
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",

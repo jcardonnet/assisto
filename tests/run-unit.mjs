@@ -24,6 +24,7 @@ import { runCoreUseTomorrowTests } from "./core-use-tomorrow.mjs";
 import { runCoreWorkdayModeTests } from "./core-workday-modes.mjs";
 import { runCoreSourcesTests } from "./core-sources.mjs";
 import { runCoreSourceAdapterTests } from "./core-source-adapters.mjs";
+import { runCoreSourceInboxTests } from "./core-source-inbox.mjs";
 import { runCoreWorkdayCaptureTests } from "./core-workday-capture.mjs";
 import { runSymbolicIndexBuilderTests } from "./symbolic-index-builder.mjs";
 import { runSymbolicQueryTests } from "./symbolic-query.mjs";
@@ -59,6 +60,7 @@ export async function runUnitTests() {
   await runCoreWorkdayModeTests();
   await runCoreSourcesTests();
   await runCoreSourceAdapterTests();
+  await runCoreSourceInboxTests();
   await runCoreWorkdayCaptureTests();
   await runSymbolicIndexBuilderTests();
   await runSymbolicQueryTests();
