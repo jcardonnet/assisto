@@ -34,6 +34,7 @@ import {
   createSeedKit,
   createSourceAdapterImport,
   createSourceInboxSessionFromPreview,
+  createSourceInboxEvents,
   clearSourceInboxSessions,
   listSourceInboxSessions,
   readSourceInboxSession,
@@ -625,6 +626,10 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
     return commandSourcePreview(root, rest, io, cwd);
   }
 
+  if (subcommand === "create-events") {
+    return commandSourceCreateEvents(root, rest, io);
+  }
+
   if (subcommand !== "import") {
     throw new Error(sourceCommandUsage());
   }
@@ -706,6 +711,20 @@ async function commandSourcePreview(root: string, args: string[], io: CliIo, cwd
 
   io.stdout("Preview saved to Source Inbox session: " + sourceInboxSession.session_id + "\n");
   printSourceAdapterResult(preview, io);
+  return 0;
+}
+
+
+async function commandSourceCreateEvents(root: string, args: string[], io: CliIo): Promise<number> {
+  const sessionId = sourceCreateEventsSessionArg(args);
+  const result = await createSourceInboxEvents(root, { session_id: sessionId });
+
+  if (args.includes("--json")) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  printSourceInboxCreateEventsResult(result, io);
   return 0;
 }
 
@@ -2047,7 +2066,42 @@ function parseSourceAdapterKind(value: string | null): SourceAdapterKind {
 }
 
 function sourceCommandUsage(): string {
-  return "Usage: wm source preview|import --kind <" + sourceAdapterKinds.join("|") + "> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json]";
+  return "Usage: wm source preview|import --kind <" + sourceAdapterKinds.join("|") + "> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json] | wm source create-events --session <id> [--json]";
+}
+
+
+function sourceCreateEventsSessionArg(args: string[]): string {
+  const value = optionValue(args, "--session") ?? optionValue(args, "--id") ?? optionalSourceSessionPositional(args);
+
+  if (!value) {
+    throw new Error("wm source create-events requires --session <id>.");
+  }
+
+  return value;
+}
+
+function optionalSourceSessionPositional(args: string[]): string | undefined {
+  const valueOptions = new Set(["--session", "--id"]);
+  const booleanOptions = new Set(["--json"]);
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (valueOptions.has(arg)) {
+      index += 1;
+      continue;
+    }
+
+    if (booleanOptions.has(arg)) {
+      continue;
+    }
+
+    if (arg && !arg.startsWith("--")) {
+      return arg;
+    }
+  }
+
+  return undefined;
 }
 
 function sourceInboxSessionArg(args: string[]): string {
@@ -2162,6 +2216,27 @@ function printImportResult(result: ImportNotesResult, io: CliIo): void {
     if (unit.staged_review_paths.length > 0) {
       io.stdout(`Staged review proposals: ${unit.staged_review_paths.join(", ")}\n`);
     }
+  }
+}
+
+
+function printSourceInboxCreateEventsResult(result: Awaited<ReturnType<typeof createSourceInboxEvents>>, io: CliIo): void {
+  io.stdout(`Source Inbox create-events: ${result.session_id}\n`);
+  io.stdout(`Created: ${result.units_created}\n`);
+  io.stdout(`Skipped: ${result.units_skipped}\n`);
+  io.stdout(`Provider: ${result.provider_name}\n`);
+  io.stdout(`Canonical writes: ${result.canonical_writes.length}\n`);
+
+  for (const unit of result.units) {
+    if (unit.skipped) {
+      const existing = unit.existing_event_id ? ` (${unit.existing_event_id} ${unit.existing_event_path})` : "";
+      io.stdout(`Skipped ${unit.unit_id}: ${unit.skip_reason ?? "skipped"}${existing}\n`);
+      continue;
+    }
+
+    io.stdout(`Event: ${unit.event_id} (${unit.event_path})\n`);
+    io.stdout(`Pending transaction: ${unit.transaction_id} (${unit.transaction_path})\n`);
+    io.stdout(`Validation: ${unit.validation?.passed ? "passed" : "failed"}\n`);
   }
 }
 
@@ -2417,6 +2492,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] source preview --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--json]',
       '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
       '  wm [--root <path>] source inbox <list|show|clear> [id|--id <id>] [--json]',
+      '  wm [--root <path>] source create-events --session <id> [--json]',
       "  wm [--root <path>] indexes rebuild-symbolic [--json]",
       "  wm [--root <path>] reason query --relation <relation> [--subject <id>] [--object <id>] [--json]",
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",

@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { SourceAdapterKind, SourceAdapterPreviewResult, SourceSpan } from "../source-adapters";
+import { sourceHashForAdapterUnit, type SourceAdapterKind, type SourceAdapterPreviewResult, type SourceSpan } from "../source-adapters";
+import { ingestWithExtractionProvider, type ExtractionProvider } from "../extraction";
+import { listMarkdownFiles, readMarkdownPage } from "../fs";
+import { parseMarkdownFile, type FrontmatterValue } from "../markdown";
+import { validateTransaction } from "../transactions";
+import type { ValidationResult } from "../validators";
 
 export type SourceInboxImportStatus = "previewed" | "triaged" | "events_created";
 export type SourceInboxTriageState = "untriaged" | "keep" | "skip" | "split" | "merge";
@@ -104,6 +109,82 @@ export interface SourceInboxClearResult {
   removed_sessions: string[];
 }
 
+export type SourceTriageDecisionAction = SourceInboxTriageState | "edit_metadata";
+
+export interface SourceTriageDecisionUnitInput {
+  unit_id?: string;
+  raw_text: string;
+  source_label?: string;
+  observed_at?: string | null;
+  contexts?: string[];
+  context?: string;
+  source_spans?: SourceSpan[];
+  metadata?: Record<string, string>;
+  note?: string;
+}
+
+export interface SourceTriageDecision {
+  unit_id: string;
+  action?: SourceTriageDecisionAction;
+  raw_text?: string;
+  source_label?: string;
+  observed_at?: string | null;
+  contexts?: string[];
+  context?: string;
+  source_spans?: SourceSpan[];
+  metadata?: Record<string, string>;
+  note?: string;
+  split_units?: SourceTriageDecisionUnitInput[];
+  merge_with_unit_id?: string;
+}
+
+export interface SourceInboxTriageInput {
+  session_id: string;
+  decisions: SourceTriageDecision[];
+  now?: string;
+}
+
+export interface SourceInboxCreateEventsInput {
+  session_id: string;
+  now?: string;
+  provider?: ExtractionProvider;
+}
+
+export interface SourceInboxCreateEventUnitResult {
+  unit_id: string;
+  created: boolean;
+  skipped: boolean;
+  skip_reason?: "duplicate_source_hash" | "triage_skip";
+  source_hash: string;
+  source_label?: string;
+  observed_at?: string | null;
+  contexts: string[];
+  event_id?: string;
+  event_path?: string;
+  existing_event_id?: string;
+  existing_event_path?: string;
+  transaction_id?: string;
+  transaction_path?: string;
+  transaction_state?: string;
+  provider_name?: string;
+  validation?: ValidationResult;
+  operations: string[];
+  affected_files: string[];
+  source_events: string[];
+}
+
+export interface SourceInboxCreateEventsResult {
+  action: "source_inbox_create_events";
+  created: true;
+  session_id: string;
+  units_total: number;
+  units_created: number;
+  units_skipped: number;
+  provider_name: string;
+  units: SourceInboxCreateEventUnitResult[];
+  canonical_writes: [];
+}
+
 const TRIAGE_STATES: SourceInboxTriageState[] = ["untriaged", "keep", "skip", "split", "merge"];
 
 export async function createSourceInboxSession(
@@ -201,6 +282,130 @@ export async function clearSourceInboxSessions(
     inbox_root: sourceInboxRoot(root),
     cleared_count: removedSessions.length,
     removed_sessions: removedSessions
+  };
+}
+
+export async function triageSourceInboxSession(
+  root: string,
+  input: SourceInboxTriageInput
+): Promise<SourceInboxSession> {
+  const session = await readSourceInboxSession(root, input.session_id);
+  const decisions = new Map(input.decisions.map((decision) => [decision.unit_id, decision]));
+  const consumed = new Set<string>();
+  const nextUnits: SourceInboxUnit[] = [];
+
+  for (let index = 0; index < session.units.length; index += 1) {
+    const unit = session.units[index];
+
+    if (consumed.has(unit.unit_id)) {
+      continue;
+    }
+
+    const decision = decisions.get(unit.unit_id);
+
+    if (!decision) {
+      nextUnits.push(unit);
+      continue;
+    }
+
+    const action = normalizeDecisionAction(decision.action);
+
+    if (action === "split") {
+      nextUnits.push(...splitSourceInboxUnit(unit, decision));
+      continue;
+    }
+
+    if (action === "merge") {
+      const target = mergeTargetUnit(session.units, unit, index, decision, consumed);
+      nextUnits.push(mergeSourceInboxUnits(unit, target, decision));
+      continue;
+    }
+
+    nextUnits.push(updateSourceInboxUnit(unit, decision, action));
+  }
+
+  const updated = withUpdatedSessionDerived(session, nextUnits, "triaged", input.now ?? new Date().toISOString());
+  await writeSourceInboxSession(root, updated);
+  return updated;
+}
+
+export async function createSourceInboxEvents(
+  root: string,
+  input: SourceInboxCreateEventsInput
+): Promise<SourceInboxCreateEventsResult> {
+  const session = await readSourceInboxSession(root, input.session_id);
+  const existingSourceHashes = await loadExistingEventSourceHashes(root);
+  const providerName = input.provider?.name ?? "rule-based";
+  const results: SourceInboxCreateEventUnitResult[] = [];
+
+  for (const unit of session.units) {
+    const rawText = unit.raw_text?.trim() ?? "";
+    const sourceHash = normalizeSourceHash(unit.source_hash || sourceHashForAdapterUnit(rawText));
+    const existing = existingSourceHashes.get(sourceHash);
+
+    if (!rawText || unit.triage_state === "skip") {
+      results.push(skippedCreateEventUnit(unit, sourceHash, "triage_skip"));
+      continue;
+    }
+
+    if (unit.duplicate_state === "duplicate" || existing) {
+      results.push({
+        ...skippedCreateEventUnit(unit, sourceHash, "duplicate_source_hash"),
+        existing_event_id: existing?.event_id,
+        existing_event_path: existing?.event_path,
+        source_events: existing?.event_id ? [existing.event_id] : []
+      });
+      continue;
+    }
+
+    const ingest = await ingestWithExtractionProvider(root, rawText, {
+      now: input.now,
+      provider: input.provider,
+      observed_at: unit.observed_at,
+      source_label: unit.source_label,
+      source_hash: sourceHash,
+      context: unit.contexts[0],
+      raw_note: rawText,
+      source_spans: unit.source_spans.map(formatSourceSpan),
+      apply: false
+    });
+    const validation = await validateTransaction(root, ingest.transaction);
+    const result: SourceInboxCreateEventUnitResult = {
+      unit_id: unit.unit_id,
+      created: true,
+      skipped: false,
+      source_hash: sourceHash,
+      source_label: unit.source_label,
+      observed_at: unit.observed_at,
+      contexts: unit.contexts,
+      event_id: ingest.event_id,
+      event_path: ingest.event_path,
+      transaction_id: ingest.transaction_id,
+      transaction_path: ingest.transaction_path,
+      transaction_state: ingest.transaction.transaction_state,
+      provider_name: ingest.provider_name,
+      validation,
+      operations: ingest.transaction.operations.map((operation) => operation.operation),
+      affected_files: [...ingest.transaction.affected_files],
+      source_events: [...ingest.transaction.source_events]
+    };
+    results.push(result);
+    existingSourceHashes.set(sourceHash, { event_id: ingest.event_id, event_path: ingest.event_path });
+  }
+
+  const updated = withUpdatedSessionDerived(session, session.units, "events_created", input.now ?? new Date().toISOString());
+  await writeSourceInboxSession(root, updated);
+
+  return {
+    action: "source_inbox_create_events",
+    created: true,
+    session_id: session.session_id,
+    units_total: results.length,
+    units_created: results.filter((unit) => !unit.skipped).length,
+    units_skipped: results.filter((unit) => unit.skipped).length,
+    provider_name: providerName,
+    units: results,
+    canonical_writes: []
   };
 }
 
@@ -343,4 +548,225 @@ function countTriageStates(units: SourceInboxUnit[]): Record<SourceInboxTriageSt
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function normalizeDecisionAction(action: SourceTriageDecisionAction | undefined): SourceTriageDecisionAction {
+  return action ?? "keep";
+}
+
+function updateSourceInboxUnit(
+  unit: SourceInboxUnit,
+  decision: SourceTriageDecision,
+  action: SourceTriageDecisionAction
+): SourceInboxUnit {
+  const rawText = decision.raw_text ?? unit.raw_text;
+  const triageState: SourceInboxTriageState = action === "edit_metadata" ? "keep" : action;
+
+  return {
+    ...unit,
+    raw_text: rawText,
+    source_label: decision.source_label ?? unit.source_label,
+    source_hash: rawText !== unit.raw_text && rawText ? sourceHashForAdapterUnit(rawText) : unit.source_hash,
+    observed_at: decision.observed_at !== undefined ? decision.observed_at : unit.observed_at,
+    contexts: contextsFromDecision(decision, unit.contexts),
+    source_spans: decision.source_spans ? [...decision.source_spans] : unit.source_spans,
+    metadata: metadataFromDecision(unit, decision),
+    skip_reason: triageState === "skip" ? "triage_skip" : unit.skip_reason,
+    triage_state: triageState
+  };
+}
+
+function splitSourceInboxUnit(unit: SourceInboxUnit, decision: SourceTriageDecision): SourceInboxUnit[] {
+  const splitUnits = decision.split_units?.length
+    ? decision.split_units
+    : (unit.raw_text ?? "")
+        .split(/\n\s*\n/)
+        .map((rawText) => ({ raw_text: rawText.trim() }))
+        .filter((splitUnit) => splitUnit.raw_text);
+
+  if (!splitUnits.length) {
+    throw new Error("Source Inbox split decision for " + unit.unit_id + " requires split units or splittable raw text.");
+  }
+
+  return splitUnits.map((splitUnit, index) => sourceInboxUnitFromDecisionUnit(unit, splitUnit, unit.unit_id + "_split_" + String(index + 1), "split"));
+}
+
+function mergeTargetUnit(
+  units: SourceInboxUnit[],
+  unit: SourceInboxUnit,
+  index: number,
+  decision: SourceTriageDecision,
+  consumed: Set<string>
+): SourceInboxUnit {
+  const target = decision.merge_with_unit_id
+    ? units.find((candidate) => candidate.unit_id === decision.merge_with_unit_id)
+    : units[index + 1];
+
+  if (!target || target.unit_id === unit.unit_id) {
+    throw new Error("Source Inbox merge decision for " + unit.unit_id + " requires a merge target.");
+  }
+
+  consumed.add(target.unit_id);
+  return target;
+}
+
+function mergeSourceInboxUnits(unit: SourceInboxUnit, target: SourceInboxUnit, decision: SourceTriageDecision): SourceInboxUnit {
+  const rawText = decision.raw_text ?? [unit.raw_text, target.raw_text].filter(Boolean).join("\n\n");
+  const contexts = contextsFromDecision(decision, uniqueSorted(unit.contexts.concat(target.contexts)));
+
+  return {
+    ...unit,
+    raw_text: rawText,
+    source_label: decision.source_label ?? unit.source_label,
+    source_hash: sourceHashForAdapterUnit(rawText),
+    observed_at: decision.observed_at !== undefined ? decision.observed_at : unit.observed_at ?? target.observed_at,
+    contexts,
+    source_spans: decision.source_spans ? [...decision.source_spans] : unit.source_spans.concat(target.source_spans),
+    metadata: metadataFromDecision({ ...unit, metadata: { ...unit.metadata, ...target.metadata } }, decision),
+    duplicate_state: "new",
+    skip_reason: undefined,
+    triage_state: "merge"
+  };
+}
+
+function sourceInboxUnitFromDecisionUnit(
+  base: SourceInboxUnit,
+  input: SourceTriageDecisionUnitInput,
+  unitId: string,
+  triageState: SourceInboxTriageState
+): SourceInboxUnit {
+  const rawText = input.raw_text.trim();
+
+  return {
+    ...base,
+    unit_id: input.unit_id ?? unitId,
+    raw_text: rawText,
+    source_label: input.source_label ?? base.source_label,
+    source_hash: sourceHashForAdapterUnit(rawText),
+    observed_at: input.observed_at !== undefined ? input.observed_at : base.observed_at,
+    contexts: contextsFromDecision(input, base.contexts),
+    source_spans: input.source_spans ? [...input.source_spans] : base.source_spans,
+    metadata: metadataFromDecision(base, input),
+    duplicate_state: "new",
+    skip_reason: undefined,
+    triage_state: triageState
+  };
+}
+
+function contextsFromDecision(input: { contexts?: string[]; context?: string }, fallback: string[]): string[] {
+  if (input.contexts) {
+    return input.contexts.filter(Boolean);
+  }
+
+  if (input.context) {
+    return [input.context];
+  }
+
+  return [...fallback];
+}
+
+function metadataFromDecision(
+  unit: Pick<SourceInboxUnit, "metadata">,
+  decision: { metadata?: Record<string, string>; note?: string }
+): Record<string, string> {
+  return {
+    ...unit.metadata,
+    ...(decision.metadata ?? {}),
+    ...(decision.note ? { triage_note: decision.note } : {})
+  };
+}
+
+function withUpdatedSessionDerived(
+  session: SourceInboxSession,
+  units: SourceInboxUnit[],
+  importStatus: SourceInboxImportStatus,
+  updatedAt: string
+): SourceInboxSession {
+  return {
+    ...session,
+    updated_at: updatedAt,
+    import_status: importStatus,
+    unit_count: units.length,
+    source_hashes: uniqueSorted(units.map((unit) => unit.source_hash)),
+    review_load_forecast: reviewLoadForecastForUnits(units),
+    triage_counts: countTriageStates(units),
+    units
+  };
+}
+
+function reviewLoadForecastForUnits(units: SourceInboxUnit[]): SourceInboxSession["review_load_forecast"] {
+  const duplicates = units.filter((unit) => unit.duplicate_state === "duplicate").length;
+
+  return {
+    total_units: units.length,
+    likely_safe: units.filter((unit) => unit.duplicate_state === "new" && unit.triage_state !== "skip").length,
+    likely_staged: 0,
+    likely_conflict: 0,
+    duplicates
+  };
+}
+
+interface ExistingSourceHash {
+  event_id?: string;
+  event_path: string;
+}
+
+async function loadExistingEventSourceHashes(root: string): Promise<Map<string, ExistingSourceHash>> {
+  const hashes = new Map<string, ExistingSourceHash>();
+  let files: string[];
+
+  try {
+    files = await listMarkdownFiles(root, "memory/events/**/*.md");
+  } catch {
+    files = [];
+  }
+
+  for (const file of files) {
+    const parsed = parseMarkdownFile(await readMarkdownPage(root, file));
+    const sourceHash = stringValue(parsed.frontmatter.source_hash);
+
+    if (sourceHash) {
+      hashes.set(normalizeSourceHash(sourceHash), {
+        event_id: stringValue(parsed.frontmatter.id),
+        event_path: file
+      });
+    }
+  }
+
+  return hashes;
+}
+
+function skippedCreateEventUnit(
+  unit: SourceInboxUnit,
+  sourceHash: string,
+  reason: "duplicate_source_hash" | "triage_skip"
+): SourceInboxCreateEventUnitResult {
+  return {
+    unit_id: unit.unit_id,
+    created: false,
+    skipped: true,
+    skip_reason: reason,
+    source_hash: sourceHash,
+    source_label: unit.source_label,
+    observed_at: unit.observed_at,
+    contexts: unit.contexts,
+    operations: [],
+    affected_files: [],
+    source_events: []
+  };
+}
+
+function formatSourceSpan(span: SourceSpan): string {
+  const parts = [
+    span.source_path ? "path=" + span.source_path : null,
+    span.start_line !== undefined ? "lines=" + span.start_line + "-" + (span.end_line ?? span.start_line) : null,
+    span.start_offset !== undefined ? "offsets=" + span.start_offset + "-" + (span.end_offset ?? span.start_offset) : null,
+    span.label ? "label=" + span.label : null
+  ].filter((value): value is string => Boolean(value));
+
+  return parts.join(" ");
+}
+
+function stringValue(value: FrontmatterValue | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

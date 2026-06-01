@@ -34,6 +34,8 @@ import {
   createSeedKit,
   createSourceAdapterImport,
   createSourceInboxSessionFromPreview,
+  createSourceInboxEvents,
+  triageSourceInboxSession,
   listSourceInboxSessions,
   readSourceInboxSession,
   createWorkdayCapture,
@@ -127,6 +129,10 @@ import {
   type SourceAdapterCreateResult,
   type SourceAdapterKind,
   type SourceAdapterPreviewResult,
+  type SourceSpan,
+  type SourceTriageDecision,
+  type SourceTriageDecisionAction,
+  type SourceTriageDecisionUnitInput,
   type TodayWorkbenchResult,
   type ValidationResult
 } from "@assisto/core";
@@ -924,6 +930,14 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createSourceInboxPreview(root, input));
     }
 
+    if (pathname === "/api/source-inbox/triage") {
+      return jsonRoute(200, await createSourceInboxTriage(root, input));
+    }
+
+    if (pathname === "/api/source-inbox/create-events") {
+      return jsonRoute(200, await createSourceInboxEvents(root, { session_id: requiredStringInput(input, "sessionId", "session_id", "session", "id") }));
+    }
+
     if (pathname === "/api/source/import/preview") {
       return jsonRoute(200, await createSourceAdapterPreview(root, input, false));
     }
@@ -1209,6 +1223,148 @@ async function createSourceInboxPreview(
   });
 
   return { ...preview, source_inbox_session: sourceInboxSession };
+}
+
+
+async function createSourceInboxTriage(root: string, input: Record<string, unknown>) {
+  return triageSourceInboxSession(root, {
+    session_id: requiredStringInput(input, "sessionId", "session_id", "session", "id"),
+    decisions: sourceInboxTriageDecisionsInput(input)
+  });
+}
+
+function sourceInboxTriageDecisionsInput(input: Record<string, unknown>): SourceTriageDecision[] {
+  const decisions = input.decisions;
+
+  if (!Array.isArray(decisions)) {
+    throw new Error("Source Inbox triage requires decisions[].");
+  }
+
+  return decisions.map((decision, index) => {
+    if (!decision || typeof decision !== "object" || Array.isArray(decision)) {
+      throw new Error(`Source Inbox triage decision ${index + 1} must be an object.`);
+    }
+
+    return sourceInboxTriageDecisionInput(decision as Record<string, unknown>, index);
+  });
+}
+
+function sourceInboxTriageDecisionInput(input: Record<string, unknown>, index: number): SourceTriageDecision {
+  const action = optionalStringInput(input, "action") ?? "keep";
+  const normalizedAction = sourceTriageActionInput(action, index);
+
+  return {
+    unit_id: requiredStringInput(input, "unitId", "unit_id"),
+    action: normalizedAction,
+    raw_text: optionalStringInput(input, "rawText", "raw_text", "text") ?? undefined,
+    source_label: optionalStringInput(input, "sourceLabel", "source_label") ?? undefined,
+    observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
+    contexts: optionalStringArrayInput(input, "contexts") ?? undefined,
+    context: optionalStringInput(input, "context") ?? undefined,
+    source_spans: sourceSpanInputs(input.source_spans ?? input.sourceSpans),
+    metadata: optionalStringRecordInput(input.metadata),
+    note: optionalStringInput(input, "note") ?? undefined,
+    split_units: sourceTriageDecisionUnitInputs(input.split_units ?? input.splitUnits),
+    merge_with_unit_id: optionalStringInput(input, "mergeWithUnitId", "merge_with_unit_id") ?? undefined
+  };
+}
+
+function sourceTriageActionInput(value: string, index: number): SourceTriageDecisionAction {
+  if (value === "keep" || value === "skip" || value === "split" || value === "merge" || value === "edit_metadata") {
+    return value;
+  }
+
+  throw new Error(`Source Inbox triage decision ${index + 1} has unsupported action: ${value}.`);
+}
+
+function sourceTriageDecisionUnitInputs(value: unknown): SourceTriageDecisionUnitInput[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("Source Inbox split_units must be an array.");
+  }
+
+  return value.map((unit, index) => {
+    if (!unit || typeof unit !== "object" || Array.isArray(unit)) {
+      throw new Error(`Source Inbox split unit ${index + 1} must be an object.`);
+    }
+
+    const record = unit as Record<string, unknown>;
+    return {
+      unit_id: optionalStringInput(record, "unitId", "unit_id") ?? undefined,
+      raw_text: requiredStringInput(record, "rawText", "raw_text", "text"),
+      source_label: optionalStringInput(record, "sourceLabel", "source_label") ?? undefined,
+      observed_at: optionalStringInput(record, "observedAt", "observed_at") ?? undefined,
+      contexts: optionalStringArrayInput(record, "contexts") ?? undefined,
+      context: optionalStringInput(record, "context") ?? undefined,
+      source_spans: sourceSpanInputs(record.source_spans ?? record.sourceSpans),
+      metadata: optionalStringRecordInput(record.metadata),
+      note: optionalStringInput(record, "note") ?? undefined
+    };
+  });
+}
+
+function sourceSpanInputs(value: unknown): SourceSpan[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("source_spans must be an array.");
+  }
+
+  return value.map((span, index) => {
+    if (!span || typeof span !== "object" || Array.isArray(span)) {
+      throw new Error(`source_spans[${index}] must be an object.`);
+    }
+
+    const record = span as Record<string, unknown>;
+    return {
+      source_path: optionalStringInput(record, "sourcePath", "source_path") ?? undefined,
+      start_line: optionalNumberInput(record, "startLine", "start_line"),
+      end_line: optionalNumberInput(record, "endLine", "end_line"),
+      start_offset: optionalNumberInput(record, "startOffset", "start_offset"),
+      end_offset: optionalNumberInput(record, "endOffset", "end_offset"),
+      label: optionalStringInput(record, "label") ?? undefined
+    };
+  });
+}
+
+function optionalStringRecordInput(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("metadata must be an object.");
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, item]) => [key, typeof item === "string" ? item.trim() : String(item ?? "").trim()] as const)
+    .filter(([, item]) => item.length > 0);
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function optionalNumberInput(input: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = input[key];
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 async function createSourceAdapterPreview(
@@ -4943,6 +5099,7 @@ async function renderSourceInbox() {
   </article>
   <div id="source-inbox-output" class="action-output"></div>\`;
   bindSourceInboxActions();
+  bindSourceInboxSessionControls();
 }
 
 function renderSourceInboxSessionList(result) {
@@ -4976,6 +5133,7 @@ function bindSourceInboxActions() {
       try {
         sourceInboxSession = await fetchJson(\`/api/source-inbox/session?id=\${encodeURIComponent(button.dataset.sessionId ?? '')}\`);
         detail.innerHTML = renderSourceInboxSession(sourceInboxSession);
+        bindSourceInboxSessionControls();
       } catch (error) {
         detail.innerHTML = \`<article class="item"><h2>Session error</h2><pre>\${escapeHtml(error.message)}</pre></article>\`;
       }
@@ -5008,6 +5166,59 @@ function bindSourceInboxActions() {
   });
 }
 
+function bindSourceInboxSessionControls() {
+  const form = document.querySelector('#source-inbox-triage-form');
+  const output = document.querySelector('#source-inbox-output');
+  const detail = document.querySelector('#source-inbox-detail');
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    if (!sourceInboxSession) {
+      return;
+    }
+
+    output.innerHTML = '<pre>Saving triage</pre>';
+    const decisions = sourceInboxSession.units.map((unit) => ({
+      unitId: unit.unit_id,
+      action: form.elements.action.value,
+      sourceLabel: form.elements.sourceLabel.value,
+      observedAt: form.elements.observedAt.value,
+      context: form.elements.context.value,
+      note: form.elements.note.value
+    }));
+
+    try {
+      sourceInboxSession = await postJson('/api/source-inbox/triage', { sessionId: sourceInboxSession.session_id, decisions });
+      sourceInboxList = await fetchJson('/api/source-inbox');
+      detail.innerHTML = renderSourceInboxSession(sourceInboxSession);
+      bindSourceInboxSessionControls();
+      output.innerHTML = \`<pre>\${escapeHtml(JSON.stringify({ session_id: sourceInboxSession.session_id, import_status: sourceInboxSession.import_status, triage_counts: sourceInboxSession.triage_counts }, null, 2))}</pre>\`;
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+
+  document.querySelector('#source-inbox-create-events')?.addEventListener('click', async () => {
+    if (!sourceInboxSession) {
+      return;
+    }
+
+    output.innerHTML = '<pre>Creating Events and pending Transactions</pre>';
+
+    try {
+      const result = await postJson('/api/source-inbox/create-events', { sessionId: sourceInboxSession.session_id });
+      sourceInboxList = await fetchJson('/api/source-inbox');
+      sourceInboxSession = await fetchJson(\`/api/source-inbox/session?id=\${encodeURIComponent(sourceInboxSession.session_id)}\`);
+      detail.innerHTML = renderSourceInboxSession(sourceInboxSession);
+      bindSourceInboxSessionControls();
+      output.innerHTML = renderSourceInboxCreateEventsResult(result);
+    } catch (error) {
+      output.innerHTML = \`<pre>\${escapeHtml(error.message)}</pre>\`;
+    }
+  });
+}
+
 function renderSourceInboxSession(session) {
   return \`<article class="item">
     <h2>Session \${escapeHtml(session.session_id)}</h2>
@@ -5021,10 +5232,45 @@ function renderSourceInboxSession(session) {
       ['Review forecast', sourceInboxReviewForecastLabel(session.review_load_forecast)]
     ])}
     \${plainListHtml('Warnings', session.warnings)}
+    \${renderSourceInboxTriageControls(session)}
     <section>
       <h3>Source units</h3>
       <div class="grid">\${session.units.map(renderSourceInboxUnit).join('')}</div>
     </section>
+  </article>\`;
+}
+
+function renderSourceInboxTriageControls(session) {
+  return \`<form id="source-inbox-triage-form" class="capture-form" data-session-id="\${escapeHtml(session.session_id)}">
+    <h3>Triage create flow</h3>
+    <div class="action-row">
+      <label class="field" for="source-inbox-triage-action"><span>Decision</span><select id="source-inbox-triage-action" name="action"><option value="keep">keep all visible units</option><option value="skip">skip all visible units</option><option value="edit_metadata">edit metadata and keep</option></select></label>
+      <label class="field" for="source-inbox-triage-label"><span>Source label</span><input id="source-inbox-triage-label" name="sourceLabel" placeholder="Optional label override"></label>
+      <label class="field" for="source-inbox-triage-observed"><span>Observed at</span><input id="source-inbox-triage-observed" name="observedAt" placeholder="YYYY-MM-DD"></label>
+      <label class="field" for="source-inbox-triage-context"><span>Context</span><input id="source-inbox-triage-context" name="context" placeholder="Optional context id"></label>
+    </div>
+    <label class="field" for="source-inbox-triage-note"><span>Triage note</span><input id="source-inbox-triage-note" name="note" placeholder="Optional note"></label>
+    <div class="action-row"><button type="submit" class="secondary">Save triage decisions</button><button type="button" id="source-inbox-create-events">Create Events + pending Transactions</button></div>
+  </form>\`;
+}
+
+function renderSourceInboxCreateEventsResult(result) {
+  return \`<article class="item"><h2>Source create-events result</h2>
+    \${detailListHtml([
+      ['Session', result.session_id],
+      ['Created', String(result.units_created ?? 0)],
+      ['Skipped', String(result.units_skipped ?? 0)],
+      ['Provider', result.provider_name ?? 'rule-based'],
+      ['Canonical writes', String(result.canonical_writes?.length ?? 0)]
+    ])}
+    <div class="grid">\${(result.units ?? []).map((unit) => \`<article class="item"><h3>\${escapeHtml(unit.unit_id)}</h3>\${detailListHtml([
+      ['Created', String(Boolean(unit.created))],
+      ['Skipped', String(Boolean(unit.skipped))],
+      ['Skip reason', unit.skip_reason ?? 'none'],
+      ['Event', unit.event_id ? unit.event_id + ' (' + unit.event_path + ')' : 'none'],
+      ['Transaction', unit.transaction_id ? unit.transaction_id + ' (' + unit.transaction_path + ')' : 'none'],
+      ['Validation', unit.validation?.passed ? 'passed' : unit.validation ? 'failed' : 'none']
+    ])}</article>\`).join('')}</div>
   </article>\`;
 }
 

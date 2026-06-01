@@ -445,13 +445,24 @@ export async function runCliIntegrationTests() {
     assert.equal(sourcePreview.source_inbox_session.adapter_kind, "slack_json");
     assert.equal(sourcePreview.source_inbox_session.units[0].metadata.platform, "slack");
 
+    const sourceCreateEvents = JSON.parse(
+      (await runWm(sourceInboxRoot, ["source", "create-events", "--session", sourcePreview.source_inbox_session.session_id, "--json"])).stdout
+    );
+    assert.equal(sourceCreateEvents.action, "source_inbox_create_events");
+    assert.equal(sourceCreateEvents.units_created, 1);
+    assert.equal(sourceCreateEvents.units_skipped, 0);
+    assert.equal(sourceCreateEvents.canonical_writes.length, 0);
+    assert.match(await readVaultFile(sourceInboxRoot, sourceCreateEvents.units[0].event_path), /source_hash: sha256:[a-f0-9]{64}/);
+    assert.match(await readVaultFile(sourceInboxRoot, sourceCreateEvents.units[0].transaction_path), /transaction_state: pending/);
+    await expectMissing(sourceInboxRoot, "memory/people/joe.md");
+
     const inboxClear = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "clear", "--id", "srcin_20260601120000_cli", "--json"])).stdout);
     assert.equal(inboxClear.cleared_count, 1);
     assert.equal(JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "list", "--json"])).stdout).session_count, 1);
     const inboxClearAll = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "clear", "--json"])).stdout);
     assert.equal(inboxClearAll.cleared_count, 1);
     assert.equal(JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "list", "--json"])).stdout).session_count, 0);
-    await expectMissing(sourceInboxRoot, "memory/events/2026/2026-06/2026-06-01-001.md");
+    await expectMissing(sourceInboxRoot, "memory/people/joe.md");
   } finally {
     await rm(sourceInboxRoot, { recursive: true, force: true });
   }
