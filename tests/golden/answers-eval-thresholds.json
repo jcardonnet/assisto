@@ -9,5 +9,7 @@
   "repairActionCoverageMin": 3,
   "generatedPersistenceViolationsMax": 0,
   "contractV3DirectCitationCoverageMin": 1,
-  "contractV3RepairLinkCoverageMin": 1
+  "contractV3RepairLinkCoverageMin": 1,
+  "proofPathCoverageMin": 0.8,
+  "unsupportedDirectAnswersMax": 0
 }

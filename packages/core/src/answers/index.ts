@@ -15,6 +15,7 @@ import type {
   RetrievalManualAction,
   RetrievalQueryIntent
 } from "../retrieval";
+import type { SymbolicProof, SymbolicQueryResult } from "../symbolic";
 
 export type AnswerCitationKind = "claim" | "event" | "page" | "review_item" | "followup";
 
@@ -46,6 +47,7 @@ export interface CitedDirectAnswerV3 {
   citations: AnswerCitationV3[];
   citation_ids: string[];
   inference_paths: string[];
+  proof_paths: SymbolicProof[];
 }
 
 export interface CannotConfirmV3 {
@@ -99,14 +101,18 @@ export interface CitedAnswerContractV3 {
   contextPack: string;
 }
 
-export function buildCitedAnswerContractV3(basis: AnswerBasisResult): CitedAnswerContractV3 {
+export function buildCitedAnswerContractV3(
+  basis: AnswerBasisResult,
+  options: { symbolicMatches?: SymbolicQueryResult["matches"] } = {}
+): CitedAnswerContractV3 {
   const repairActions = (basis.repairActions ?? basis.manualActions ?? []).map((action, index) => ({
     ...action,
     action_id: repairActionId(action, index)
   }));
   const citationIndex: Record<string, AnswerCitationV3> = {};
+  const symbolicMatches = options.symbolicMatches ?? [];
   const directAnswers = (basis.directAnswers ?? []).map((answer) =>
-    directAnswerV3(answer, basis, citationIndex)
+    directAnswerV3(answer, basis, citationIndex, symbolicMatches)
   );
   const cannotConfirm = (basis.cannotConfirm ?? []).map((item, index) =>
     cannotConfirmV3(item, index, basis, repairActions, citationIndex)
@@ -144,10 +150,12 @@ export function buildCitedAnswerContractV3(basis: AnswerBasisResult): CitedAnswe
 function directAnswerV3(
   answer: CitedDirectAnswer,
   basis: AnswerBasisResult,
-  citationIndex: Record<string, AnswerCitationV3>
+  citationIndex: Record<string, AnswerCitationV3>,
+  symbolicMatches: SymbolicQueryResult["matches"]
 ): CitedDirectAnswerV3 {
   const citations = citationsForSet(answer.citations, basis, citationIndex);
   const eventCount = answer.citations.event_ids.length;
+  const proofPaths = proofPathsForAnswer(answer, symbolicMatches);
 
   return {
     answer_id: answer.answer_id,
@@ -165,7 +173,8 @@ function directAnswerV3(
     why_included: answer.why_included,
     citations,
     citation_ids: citations.map((citation) => citation.citation_id),
-    inference_paths: inferencePaths(answer)
+    inference_paths: inferencePaths(answer, proofPaths),
+    proof_paths: proofPaths
   };
 }
 
@@ -340,11 +349,22 @@ function confidenceLabel(
   return "source_backed";
 }
 
-function inferencePaths(answer: CitedDirectAnswer): string[] {
+function proofPathsForAnswer(
+  answer: CitedDirectAnswer,
+  symbolicMatches: SymbolicQueryResult["matches"]
+): SymbolicProof[] {
+  return symbolicMatches
+    .filter((match) => match.proof.source_claim_ids.includes(answer.claim_id))
+    .map((match) => match.proof)
+    .sort((left, right) => left.proof_id.localeCompare(right.proof_id));
+}
+
+function inferencePaths(answer: CitedDirectAnswer, proofPaths: SymbolicProof[]): string[] {
   return [
     `claim:${answer.claim_id}`,
     `page:${answer.page_path}`,
-    ...answer.citations.event_ids.map((eventId) => `event:${eventId}`)
+    ...answer.citations.event_ids.map((eventId) => `event:${eventId}`),
+    ...proofPaths.map((proof) => `proof:${proof.proof_id}`)
   ];
 }
 
