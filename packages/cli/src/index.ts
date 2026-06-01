@@ -15,6 +15,8 @@ import {
   buildEntityStewardshipResult,
   buildImportAssistantResult,
   buildSymbolicIndex,
+  loadSymbolicIndex,
+  querySymbolicFacts,
   buildUseAssistoTomorrowResult,
   createCaptureFeedback,
   buildWorkdayModeResult,
@@ -133,6 +135,10 @@ export async function main(
 
     if (command === "indexes") {
       return await commandIndexes(parsed.root, rest, io);
+    }
+
+    if (command === "reason") {
+      return await commandReason(parsed.root, rest, io);
     }
 
     if (command === "seed") {
@@ -644,6 +650,67 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
   return 0;
 }
 
+async function commandReason(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand, ...rest] = args;
+  const usage = "Usage: wm reason query --relation <relation> [--subject <id>] [--object <id>] [--json]";
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout(usage + "\n");
+    return 0;
+  }
+
+  if (subcommand !== "query") {
+    throw new Error(usage);
+  }
+
+  for (let index = 0; index < rest.length; index += 1) {
+    const arg = rest[index];
+    if (arg === "--json") {
+      continue;
+    }
+    if (arg === "--relation" || arg === "--subject" || arg === "--object") {
+      const value = rest[index + 1];
+      if (!value || value.startsWith("--")) {
+        throw new Error(usage);
+      }
+      index += 1;
+      continue;
+    }
+    throw new Error(usage);
+  }
+
+  const relation = optionValue(rest, "--relation");
+  if (!relation) {
+    throw new Error(usage);
+  }
+
+  const loaded = await loadSymbolicIndex(root);
+  const result = querySymbolicFacts({
+    facts: loaded.facts,
+    proofs: loaded.proofs,
+    relation,
+    subject_id: optionValue(rest, "--subject") ?? undefined,
+    object_id: optionValue(rest, "--object") ?? undefined
+  });
+
+  if (rest.includes("--json")) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+
+  io.stdout("Symbolic matches: " + result.matches.length + "\n");
+  for (const match of result.matches) {
+    const target = match.fact.object_id ?? match.fact.value ?? "";
+    io.stdout("- " + match.fact.relation + " " + match.fact.subject_id + " -> " + target + " (" + match.proof.proof_id + ")\n");
+    io.stdout("  claims: " + match.proof.source_claim_ids.join(", ") + "\n");
+    io.stdout("  events: " + match.proof.source_events.join(", ") + "\n");
+  }
+  for (const missing of result.missing) {
+    io.stdout("Missing: " + missing + "\n");
+  }
+
+  return 0;
+}
 async function commandIndexes(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand, ...rest] = args;
   const usage = "Usage: wm indexes rebuild-symbolic [--json]";
@@ -2028,6 +2095,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
       "  wm [--root <path>] indexes rebuild-symbolic [--json]",
+      "  wm [--root <path>] reason query --relation <relation> [--subject <id>] [--object <id>] [--json]",
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",
