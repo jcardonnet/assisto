@@ -16,6 +16,7 @@ import {
   buildEntityStewardshipV2,
   buildSymbolicIndex,
   buildImportAssistantResult,
+  buildReviewAccelerationQueue,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
   readDailySession,
@@ -109,6 +110,7 @@ import {
   type HealthReviewTransactionResult,
   type MemoryHealthResult,
   type ParsedTransaction,
+  type ReviewAccelerationQueue,
   type ReviewActionState,
   type ReviewStateTransactionResult,
   type ReviewItemSummary,
@@ -210,6 +212,7 @@ export interface WorkbenchReviewItem extends ReviewItemSummary {
 }
 
 export type WorkbenchReviewLaneId =
+  | "needs_ontology_review"
   | "safe_apply"
   | "needs_context"
   | "identity_ambiguity"
@@ -249,6 +252,14 @@ export interface WorkbenchReviewTurboItem extends WorkbenchReviewItem {
   context_suggestions: string[];
   preview_actions: WorkbenchReviewPreviewAction[];
   staged_claims: WorkbenchReviewStagedClaim[];
+  proof_previews: WorkbenchReviewProofPreview[];
+}
+
+export interface WorkbenchReviewProofPreview {
+  proof_id: string;
+  rule?: string;
+  source_claim_ids: string[];
+  source_events: string[];
 }
 
 export interface WorkbenchReviewPreviewAction {
@@ -606,6 +617,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/review/turbo") {
     return jsonRoute(200, await collectReviewTurbo(root));
+  }
+
+  if (requestUrl.pathname === "/api/review/acceleration") {
+    return jsonRoute(200, await collectReviewAcceleration(root));
   }
 
   if (requestUrl.pathname === "/api/review/next") {
@@ -2126,6 +2141,24 @@ async function collectReviewTurbo(root: string): Promise<WorkbenchReviewTurbo> {
     items.push(item);
   }
 
+  const acceleration = await collectReviewAccelerationForTurbo(root, items);
+  const accelerationById = new Map(acceleration.items.map((item) => [item.id, item]));
+
+  for (const item of items) {
+    const accelerated = accelerationById.get(item.id);
+
+    if (!accelerated) {
+      continue;
+    }
+
+    item.proof_previews = accelerated.proof_previews.map((proof) => ({
+      proof_id: proof.proof_id,
+      rule: proof.rule,
+      source_claim_ids: proof.source_claim_ids ?? [],
+      source_events: proof.source_events ?? proof.source_event_ids ?? []
+    }));
+  }
+
   items.sort(compareReviewTurboItems);
 
   return {
@@ -2133,6 +2166,29 @@ async function collectReviewTurbo(root: string): Promise<WorkbenchReviewTurbo> {
     lanes: reviewTurboLanes(items),
     items
   };
+}
+
+async function collectReviewAcceleration(root: string): Promise<ReviewAccelerationQueue> {
+  const turbo = await collectReviewTurbo(root);
+  return collectReviewAccelerationForTurbo(root, turbo.items);
+}
+
+async function collectReviewAccelerationForTurbo(
+  root: string,
+  items: WorkbenchReviewTurboItem[]
+): Promise<ReviewAccelerationQueue> {
+  const symbolic = await buildSymbolicIndex({ root }).catch(() => ({ proofs: [] }));
+
+  return buildReviewAccelerationQueue({
+    reviewItems: items.map((item) => ({
+      id: item.id,
+      path: item.path,
+      review_reason: item.review_reason,
+      source_events: item.source_events,
+      staged_claim_ids: item.staged_claim_ids
+    })),
+    proofPaths: symbolic.proofs
+  });
 }
 
 async function collectReviewNext(root: string): Promise<WorkbenchReviewNext> {
@@ -2210,6 +2266,7 @@ async function enrichReviewTurboItem(root: string, summary: ReviewItemSummary): 
     context_suggestions: reviewContextSuggestions(base, stagedClaims),
     preview_actions: reviewPreviewActions(lane.lane_id),
     staged_claims: stagedClaims,
+    proof_previews: [],
     suggested_action: lane.suggested_action
   };
 }
@@ -2386,6 +2443,11 @@ function groupReviewReasons(items: WorkbenchReviewItem[]): WorkbenchReviewReason
 
 const reviewLaneDefinitions: Array<Omit<WorkbenchReviewLane, "count" | "item_ids">> = [
   {
+    lane_id: "needs_ontology_review",
+    label: "Needs ontology review",
+    suggested_action: "Inspect ontology or frame validation evidence before staging a correction."
+  },
+  {
     lane_id: "safe_apply",
     label: "Safe apply",
     suggested_action: "Preview apply one item, then create the pending Transaction only if validation passes."
@@ -2435,6 +2497,10 @@ function reviewTurboLaneFor(
 ): Omit<WorkbenchReviewLane, "count" | "item_ids"> {
   const reason = item.review_reason.toLowerCase();
 
+  if (reason === "ontology_violation" || reason.includes("ontology") || reason.includes("frame_validation")) {
+    return reviewLaneDefinition("needs_ontology_review");
+  }
+
   if (reason === "stale_noop_event" || reason.includes("stale_noop")) {
     return reviewLaneDefinition("stale_noop");
   }
@@ -2481,6 +2547,8 @@ function compareReviewTurboItems(left: WorkbenchReviewTurboItem, right: Workbenc
 
 function reviewPriorityFor(laneId: WorkbenchReviewLaneId): number {
   switch (laneId) {
+    case "needs_ontology_review":
+      return 5;
     case "safe_apply":
       return 10;
     case "needs_context":
@@ -6053,6 +6121,7 @@ function reviewSuggestionsHtml(item) {
     \${plainListHtml("Target suggestions", item.target_suggestions ?? [])}
     \${plainListHtml("Context suggestions", item.context_suggestions ?? [])}
     \${plainListHtml("Evidence summary", item.evidence_summary ?? [])}
+    \${plainListHtml("Proof previews", (item.proof_previews ?? []).map((proof) => \`\${proof.proof_id}: \${proof.rule ?? "proof"} via \${(proof.source_events ?? []).join(", ") || "no source events"}\`))}
     \${plainListHtml("Preview-first actions", (item.preview_actions ?? []).map((action) => \`\${action.label}: \${action.endpoint} - \${action.note}\`))}
   </section>\`;
 }

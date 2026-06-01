@@ -894,6 +894,7 @@ export async function runWorkbenchTests() {
       const laneCounts = Object.fromEntries(turbo.lanes.map((lane) => [lane.lane_id, lane.count]));
 
       assert.deepEqual(laneCounts, {
+        needs_ontology_review: 0,
         safe_apply: 1,
         needs_context: 1,
         identity_ambiguity: 1,
@@ -922,6 +923,11 @@ export async function runWorkbenchTests() {
       );
       assert.match(turbo.items.find((item) => item.id === "rev_safe_apply").suggested_action, /Preview apply one item/);
 
+      const acceleration = JSON.parse((await workbench.handleWorkbenchRoute(turboRoot, { method: "GET", url: "/api/review/acceleration" })).body);
+      assert.equal(acceleration.batchApplyAllowed, false);
+      assert.equal(acceleration.nextItem.id, "rev_jeff_role");
+      assert.equal(acceleration.lanes.some((lane) => lane.id === "conflict_or_change"), true);
+
       const nextReview = JSON.parse((await workbench.handleWorkbenchRoute(turboRoot, { method: "GET", url: "/api/review/next" })).body);
       assert.equal(nextReview.total, 6);
       assert.equal(nextReview.position, 1);
@@ -934,6 +940,8 @@ export async function runWorkbenchTests() {
       assert.equal(turboReadOnly.status, 405);
       const nextReadOnly = await workbench.handleWorkbenchRoute(turboRoot, { method: "POST", url: "/api/review/next" });
       assert.equal(nextReadOnly.status, 405);
+      const accelerationReadOnly = await workbench.handleWorkbenchRoute(turboRoot, { method: "POST", url: "/api/review/acceleration" });
+      assert.equal(accelerationReadOnly.status, 405);
       await assert.rejects(() => readVaultFile(turboRoot, "memory/topics/mysql.md"), /ENOENT/);
     } finally {
       await rm(turboRoot, { recursive: true, force: true });

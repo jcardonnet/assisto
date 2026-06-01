@@ -59,6 +59,13 @@ affected_files:
     await expect(page.locator('[data-review-reason="all"]')).toContainText("2 items");
     await expect(page.locator('[data-review-lane="all"]')).toContainText("2 items");
     await expect(page.locator(".review-queue-navigator")).toContainText("1 / 2");
+    const acceleration = await page.evaluate(async () => {
+      const response = await globalThis.fetch("/api/review/acceleration");
+      return response.json();
+    });
+    assert.equal(acceleration.batchApplyAllowed, false);
+    assert.equal(acceleration.lanes.some((lane) => lane.id === "conflict_or_change"), true);
+
     await expect(page.locator('article.item[data-review-selected="true"]')).toContainText("rev_mysql_scope");
 
     await page.locator(".review-queue-next").click();
