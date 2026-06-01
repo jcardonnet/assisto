@@ -25,6 +25,7 @@ import { runCoreWorkdayModeTests } from "./core-workday-modes.mjs";
 import { runCoreSourcesTests } from "./core-sources.mjs";
 import { runCoreSourceAdapterTests } from "./core-source-adapters.mjs";
 import { runCoreWorkdayCaptureTests } from "./core-workday-capture.mjs";
+import { runSymbolicIndexBuilderTests } from "./symbolic-index-builder.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -53,6 +54,7 @@ export async function runUnitTests() {
   await runCoreSourcesTests();
   await runCoreSourceAdapterTests();
   await runCoreWorkdayCaptureTests();
+  await runSymbolicIndexBuilderTests();
 }
 
 export function assertRequiredPaths() {

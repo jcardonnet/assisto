@@ -14,6 +14,7 @@ import {
   buildContextTimelineResult,
   buildEntityStewardshipResult,
   buildImportAssistantResult,
+  buildSymbolicIndex,
   buildUseAssistoTomorrowResult,
   createCaptureFeedback,
   buildWorkdayModeResult,
@@ -128,6 +129,10 @@ export async function main(
 
     if (command === "source") {
       return await commandSource(parsed.root, rest, io, cwd);
+    }
+
+    if (command === "indexes") {
+      return await commandIndexes(parsed.root, rest, io);
     }
 
     if (command === "seed") {
@@ -636,6 +641,40 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
   }
 
   printSourceAdapterResult(result, io);
+  return 0;
+}
+
+async function commandIndexes(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand, ...rest] = args;
+  const usage = "Usage: wm indexes rebuild-symbolic [--json]";
+
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout(usage + "\n");
+    return 0;
+  }
+
+  if (subcommand !== "rebuild-symbolic") {
+    throw new Error(usage);
+  }
+
+  if (rest.some((arg) => arg !== "--json") || rest.filter((arg) => arg === "--json").length > 1) {
+    throw new Error(usage);
+  }
+
+  const result = await buildSymbolicIndex({ root, write: true });
+
+  if (rest.includes("--json")) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+
+  io.stdout("Symbolic facts: " + result.derived_facts.length + "\n");
+  io.stdout("Symbolic proofs: " + result.proofs.length + "\n");
+  io.stdout("Index files:\n");
+  for (const indexPath of result.index_paths) {
+    io.stdout("- " + indexPath + "\n");
+  }
+
   return 0;
 }
 
@@ -1988,6 +2027,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
       '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
+      "  wm [--root <path>] indexes rebuild-symbolic [--json]",
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
       "  wm [--root <path>] daily queue [--json]",
