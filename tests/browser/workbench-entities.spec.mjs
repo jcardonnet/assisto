@@ -71,6 +71,8 @@ summary_generated_from:
     await expect(detailPanel.getByText("Near duplicates")).toBeVisible();
     await expect(detailPanel.getByText("Jeffrey · per_jeffrey")).toBeVisible();
     await expect(detailPanel.getByRole("heading", { name: "Reporting history" })).toBeVisible();
+    await expect(detailPanel.getByRole("heading", { name: "Ownership history" })).toBeVisible();
+    await expect(detailPanel.getByText("Suggested allowed action")).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "clm_jeff_manager" }).first()).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "ev_2026_05_21_001 · memory/events" })).toBeVisible();
     await expect(detailPanel.locator("li").filter({ hasText: "fu_ask_jeff" })).toBeVisible();
