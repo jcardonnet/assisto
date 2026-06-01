@@ -434,8 +434,22 @@ export async function runCliIntegrationTests() {
     const inboxShow = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "show", "srcin_20260601120000_cli", "--json"])).stdout);
     assert.equal(inboxShow.units[0].source_hash, "sha256:" + "c".repeat(64));
 
+    const sourcePreview = JSON.parse(
+      (
+        await runWm(sourceInboxRoot, ["source", "preview", "--kind", "slack_json", "--stdin", "--json"], {
+          stdin: async () => JSON.stringify({ messages: [{ user_name: "Joe", text: "Search depends on Billing." }] })
+        })
+      ).stdout
+    );
+    assert.equal(sourcePreview.adapter_kind, "slack_json");
+    assert.equal(sourcePreview.source_inbox_session.adapter_kind, "slack_json");
+    assert.equal(sourcePreview.source_inbox_session.units[0].metadata.platform, "slack");
+
     const inboxClear = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "clear", "--id", "srcin_20260601120000_cli", "--json"])).stdout);
     assert.equal(inboxClear.cleared_count, 1);
+    assert.equal(JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "list", "--json"])).stdout).session_count, 1);
+    const inboxClearAll = JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "clear", "--json"])).stdout);
+    assert.equal(inboxClearAll.cleared_count, 1);
     assert.equal(JSON.parse((await runWm(sourceInboxRoot, ["source", "inbox", "list", "--json"])).stdout).session_count, 0);
     await expectMissing(sourceInboxRoot, "memory/events/2026/2026-06/2026-06-01-001.md");
   } finally {

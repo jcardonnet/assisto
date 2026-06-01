@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { SourceAdapterKind, SourceSpan } from "../source-adapters";
+import type { SourceAdapterKind, SourceAdapterPreviewResult, SourceSpan } from "../source-adapters";
 
 export type SourceInboxImportStatus = "previewed" | "triaged" | "events_created";
 export type SourceInboxTriageState = "untriaged" | "keep" | "skip" | "split" | "merge";
@@ -138,6 +138,34 @@ export async function createSourceInboxSession(
 
   await writeSourceInboxSession(root, session);
   return session;
+}
+
+export async function createSourceInboxSessionFromPreview(
+  root: string,
+  preview: SourceAdapterPreviewResult,
+  options: { source_path?: string; source_label?: string; now?: string } = {}
+): Promise<SourceInboxSession> {
+  return createSourceInboxSession(root, {
+    adapter_kind: preview.adapter_kind,
+    source_label: options.source_label,
+    source_path: options.source_path,
+    now: options.now,
+    units: preview.units.map((unit) => ({
+      unit_id: unit.unit_id,
+      adapter_kind: unit.adapter_kind,
+      raw_text: unit.raw_text,
+      source_label: unit.source_label,
+      source_hash: unit.source_hash,
+      observed_at: unit.observed_at,
+      contexts: unit.contexts,
+      source_spans: unit.source_spans,
+      metadata: unit.metadata,
+      duplicate_state: unit.duplicate_state,
+      skip_reason: unit.skip_reason
+    })),
+    warnings: preview.warnings,
+    review_load_forecast: preview.review_load_forecast
+  });
 }
 
 export async function listSourceInboxSessions(root: string): Promise<SourceInboxListResult> {

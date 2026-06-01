@@ -33,6 +33,7 @@ import {
   createImportNotes,
   createSeedKit,
   createSourceAdapterImport,
+  createSourceInboxSessionFromPreview,
   clearSourceInboxSessions,
   listSourceInboxSessions,
   readSourceInboxSession,
@@ -620,6 +621,10 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
     return commandSourceInbox(root, rest, io);
   }
 
+  if (subcommand === "preview") {
+    return commandSourcePreview(root, rest, io, cwd);
+  }
+
   if (subcommand !== "import") {
     throw new Error(sourceCommandUsage());
   }
@@ -660,6 +665,47 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
   }
 
   printSourceAdapterResult(result, io);
+  return 0;
+}
+
+async function commandSourcePreview(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
+  const kind = parseSourceAdapterKind(optionValue(args, "--kind"));
+  const fromPath = optionValue(args, "--path");
+  const fromStdin = args.includes("--stdin");
+
+  if (fromPath && fromStdin) {
+    throw new Error("wm source preview accepts either --path or --stdin, not both.");
+  }
+
+  if (!fromPath && !fromStdin) {
+    throw new Error("wm source preview requires --path <file> or --stdin.");
+  }
+
+  const input = {
+    kind,
+    root,
+    path: fromPath ? path.resolve(cwd, fromPath) : undefined,
+    rawText: fromStdin ? (io.stdin ? await io.stdin() : await readProcessStdin()) : undefined,
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    observed_at: optionValue(args, "--observed-at") ?? undefined,
+    context: optionValue(args, "--context") ?? undefined,
+    limit: parseOptionalPositiveInt(optionValue(args, "--limit"), "--limit"),
+    dryRun: true
+  };
+  const preview = await previewSourceAdapterImport(input);
+  const sourceInboxSession = await createSourceInboxSessionFromPreview(root, preview, {
+    source_path: input.path,
+    source_label: input.source_label
+  });
+  const result = { ...preview, source_inbox_session: sourceInboxSession };
+
+  if (args.includes("--json")) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+
+  io.stdout("Preview saved to Source Inbox session: " + sourceInboxSession.session_id + "\n");
+  printSourceAdapterResult(preview, io);
   return 0;
 }
 
@@ -1976,16 +2022,32 @@ function extractionProviderFromName(
   );
 }
 
+const sourceAdapterKinds: SourceAdapterKind[] = [
+  "markdown",
+  "text",
+  "email",
+  "calendar",
+  "chat",
+  "eml",
+  "mbox",
+  "ics",
+  "slack_json",
+  "teams_json",
+  "github_json",
+  "tracker_csv",
+  "repo_markdown"
+];
+
 function parseSourceAdapterKind(value: string | null): SourceAdapterKind {
-  if (value === "markdown" || value === "text" || value === "email" || value === "calendar" || value === "chat") {
-    return value;
+  if (value && sourceAdapterKinds.includes(value as SourceAdapterKind)) {
+    return value as SourceAdapterKind;
   }
 
-  throw new Error("wm source import requires --kind <markdown|text|email|calendar|chat>.");
+  throw new Error("wm source commands require --kind <" + sourceAdapterKinds.join("|") + ">.");
 }
 
 function sourceCommandUsage(): string {
-  return "Usage: wm source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json]";
+  return "Usage: wm source preview|import --kind <" + sourceAdapterKinds.join("|") + "> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json]";
 }
 
 function sourceInboxSessionArg(args: string[]): string {
@@ -2352,7 +2414,8 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]',
       "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
-      '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
+      '  wm [--root <path>] source preview --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--json]',
+      '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
       '  wm [--root <path>] source inbox <list|show|clear> [id|--id <id>] [--json]',
       "  wm [--root <path>] indexes rebuild-symbolic [--json]",
       "  wm [--root <path>] reason query --relation <relation> [--subject <id>] [--object <id>] [--json]",
