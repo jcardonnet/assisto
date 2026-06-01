@@ -789,7 +789,11 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /renderSourceInbox/);
     assert.match(client.body, /source-inbox-preview-form/);
     assert.match(client.body, /\/api\/source-inbox\/preview/);
+    assert.match(client.body, /\/api\/source-inbox\/triage/);
+    assert.match(client.body, /\/api\/source-inbox\/create-events/);
     assert.match(client.body, /Source preview saved/);
+    assert.match(client.body, /Save triage decisions/);
+    assert.match(client.body, /Create Events \+ pending Transactions/);
     assert.match(client.body, /Source spans/);
     assert.match(client.body, /Open session/);
     assert.match(client.body, /renderEntities/);
@@ -1316,6 +1320,67 @@ export async function runWorkbenchTests() {
     assert.equal(sourceInboxPreview.adapter_kind, "github_json");
     assert.equal(sourceInboxPreview.source_inbox_session.adapter_kind, "github_json");
     assert.equal(sourceInboxPreview.source_inbox_session.units[0].metadata.platform, "github");
+
+    const sourceInboxTriage = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/source-inbox/triage",
+          body: JSON.stringify({
+            sessionId: sourceInboxPreview.source_inbox_session.session_id,
+            decisions: [
+              {
+                unitId: sourceInboxPreview.source_inbox_session.units[0].unit_id,
+                action: "keep",
+                sourceLabel: "workbench source triage",
+                context: "ctx_search"
+              }
+            ]
+          })
+        })
+      ).body
+    );
+    assert.equal(sourceInboxTriage.import_status, "triaged");
+    assert.equal(sourceInboxTriage.triage_counts.keep, 1);
+    assert.equal(sourceInboxTriage.units[0].source_label, "workbench source triage");
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-06/2026-06-01-001.md"), /ENOENT/);
+
+    const sourceInboxCreateRoot = await makeTempVault("assisto-workbench-source-inbox-create-route-");
+
+    try {
+      await inbox.createSourceInboxSession(sourceInboxCreateRoot, {
+        session_id: "srcin_20260601120000_create",
+        adapter_kind: "markdown",
+        source_label: "workbench source triage",
+        now: "2026-06-01T12:00:00Z",
+        units: [
+          {
+            unit_id: "markdown_1",
+            raw_text: "Joe owns Search.",
+            source_hash: "sha256:" + "e".repeat(64),
+            source_label: "workbench source triage"
+          }
+        ]
+      });
+      const sourceInboxCreate = JSON.parse(
+        (
+          await workbench.handleWorkbenchRoute(sourceInboxCreateRoot, {
+            method: "POST",
+            url: "/api/source-inbox/create-events",
+            body: JSON.stringify({ sessionId: "srcin_20260601120000_create" })
+          })
+        ).body
+      );
+      assert.equal(sourceInboxCreate.action, "source_inbox_create_events");
+      assert.equal(sourceInboxCreate.units_created, 1);
+      assert.equal(sourceInboxCreate.units_skipped, 0);
+      assert.equal(sourceInboxCreate.canonical_writes.length, 0);
+      assert.match(await readVaultFile(sourceInboxCreateRoot, sourceInboxCreate.units[0].event_path), /source_label: workbench source triage/);
+      assert.match(await readVaultFile(sourceInboxCreateRoot, sourceInboxCreate.units[0].transaction_path), /transaction_state: pending/);
+      await assert.rejects(() => readVaultFile(sourceInboxCreateRoot, "memory/people/joe.md"), /ENOENT/);
+    } finally {
+      await rm(sourceInboxCreateRoot, { recursive: true, force: true });
+    }
 
     const importTriageCreateRoot = await makeTempVault("assisto-workbench-import-triage-route-");
 

@@ -72,6 +72,74 @@ export async function runCoreSourceInboxTests() {
     assert.equal(previewSession.adapter_kind, "slack_json");
     assert.equal(previewSession.units[0].metadata.platform, "slack");
 
+    const triaged = await inbox.triageSourceInboxSession(root, {
+      session_id: "srcin_20260601120000_demo",
+      decisions: [
+        {
+          unit_id: "markdown_1",
+          action: "keep",
+          source_label: "triaged source inbox",
+          observed_at: "2026-06-02",
+          contexts: ["ctx_search"],
+          note: "ready to create"
+        },
+        {
+          unit_id: "markdown_2",
+          action: "skip",
+          note: "duplicate stays skipped"
+        }
+      ],
+      now: "2026-06-01T14:00:00Z"
+    });
+    assert.equal(triaged.import_status, "triaged");
+    assert.equal(triaged.triage_counts.keep, 1);
+    assert.equal(triaged.triage_counts.skip, 1);
+    assert.equal(triaged.units[0].source_label, "triaged source inbox");
+    assert.equal(triaged.units[0].observed_at, "2026-06-02");
+    assert.deepEqual(triaged.units[0].contexts, ["ctx_search"]);
+    assert.equal(triaged.units[0].metadata.triage_note, "ready to create");
+    await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-06/2026-06-02-001.md"), /ENOENT/);
+
+    const splitSession = await inbox.triageSourceInboxSession(root, {
+      session_id: previewSession.session_id,
+      decisions: [
+        {
+          unit_id: previewSession.units[0].unit_id,
+          action: "split",
+          split_units: [
+            { raw_text: "Search depends on Billing.", source_label: "slack split", contexts: ["ctx_search"] },
+            { raw_text: "Billing blocks Search.", source_label: "slack split", contexts: ["ctx_billing"] }
+          ]
+        }
+      ],
+      now: "2026-06-01T14:05:00Z"
+    });
+    assert.equal(splitSession.import_status, "triaged");
+    assert.equal(splitSession.units.length, 2);
+    assert.equal(splitSession.units[0].triage_state, "split");
+    assert.equal(splitSession.units[1].unit_id, previewSession.units[0].unit_id + "_split_2");
+
+    const created = await inbox.createSourceInboxEvents(root, {
+      session_id: "srcin_20260601120000_demo",
+      now: "2026-06-01T14:10:00Z"
+    });
+    assert.equal(created.action, "source_inbox_create_events");
+    assert.equal(created.created, true);
+    assert.equal(created.units_total, 2);
+    assert.equal(created.units_created, 1);
+    assert.equal(created.units_skipped, 1);
+    assert.deepEqual(created.canonical_writes, []);
+    assert.equal(created.units[0].event_path?.startsWith("memory/events/"), true);
+    assert.equal(created.units[0].transaction_path?.startsWith("memory/transactions/pending/"), true);
+    assert.equal(created.units[1].skip_reason, "triage_skip");
+    assert.match(await readVaultFile(root, created.units[0].event_path), /source_label: triaged source inbox/);
+    assert.match(await readVaultFile(root, created.units[0].event_path), /source_hash: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/);
+    assert.match(await readVaultFile(root, created.units[0].event_path), new RegExp("path=exports\\/notes\\.md lines=1-1 label=note 1"));
+    assert.match(await readVaultFile(root, created.units[0].transaction_path), /transaction_state: pending/);
+    await assert.rejects(() => readVaultFile(root, "memory/people/joe.md"), /ENOENT/);
+    const createdSession = await inbox.readSourceInboxSession(root, "srcin_20260601120000_demo");
+    assert.equal(createdSession.import_status, "events_created");
+
     const cleared = await inbox.clearSourceInboxSessions(root);
     assert.equal(cleared.cleared_count, 2);
     assert.deepEqual(cleared.removed_sessions.sort(), ["srcin_20260601120000_demo", previewSession.session_id].sort());
