@@ -17,7 +17,7 @@ memory/indexes/ontology/
 memory/indexes/symbolic/
 ```
 
-The registry defines entity kinds, relation kinds, claim patterns, scopes, and review rules. The v9 registry adds explicit cardinality hints and review lanes so later symbolic reasoning can distinguish reporting changes, ownership changes, technology changes, and dependency changes without treating the ontology as canonical graph state.
+The registry defines entity kinds, relation kinds, claim patterns, scopes, and review rules. The v10 registry adds explicit daily-work kinds and relation lanes so symbolic reasoning can distinguish reporting, ownership, technology, dependency, blocker, risk, meeting, discussion, decision, open-question, commitment, due-date, and structural changes without treating the ontology as canonical graph state.
 
 ## Relation Definitions
 
@@ -28,11 +28,18 @@ Examples:
 - `reports_to`;
 - `manages`;
 - `owns`;
-- `part_of`;
+- `maintains`;
+- `uses_technology`;
 - `depends_on`;
-- `supersedes`;
-- `contradicts`;
-- `evidenced_by`.
+- `blocks`;
+- `raises_risk`;
+- `participant_in`;
+- `discussed_in`;
+- `has_decision`;
+- `has_open_question`;
+- `committed_to`;
+- `due_on`;
+- `part_of`.
 
 
 ## Ontology-Aware Frames
@@ -90,3 +97,8 @@ Future gates should include:
 - no ontology domain/range violation missed;
 - no auto-merge from ontology/reasoning;
 - no auto contradiction resolution.
+
+
+## v10 Work Object Boundary
+
+Service, Repository, Artifact, Incident, Risk, Meeting, Decision, OpenQuestion, Commitment, and DueDate are ontology/frame kinds. They help extraction, review, symbolic proof paths, and cited answers talk about real work. They are not new canonical folders, and they do not authorize direct page writes. Durable use still requires Event evidence and a validated pending Transaction.

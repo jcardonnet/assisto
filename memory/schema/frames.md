@@ -39,6 +39,16 @@ Allowed entity kinds:
 - `Context`
 - `Topic`
 - `System`
+- `Service`
+- `Repository`
+- `Artifact`
+- `Incident`
+- `Risk`
+- `Meeting`
+- `Decision`
+- `OpenQuestion`
+- `Commitment`
+- `DueDate`
 - `Team`
 - `Role`
 
@@ -92,9 +102,7 @@ scope_state: partial
 evidence_strength: explicit
 ```
 
-Decision, open-question, risk, and follow-up-signal frames require either
-`value` or `statement`. They are structured review/retrieval material, not
-standalone Decision, OpenQuestion, or Explanation pages.
+Decision, open-question, risk, commitment, due-date, meeting, service, repository, and artifact frames require either relation-specific fields or `value`/`statement` as appropriate. They are structured review/retrieval material, not standalone Decision, OpenQuestion, Commitment, DueDate, Meeting, Service, Repository, Artifact, Risk, or Explanation pages.
 
 ## Ontology Boundary
 
@@ -120,3 +128,6 @@ Frames may be stored in pending Transactions, ReviewItems, derived indexes, eval
 fixtures, or transient Workbench responses. They must not be used to directly
 rewrite `memory/people/**`, `memory/contexts/**`, `memory/topics/**`, or other
 canonical pages.
+
+
+The v10 ontology accepts relation frames for ownership, maintenance, dependencies, blockers, risk impact, meeting participation, discussion, decisions-as-claims, open-questions-as-claims, commitments, due dates, and part-of structure. Unknown scope, missing evidence, invalid domain/range, and high-risk changes remain review gates.

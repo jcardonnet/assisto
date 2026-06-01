@@ -55,6 +55,26 @@ export async function runCoreFrameTests() {
   assert.equal(invalidSubjectKind.passed, false);
   assert.equal(invalidSubjectKind.review_reasons.includes("FRAME_SUBJECT_KIND_INVALID"), true);
 
+
+  const validServiceFrame = frames.validateMemoryFrame({
+    frame_id: "frame_service_depends_repo",
+    frame_kind: "relation",
+    relation: "depends_on",
+    subject: {
+      entity_id: "svc_search_api",
+      entity_kind: "Service"
+    },
+    object: {
+      entity_id: "repo_billing",
+      entity_kind: "Repository"
+    },
+    statement: "Search API depends on Billing repository.",
+    source_events: ["ev_2026_06_01_001"],
+    scope_state: "complete",
+    evidence_strength: "explicit"
+  });
+  assert.equal(validServiceFrame.passed, true);
+
   const validAttribute = frames.validateMemoryFrame({
     frame_id: "frame_alice_role",
     frame_kind: "attribute",

@@ -2,7 +2,7 @@
 
 Ontology registry files are schema/policy, not user memory.
 
-They define entity kinds, relation kinds, claim patterns, scopes, cardinality hints, and review rules. They do not create a canonical graph database.
+They define entity kinds, relation kinds, claim patterns, scopes, cardinality hints, and review rules. They do not create a canonical graph database. v10 expands the policy vocabulary for daily work objects: Services, Systems, Repositories, Artifacts, Incidents/Risks, Meetings, Decisions-as-claims, OpenQuestions-as-claims, Commitments, and DueDates.
 
 Canonical memory remains markdown objects and claim blocks under memory/. Derived ontology or symbolic artifacts belong under memory/indexes/ontology/ and memory/indexes/symbolic/.
 
@@ -28,3 +28,27 @@ The starter registry uses these fields:
 - review_risk
 - review_lane
 - cardinality
+
+
+## v10 Work Vocabulary
+
+Entity kinds accepted by ontology-aware frames are:
+
+- Person
+- Context
+- Topic
+- System
+- Service
+- Repository
+- Artifact
+- Incident
+- Risk
+- Meeting
+- Decision
+- OpenQuestion
+- Commitment
+- DueDate
+- Team
+- Role
+
+These are frame and policy kinds, not new standalone canonical page types. Durable memory still uses Event-backed claims on the existing markdown objects unless a future migration explicitly adds new canonical object folders.

@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-export type OntologyEntityKind = "Person" | "Context" | "Topic" | "System" | "Team" | "Role";
+export type OntologyEntityKind = "Person" | "Context" | "Topic" | "System" | "Service" | "Repository" | "Artifact" | "Incident" | "Risk" | "Meeting" | "Decision" | "OpenQuestion" | "Commitment" | "DueDate" | "Team" | "Role";
 export type OntologyReviewRisk = "low" | "medium" | "high";
 export type OntologyRelationCardinality = "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many";
-export type OntologyReviewLane = "none" | "role_change" | "reporting_change" | "ownership_change" | "identity_risk" | "technology_change" | "dependency_change";
+export type OntologyReviewLane = "none" | "role_change" | "reporting_change" | "ownership_change" | "identity_risk" | "technology_change" | "dependency_change" | "blocker_change" | "risk_change" | "commitment_change" | "discussion_change" | "decision_change" | "open_question_change" | "meeting_change" | "structure_change";
 export type OntologyFrameChangeType = "new" | "change";
 
 export interface OntologyRelationDefinition {
@@ -61,76 +61,529 @@ export interface OntologyFrameValidationResult {
 }
 
 export const defaultOntologyRegistry: OntologyRegistry = {
-  ontology_version: "2026-06-01.1",
-  entity_kinds: ["Person", "Context", "Topic", "System", "Team", "Role"],
-  relations: [
+  "ontology_version": "2026-06-01.2",
+  "entity_kinds": [
+    "Person",
+    "Context",
+    "Topic",
+    "System",
+    "Service",
+    "Repository",
+    "Artifact",
+    "Incident",
+    "Risk",
+    "Meeting",
+    "Decision",
+    "OpenQuestion",
+    "Commitment",
+    "DueDate",
+    "Team",
+    "Role"
+  ],
+  "relations": [
     {
-      relation: "reports_to",
-      domain: "Person",
-      range: "Person",
-      inverse: "manages",
-      requires_scope: false,
-      review_risk: "high",
-      review_lane: "reporting_change",
-      cardinality: "many_to_one"
+      "relation": "reports_to",
+      "domain": "Person",
+      "range": "Person",
+      "inverse": "manages",
+      "requires_scope": false,
+      "review_risk": "high",
+      "review_lane": "reporting_change",
+      "cardinality": "many_to_one"
     },
     {
-      relation: "manages",
-      domain: "Person",
-      range: "Person",
-      inverse: "reports_to",
-      requires_scope: false,
-      review_risk: "high",
-      review_lane: "reporting_change",
-      cardinality: "one_to_many"
+      "relation": "manages",
+      "domain": "Person",
+      "range": "Person",
+      "inverse": "reports_to",
+      "requires_scope": false,
+      "review_risk": "high",
+      "review_lane": "reporting_change",
+      "cardinality": "one_to_many"
     },
     {
-      relation: "owns",
-      domain: ["Person", "Team"],
-      range: ["Context", "System", "Topic"],
-      inverse: "owned_by",
-      requires_scope: true,
-      review_risk: "medium",
-      review_lane: "ownership_change",
-      cardinality: "many_to_many"
+      "relation": "role_in",
+      "domain": "Person",
+      "range": "Role",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "role_change",
+      "cardinality": "many_to_many"
     },
     {
-      relation: "owns_system",
-      domain: "Person",
-      range: "Topic",
-      inverse: "owned_by",
-      requires_scope: true,
-      review_risk: "medium",
-      review_lane: "ownership_change",
-      cardinality: "many_to_many"
+      "relation": "owns",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic"
+      ],
+      "inverse": "owned_by",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
     },
     {
-      relation: "owned_by",
-      domain: "Topic",
-      range: "Person",
-      inverse: "owns_system",
-      requires_scope: true,
-      review_risk: "medium",
-      review_lane: "ownership_change",
-      cardinality: "many_to_many"
+      "relation": "owns_system",
+      "domain": "Person",
+      "range": [
+        "System",
+        "Service",
+        "Topic"
+      ],
+      "inverse": "owned_by",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
     },
     {
-      relation: "uses_technology",
-      domain: "Context",
-      range: "Topic",
-      requires_scope: true,
-      review_risk: "medium",
-      review_lane: "technology_change",
-      cardinality: "many_to_many"
+      "relation": "owned_by",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic"
+      ],
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "owns",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
     },
     {
-      relation: "depends_on",
-      domain: ["Context", "System"],
-      range: ["Context", "System", "Topic"],
-      requires_scope: true,
-      review_risk: "medium",
-      review_lane: "dependency_change",
-      cardinality: "many_to_many"
+      "relation": "maintains",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": [
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "inverse": "maintained_by",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "maintained_by",
+      "domain": [
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "maintains",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "ownership_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "uses_technology",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "range": [
+        "Topic",
+        "System",
+        "Service"
+      ],
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "technology_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "depends_on",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic"
+      ],
+      "inverse": "depended_on_by",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "dependency_change",
+      "cardinality": "many_to_many",
+      "transitive": true
+    },
+    {
+      "relation": "depended_on_by",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact"
+      ],
+      "inverse": "depends_on",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "dependency_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "blocks",
+      "domain": [
+        "Risk",
+        "Incident",
+        "OpenQuestion",
+        "System",
+        "Service",
+        "Context",
+        "Topic"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Commitment",
+        "OpenQuestion"
+      ],
+      "inverse": "blocked_by",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "blocker_change",
+      "cardinality": "many_to_many",
+      "transitive": true
+    },
+    {
+      "relation": "blocked_by",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Commitment",
+        "OpenQuestion"
+      ],
+      "range": [
+        "Risk",
+        "Incident",
+        "OpenQuestion",
+        "System",
+        "Service",
+        "Context",
+        "Topic"
+      ],
+      "inverse": "blocks",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "blocker_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "raises_risk",
+      "domain": [
+        "Person",
+        "Team",
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "range": "Risk",
+      "inverse": "risk_affects",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "risk_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "risk_affects",
+      "domain": "Risk",
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Commitment"
+      ],
+      "inverse": "raises_risk",
+      "requires_scope": true,
+      "review_risk": "high",
+      "review_lane": "risk_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "participant_in",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": "Meeting",
+      "inverse": "has_participant",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "meeting_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "has_participant",
+      "domain": "Meeting",
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "participant_in",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "meeting_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "discussed_in",
+      "domain": [
+        "Person",
+        "Team",
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic",
+        "Decision",
+        "OpenQuestion",
+        "Risk",
+        "Commitment"
+      ],
+      "range": "Meeting",
+      "inverse": "has_discussion_subject",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "discussion_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "has_discussion_subject",
+      "domain": "Meeting",
+      "range": [
+        "Person",
+        "Team",
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Topic",
+        "Decision",
+        "OpenQuestion",
+        "Risk",
+        "Commitment"
+      ],
+      "inverse": "discussed_in",
+      "requires_scope": false,
+      "review_risk": "low",
+      "review_lane": "discussion_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "has_decision",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "range": "Decision",
+      "inverse": "decision_for",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "decision_change",
+      "cardinality": "one_to_many"
+    },
+    {
+      "relation": "decision_for",
+      "domain": "Decision",
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "inverse": "has_decision",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "decision_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "has_open_question",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "range": "OpenQuestion",
+      "inverse": "open_question_for",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "open_question_change",
+      "cardinality": "one_to_many"
+    },
+    {
+      "relation": "open_question_for",
+      "domain": "OpenQuestion",
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Meeting"
+      ],
+      "inverse": "has_open_question",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "open_question_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "committed_to",
+      "domain": [
+        "Person",
+        "Team"
+      ],
+      "range": "Commitment",
+      "inverse": "commitment_owner",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "commitment_owner",
+      "domain": "Commitment",
+      "range": [
+        "Person",
+        "Team"
+      ],
+      "inverse": "committed_to",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "many_to_many"
+    },
+    {
+      "relation": "due_on",
+      "domain": "Commitment",
+      "range": "DueDate",
+      "inverse": "due_for",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "due_for",
+      "domain": "DueDate",
+      "range": "Commitment",
+      "inverse": "due_on",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "commitment_change",
+      "cardinality": "one_to_many"
+    },
+    {
+      "relation": "part_of",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Team"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Team"
+      ],
+      "inverse": "has_part",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "structure_change",
+      "cardinality": "many_to_one"
+    },
+    {
+      "relation": "has_part",
+      "domain": [
+        "Context",
+        "System",
+        "Service",
+        "Team"
+      ],
+      "range": [
+        "Context",
+        "System",
+        "Service",
+        "Repository",
+        "Artifact",
+        "Team"
+      ],
+      "inverse": "part_of",
+      "requires_scope": true,
+      "review_risk": "medium",
+      "review_lane": "structure_change",
+      "cardinality": "one_to_many"
     }
   ]
 };
@@ -308,7 +761,7 @@ function parseKindOrKindList(value: unknown, field: string): OntologyEntityKind 
 }
 
 function parseEntityKind(value: string): OntologyEntityKind {
-  const normalized = value.toLowerCase();
+  const normalized = value.replace(/[^a-z0-9]+/gi, "").toLowerCase();
 
   switch (normalized) {
     case "person":
@@ -319,6 +772,26 @@ function parseEntityKind(value: string): OntologyEntityKind {
       return "Topic";
     case "system":
       return "System";
+    case "service":
+      return "Service";
+    case "repository":
+      return "Repository";
+    case "artifact":
+      return "Artifact";
+    case "incident":
+      return "Incident";
+    case "risk":
+      return "Risk";
+    case "meeting":
+      return "Meeting";
+    case "decision":
+      return "Decision";
+    case "openquestion":
+      return "OpenQuestion";
+    case "commitment":
+      return "Commitment";
+    case "duedate":
+      return "DueDate";
     case "team":
       return "Team";
     case "role":
@@ -353,16 +826,9 @@ function optionalReviewLane(value: unknown): OntologyReviewLane | undefined {
     return undefined;
   }
 
-  if (
-    value === "none" ||
-    value === "role_change" ||
-    value === "reporting_change" ||
-    value === "ownership_change" ||
-    value === "identity_risk" ||
-    value === "technology_change" ||
-    value === "dependency_change"
-  ) {
-    return value;
+  const lanes: OntologyReviewLane[] = ["none", "role_change", "reporting_change", "ownership_change", "identity_risk", "technology_change", "dependency_change", "blocker_change", "risk_change", "commitment_change", "discussion_change", "decision_change", "open_question_change", "meeting_change", "structure_change"];
+  if (lanes.includes(value as OntologyReviewLane)) {
+    return value as OntologyReviewLane;
   }
 
   throw new Error("Invalid ontology review lane.");
