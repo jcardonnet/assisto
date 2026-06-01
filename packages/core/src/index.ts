@@ -19,6 +19,8 @@ export * from "./briefs";
 export * from "./today";
 export * from "./dogfood";
 export * from "./dogfood-eval";
+export * from "./dogfood/feedback";
+export * from "./dogfood/eval-v2";
 export * from "./activation";
 export * from "./daily";
 export * from "./use-tomorrow";

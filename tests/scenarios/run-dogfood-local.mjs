@@ -6,6 +6,8 @@ import { loadTsModule } from "../ts-module-loader.mjs";
 import { writeWorkbenchFixture } from "../workbench.mjs";
 
 const dogfoodEval = await loadTsModule("packages/core/src/dogfood-eval/index.ts");
+const dogfoodFeedback = await loadTsModule("packages/core/src/dogfood/feedback.ts");
+const dogfoodEvalV2 = await loadTsModule("packages/core/src/dogfood/eval-v2.ts");
 const root = await mkdtemp(path.join(os.tmpdir(), "eval-dogfood-local-"));
 
 try {
@@ -60,7 +62,24 @@ try {
   assert.equal(result.metrics.generated_persistence_violations, 0);
 
   console.log("✓ local personal question scoring");
+  const metricsV2 = dogfoodEvalV2.summarizePersonalDogfoodEvalV2(result);
+  assert.equal(metricsV2.answerability, 1);
+  assert.equal(metricsV2.citationCoverage, 1);
+  assert.equal(metricsV2.generatedPersistenceViolations, 0);
+
+  const feedback = await dogfoodFeedback.createDogfoodFeedback(root, {
+    kind: "retrieval_miss",
+    question: "What is the Neptune deploy key?",
+    note: "Dogfood eval no-match should become repair evidence.",
+    now: "2026-05-29T10:00:00.000Z"
+  });
+  assert.equal(feedback.action, "log_dogfood_feedback");
+  assert.equal(feedback.operations[0], "NOOP");
+  assert.equal(feedback.canonical_writes.length, 0);
+  assert.equal(feedback.validation.passed, true);
+
   console.log("✓ no-match guidance and review/follow-up surfacing");
+  console.log("✓ local dogfood feedback creates Event plus pending NOOP");
   console.log(JSON.stringify({ metrics: result.metrics }, null, 2));
 } finally {
   await rm(root, { recursive: true, force: true });

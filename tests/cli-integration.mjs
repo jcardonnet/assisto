@@ -788,6 +788,50 @@ summary_generated_from:
     await rm(todayRoot, { recursive: true, force: true });
   }
 
+  const dogfoodFeedbackRoot = await makeTempVault("assisto-cli-dogfood-feedback-");
+
+  try {
+    const feedbackDryRun = await runWm(dogfoodFeedbackRoot, [
+      "dogfood",
+      "feedback",
+      "--kind",
+      "retrieval_miss",
+      "--question",
+      "Who owns backups?",
+      "--note",
+      "Expected Atlas backup owner.",
+      "--dry-run"
+    ]);
+    assert.match(feedbackDryRun.stdout, /Dry run/);
+    assert.match(feedbackDryRun.stdout, /Dogfood feedback event: ev_2026_05_20_001/);
+    await expectMissing(dogfoodFeedbackRoot, "memory/events/2026/2026-05/2026-05-20-001.md");
+
+    const feedbackCreate = await runWm(dogfoodFeedbackRoot, [
+      "dogfood",
+      "feedback",
+      "--kind",
+      "bad_answer",
+      "--question",
+      "Who owns backups?",
+      "--note",
+      "The answer cited the wrong owner."
+    ]);
+    assert.match(feedbackCreate.stdout, /Dogfood feedback event: ev_2026_05_20_001/);
+    assert.match(feedbackCreate.stdout, /Pending dogfood feedback transaction: tx_2026_05_20_001/);
+    assert.match(feedbackCreate.stdout, /Validation: passed/);
+    assert.match(
+      await readVaultFile(dogfoodFeedbackRoot, "memory/events/2026/2026-05/2026-05-20-001.md"),
+      /source_label: dogfood:bad_answer/
+    );
+    assert.match(
+      await readVaultFile(dogfoodFeedbackRoot, "memory/transactions/pending/tx_2026_05_20_001.md"),
+      /transaction_state: pending/
+    );
+    await expectMissing(dogfoodFeedbackRoot, "memory/topics/dogfood-feedback.md");
+  } finally {
+    await rm(dogfoodFeedbackRoot, { recursive: true, force: true });
+  }
+
   const rejectRoot = await makeTempVault();
 
   try {
