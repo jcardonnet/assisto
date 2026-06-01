@@ -1469,6 +1469,18 @@ export async function runWorkbenchTests() {
     assert.equal(contractV3.version, "answer-contract-v3");
     assert.equal(contractV3.directAnswers.some((answer) => answer.claim_id === "clm_jeff_manager"), true);
     assert.equal(contractV3.directAnswers.some((answer) => Array.isArray(answer.citations) && answer.citations.some((citation) => citation.kind === "event")), true);
+    assert.equal(contractV3.directAnswers.some((answer) => (answer.proof_paths ?? []).length > 0), true);
+
+    const answerContractV3Alias = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/ask/answer-contract-v3?q=Who%20is%20my%20manager%3F"
+        })
+      ).body
+    );
+    assert.equal(answerContractV3Alias.version, "answer-contract-v3");
+    assert.equal(answerContractV3Alias.directAnswers.some((answer) => (answer.proof_paths ?? []).length > 0), true);
 
     const askSession = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/ask/session?q=Who%20is%20my%20manager%3F" }))
