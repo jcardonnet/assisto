@@ -85,7 +85,7 @@ import {
 } from "../../core/src/extraction";
 import { reprocessEvent } from "../../core/src/ingest";
 import { lintVault } from "../../core/src/lint";
-import { previewAnswerDraft, retrieveCitedAnswerContract, retrieveCitedAnswerContractV3, retrieveContextForAnswer } from "../../core/src/retrieval";
+import { previewAnswerDraft, retrieveCitedAnswerContract, retrieveCitedAnswerContractV3, retrieveCitedAnswerContractV4, retrieveContextForAnswer } from "../../core/src/retrieval";
 import { startWorkbenchServer } from "@assisto/workbench";
 
 export interface CliIo {
@@ -1768,19 +1768,21 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
   const answerContractQuestion = optionValue(args, "--answer-contract");
   const contractV3Question = optionValue(args, "--contract-v3");
   const answerContractV3Question = optionValue(args, "--answer-contract-v3");
+  const contractV4Question = optionValue(args, "--contract-v4");
+  const answerContractV4Question = optionValue(args, "--answer-contract-v4");
   const draftQuestion = optionValue(args, "--draft");
 
-  if ([packContextQuestion, answerBasisQuestion, answerContractQuestion, contractV3Question, answerContractV3Question, draftQuestion].filter(Boolean).length > 1) {
+  if ([packContextQuestion, answerBasisQuestion, answerContractQuestion, contractV3Question, answerContractV3Question, contractV4Question, answerContractV4Question, draftQuestion].filter(Boolean).length > 1) {
     throw new Error(
-      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --answer-contract-v3 "<question>" | --draft "<question>"'
+      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --answer-contract-v3 "<question>" | --contract-v4 "<question>" | --answer-contract-v4 "<question>" | --draft "<question>"'
     );
   }
 
-  const question = packContextQuestion ?? answerBasisQuestion ?? answerContractQuestion ?? contractV3Question ?? answerContractV3Question ?? draftQuestion;
+  const question = packContextQuestion ?? answerBasisQuestion ?? answerContractQuestion ?? contractV3Question ?? answerContractV3Question ?? contractV4Question ?? answerContractV4Question ?? draftQuestion;
 
   if (!question) {
     throw new Error(
-      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --answer-contract-v3 "<question>" | --draft "<question>"'
+      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --answer-contract-v3 "<question>" | --contract-v4 "<question>" | --answer-contract-v4 "<question>" | --draft "<question>"'
     );
   }
 
@@ -1791,6 +1793,11 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
 
   if (answerContractQuestion) {
     io.stdout(`${JSON.stringify(await retrieveCitedAnswerContract(root, question), null, 2)}\n`);
+    return 0;
+  }
+
+  if (contractV4Question || answerContractV4Question) {
+    io.stdout(`${JSON.stringify(await retrieveCitedAnswerContractV4(root, question), null, 2)}\n`);
     return 0;
   }
 
@@ -2567,6 +2574,8 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] ask --answer-contract "<question>"',
       '  wm [--root <path>] ask --contract-v3 "<question>"',
       '  wm [--root <path>] ask --answer-contract-v3 "<question>"',
+      '  wm [--root <path>] ask --contract-v4 "<question>"',
+      '  wm [--root <path>] ask --answer-contract-v4 "<question>"',
       '  wm [--root <path>] ask --draft "<question>"',
       "  wm [--root <path>] health check [--stage-review] [--note <text>]",
       "  wm [--root <path>] brief <today|person|context|review|followups|recent> [id|path]",

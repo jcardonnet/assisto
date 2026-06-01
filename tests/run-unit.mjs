@@ -13,6 +13,7 @@ import { runCoreFrameTests } from "./core-frames.mjs";
 import { runCoreFrameExtractionTests } from "./core-frame-extraction.mjs";
 import { runCoreOntologyAwareFrameTests } from "./core-ontology-aware-frames.mjs";
 import { runCoreAnswerContractV3Tests } from "./core-answer-contract-v3.mjs";
+import { runCoreAnswerContractV4Tests } from "./core-answer-contract-v4.mjs";
 import { runCoreHealthTests } from "./core-health.mjs";
 import { runCoreBriefTests } from "./core-briefs.mjs";
 import { runCoreTodayTests } from "./core-today.mjs";
@@ -49,6 +50,7 @@ export async function runUnitTests() {
   await runCoreFrameExtractionTests();
   await runCoreOntologyAwareFrameTests();
   await runCoreAnswerContractV3Tests();
+  await runCoreAnswerContractV4Tests();
   await runCoreHealthTests();
   await runCoreBriefTests();
   await runCoreTodayTests();

@@ -77,6 +77,7 @@ import {
   previewAnswerDraft,
   retrieveCitedAnswerContract,
   retrieveCitedAnswerContractV3,
+  retrieveCitedAnswerContractV4,
   retrieveContextForAnswer,
   validateTransaction,
   type AnswerDraftResult,
@@ -90,6 +91,7 @@ import {
   type WorkdayCapturePreview,
   type ContextPackResult,
   type CitedAnswerContractV3,
+  type CitedAnswerContractV4,
   type ContextNoteResult,
   type DailyQueueResult,
   type DogfoodHomeResult,
@@ -152,7 +154,7 @@ export interface WorkbenchSnapshot {
   ask: ContextPackResult | null;
 }
 
-export type WorkbenchAskBasis = ContextPackResult | CitedAnswerContractV3;
+export type WorkbenchAskBasis = ContextPackResult | CitedAnswerContractV3 | CitedAnswerContractV4;
 
 export interface WorkbenchAskSession {
   generated_at: string;
@@ -688,6 +690,13 @@ export async function handleWorkbenchRoute(
     const query = optionalQuery(requestUrl);
     return query
       ? jsonRoute(200, await retrieveCitedAnswerContractV3(root, query))
+      : jsonRoute(400, { error: "Missing required query parameter: q." });
+  }
+
+  if (requestUrl.pathname === "/api/ask/contract-v4" || requestUrl.pathname === "/api/ask/answer-contract-v4") {
+    const query = optionalQuery(requestUrl);
+    return query
+      ? jsonRoute(200, await retrieveCitedAnswerContractV4(root, query))
       : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
