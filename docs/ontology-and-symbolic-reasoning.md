@@ -76,6 +76,18 @@ type InferencePath = {
 };
 ```
 
+
+## Symbolic Reasoning Kernel v2
+
+The v10 reasoning kernel produces `symbolic-reasoning-v2` query results. It remains a derived layer:
+
+- `buildSymbolicIndex({ write: true })` may write rebuildable JSONL index artifacts under `memory/indexes/symbolic/`;
+- `wm indexes query-symbolic "<query>" [--json]` builds an in-memory symbolic index and does not write index files;
+- every match includes the source fact, source proof, and a nested proof tree;
+- transitive ontology relations such as `depends_on` and `blocks` can produce `transitive_relation` facts, with source fact IDs preserved in the proof tree.
+
+The query planner is deterministic and relation-bounded. It recognizes reporting, ownership, dependency chains, blocker chains, meeting participation, open questions, commitment due dates, changed-recently lookups, and generic proof lookup. It does not infer new canonical claims and does not resolve contradictions.
+
 ## Symbolic Index Rebuild Semantics
 
 Symbolic indexes are cache artifacts. They must be deletable and rebuildable from canonical markdown, schema/ontology policy, and deterministic rules. They should record rule version, ontology version, generated time, and input hashes.
