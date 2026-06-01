@@ -4578,7 +4578,8 @@ function renderImportTriageEditor(result = null) {
       ["Likely safe", String(result.likely_counts?.safe ?? 0)],
       ["Likely staged", String(result.likely_counts?.staged ?? 0)],
       ["Duplicates", String(result.likely_counts?.duplicates ?? 0)],
-      ["Estimated review units", String(result.estimated_review_load?.units_needing_review ?? 0)]
+      ["Estimated review units", String(result.estimated_review_load?.units_needing_review ?? 0)],
+      ["Canonical writes", String(result.canonical_writes?.length ?? 0)]
     ]) : ""}
     \${result?.session_id ? \`<div class="action-row"><button type="button" class="secondary import-session-load" data-session-id="\${escapeHtml(result.session_id)}">Reload import session</button></div>\` : ""}
     <form id="import-triage-form" class="action-stack">
@@ -4729,7 +4730,8 @@ function renderImportResult(result) {
     \${detailListHtml([
       ["Units", String(result.units_total)],
       ["Imported", String(result.units_imported)],
-      ["Skipped", String(result.units_skipped)]
+      ["Skipped", String(result.units_skipped)],
+      ["Canonical writes", String(result.canonical_writes?.length ?? 0)]
     ])}
   </article>
   <section><h2>Import units</h2><div class="grid">\${units || '<article class="item"><h3>Empty</h3><p class="meta">No import units.</p></article>'}</div></section>\`;
@@ -4770,7 +4772,8 @@ function renderImportTriageResult(result) {
       ["Likely staged", String(result.likely_counts?.staged ?? 0)],
       ["Likely conflicts", String(result.likely_counts?.conflicts ?? 0)],
       ["Duplicates", String(result.likely_counts?.duplicates ?? 0)],
-      ["Estimated review units", String(result.estimated_review_load?.units_needing_review ?? 0)]
+      ["Estimated review units", String(result.estimated_review_load?.units_needing_review ?? 0)],
+      ["Canonical writes", String(result.canonical_writes?.length ?? 0)]
     ])}
     \${plainListHtml("Duplicate groups", (result.duplicate_groups ?? []).map((group) => \`\${group.source_hash.slice(0, 12)}: \${group.unit_ids.join(", ")}\`))}
   </article>

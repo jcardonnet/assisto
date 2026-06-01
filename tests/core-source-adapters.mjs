@@ -37,6 +37,7 @@ export async function runCoreSourceAdapterTests() {
     ]);
     assert.equal(preview.review_load_forecast.total_units, 2);
     assert.equal(preview.review_load_forecast.duplicates, 0);
+    assert.deepEqual(preview.canonical_writes, []);
 
     const crlfPreview = await adapters.previewSourceAdapterImport({
       kind: "markdown",
@@ -170,6 +171,7 @@ export async function runCoreSourceAdapterTests() {
 
     assert.equal(created.created_events.length, 1);
     assert.equal(created.pending_transactions.length, 1);
+    assert.deepEqual(created.canonical_writes, []);
     assert.equal(created.units[0].duplicate_state, "new");
     assert.match(await readVaultFile(createRoot, created.created_events[0]), /source_hash: sha256:[a-f0-9]{64}/);
     assert.match(await readVaultFile(createRoot, created.created_events[0]), /source_label: team chat/);
@@ -188,6 +190,7 @@ export async function runCoreSourceAdapterTests() {
     );
     assert.equal(duplicateImport.units_imported, 0);
     assert.equal(duplicateImport.units_skipped, 1);
+    assert.deepEqual(duplicateImport.canonical_writes, []);
     assert.equal(duplicateImport.units[0].skip_reason, "duplicate_source_hash");
     assert.equal(duplicateImport.units[0].existing_event_path, created.created_events[0]);
 

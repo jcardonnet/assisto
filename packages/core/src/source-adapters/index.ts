@@ -57,6 +57,7 @@ export interface SourceAdapterPreviewResult {
     duplicates: number;
   };
   warnings: string[];
+  canonical_writes: string[];
 }
 
 export interface SourceAdapterCreateResult extends SourceAdapterPreviewResult {
@@ -195,7 +196,8 @@ async function buildPreviewResult(
       likely_conflict: 0,
       duplicates
     },
-    warnings
+    warnings,
+    canonical_writes: []
   };
 }
 
