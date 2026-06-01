@@ -33,6 +33,8 @@ import {
   createImportTriage,
   createSeedKit,
   createSourceAdapterImport,
+  listSourceInboxSessions,
+  readSourceInboxSession,
   createWorkdayCapture,
   createContextNoteTransaction,
   createEntityAliasTransaction,
@@ -530,6 +532,20 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/snapshot") {
     return jsonRoute(200, await createWorkbenchSnapshot(root, { query: optionalQuery(requestUrl), includeHealth: false }));
+  }
+
+  if (requestUrl.pathname === "/api/source-inbox") {
+    return jsonRoute(200, await listSourceInboxSessions(root));
+  }
+
+  if (requestUrl.pathname === "/api/source-inbox/session") {
+    const sessionId = requestUrl.searchParams.get("id");
+
+    if (!sessionId) {
+      return jsonRoute(400, { error: "Source Inbox session id is required." });
+    }
+
+    return jsonRoute(200, await readSourceInboxSession(root, sessionId));
   }
 
   if (requestUrl.pathname === "/api/today") {

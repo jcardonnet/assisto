@@ -29,6 +29,7 @@ export * from "./seed";
 export * from "./import";
 export * from "./sources";
 export * from "./source-adapters";
+export * from "./source-inbox";
 export * from "./workday-capture";
 export * from "./entities";
 export * from "./contexts";

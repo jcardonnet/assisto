@@ -1266,6 +1266,34 @@ export async function runWorkbenchTests() {
     });
     assert.equal(importAssistantReadOnly.status, 405);
 
+    const inbox = await loadTsModule("packages/core/src/source-inbox/index.ts");
+    await inbox.createSourceInboxSession(root, {
+      session_id: "srcin_20260601120000_workbench",
+      adapter_kind: "markdown",
+      source_label: "workbench inbox",
+      now: "2026-06-01T12:00:00Z",
+      units: [{ unit_id: "markdown_1", source_hash: "sha256:" + "d".repeat(64), source_label: "workbench inbox" }]
+    });
+    const sourceInbox = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/source-inbox"
+        })
+      ).body
+    );
+    assert.equal(sourceInbox.session_count, 1);
+    assert.equal(sourceInbox.sessions[0].session_id, "srcin_20260601120000_workbench");
+    const sourceInboxSession = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/source-inbox/session?id=srcin_20260601120000_workbench"
+        })
+      ).body
+    );
+    assert.equal(sourceInboxSession.units[0].source_hash, "sha256:" + "d".repeat(64));
+
     const importTriageCreateRoot = await makeTempVault("assisto-workbench-import-triage-route-");
 
     try {
