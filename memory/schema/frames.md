@@ -120,7 +120,7 @@ unknown-relation, and high-risk relation-change review reasons.
 
 Rule-based detectors may emit candidate_frames in ingest and reprocess results. These frames are preview/response data only: they are not serialized into Event raw text and they do not add proposed canonical page writes by themselves.
 
-Current deterministic frame extraction covers manager/reporting relations, role-title attributes, scoped and unscoped technology-use relations, decision statements, and open questions when those signals appear explicitly in the source note.
+Current deterministic frame extraction covers manager/reporting relations, role-title attributes, scoped and unscoped technology-use relations, ownership and maintenance relations, dependencies, blockers, risk impact, meeting participation and discussion subjects, explicit commitments and due dates, decision statements, open questions, and explicit role/reporting changes when those signals appear in the source note. Unknown scope and high-risk relation changes remain review-gated by frame and ontology validation.
 
 ## Write Safety
 
