@@ -11,6 +11,7 @@ import {
   buildDogfoodHomeResult,
   buildContextDashboardResult,
   buildContextOperatingRoomResult,
+  buildContextOperatingRoomV3,
   buildContextTimelineResult,
   buildEntityStewardshipResult,
   buildImportAssistantResult,
@@ -53,6 +54,7 @@ import {
   transactionFilePaths,
   validateDocuments,
   validateTransaction,
+  type EntityClaimSummary,
   type EntityRepairActionV2Kind,
   type FrontmatterValue,
   type ImportAssistantResult,
@@ -1011,16 +1013,61 @@ async function commandMode(root: string, args: string[], io: CliIo): Promise<num
   return 0;
 }
 
+async function buildCliContextOperatingRoomV3(root: string, target: string) {
+  const room = await buildContextOperatingRoomResult(root, target);
+  const symbolicIndex = await buildSymbolicIndex({ root });
+  const claims = uniqueCliContextRoomClaims([
+    ...room.currentState,
+    ...room.decisions,
+    ...room.openQuestions,
+    ...room.staleClaims
+  ]);
+  const claimIds = new Set(claims.map((claim) => claim.claim_id));
+  const symbolicFacts = symbolicIndex.derived_facts
+    .filter((fact) => fact.source_claim_ids.some((claimId) => claimIds.has(claimId)) || fact.relation.includes("system"))
+    .map((fact) => ({ fact_id: fact.fact_id, relation: fact.relation, source_events: fact.source_events }));
+  const result = buildContextOperatingRoomV3({
+    context: { id: room.context.id ?? room.context.path, name: room.context.name },
+    claims: claims.map((claim) => ({ claim_id: claim.claim_id, text: claim.statement, source_events: claim.evidence })),
+    symbolicFacts,
+    reviewItems: room.reviewQueue,
+    followUps: room.followupQueue
+  });
+
+  return {
+    version: "context-operating-room-v3",
+    generated_at: room.generated_at,
+    ...result,
+    citations: room.citations,
+    warnings: room.warnings
+  };
+}
+
+function uniqueCliContextRoomClaims(claims: EntityClaimSummary[]): EntityClaimSummary[] {
+  const seen = new Set<string>();
+  const output: EntityClaimSummary[] = [];
+
+  for (const claim of claims) {
+    if (seen.has(claim.claim_id)) {
+      continue;
+    }
+    seen.add(claim.claim_id);
+    output.push(claim);
+  }
+
+  return output;
+}
+
 async function commandContext(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand, target, ...rest] = args;
-  const usage = "Usage: wm context <dashboard|operating-room|timeline> <id|path> [--json]";
+  const usage = "Usage: wm context <dashboard|operating-room|operating-room-v3|timeline> <id|path> [--json]";
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     io.stdout(`${usage}\n`);
     return 0;
   }
 
-  if ((subcommand !== "dashboard" && subcommand !== "operating-room" && subcommand !== "timeline") || !target) {
+  if ((subcommand !== "dashboard" && subcommand !== "operating-room" && subcommand !== "operating-room-v3" && subcommand !== "timeline") || !target) {
     throw new Error(usage);
   }
 
@@ -1053,6 +1100,22 @@ async function commandContext(root: string, args: string[], io: CliIo): Promise<
       }
     }
 
+    return 0;
+  }
+
+  if (subcommand === "operating-room-v3") {
+    const result = await buildCliContextOperatingRoomV3(root, target);
+
+    if (rest.includes("--json")) {
+      io.stdout(JSON.stringify(result, null, 2) + "\n");
+      return 0;
+    }
+
+    io.stdout("Context operating room v3: " + result.context.name + "\n");
+    io.stdout("Current facts: " + result.currentState.length + "\n");
+    io.stdout("Decisions: " + result.decisions.length + "\n");
+    io.stdout("Open questions: " + result.openQuestions.length + "\n");
+    io.stdout("Symbolic facts: " + result.symbolicFacts.length + "\n");
     return 0;
   }
 
@@ -2153,6 +2216,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] mode <morning|end-day|meeting|after-meeting> [id|path] [--json]",
       "  wm [--root <path>] context dashboard <id|path> [--json]",
       "  wm [--root <path>] context operating-room <id|path> [--json]",
+      "  wm [--root <path>] context operating-room-v3 <id|path> [--json]",
       "  wm [--root <path>] context timeline <id|path> [--json]",
       "  wm [--root <path>] entities stewardship [--kind person|topic|context] [--json]",
       "  wm [--root <path>] entities repair-v2 --kind <alias|role|reporting|ownership|identity_review> --id <id|path> [--json]",

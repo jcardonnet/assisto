@@ -696,6 +696,20 @@ export async function runCliIntegrationTests() {
     assert.equal(contextOperatingRoomJson.context.id, "ctx_inventory_project");
     assert.equal(contextOperatingRoomJson.quickActions.some((action) => action.action_id === "capture_context_note"), true);
 
+    const contextOperatingRoomV3 = await runWm(todayRoot, ["context", "operating-room-v3", "ctx_inventory_project"]);
+    assert.match(contextOperatingRoomV3.stdout, /Context operating room v3: Inventory Project/);
+    assert.match(contextOperatingRoomV3.stdout, /Symbolic facts:/);
+
+    const contextOperatingRoomV3JsonResult = await runWm(todayRoot, [
+      "context",
+      "operating-room-v3",
+      "ctx_inventory_project",
+      "--json"
+    ]);
+    const contextOperatingRoomV3Json = JSON.parse(contextOperatingRoomV3JsonResult.stdout);
+    assert.equal(contextOperatingRoomV3Json.version, "context-operating-room-v3");
+    assert.equal(contextOperatingRoomV3Json.canonical_writes.length, 0);
+
     const contextTimeline = await runWm(todayRoot, ["context", "timeline", "ctx_inventory_project"]);
     assert.match(contextTimeline.stdout, /Context timeline: Inventory Project/);
     assert.match(contextTimeline.stdout, /Timeline items:/);
