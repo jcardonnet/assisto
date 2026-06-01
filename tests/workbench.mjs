@@ -1930,6 +1930,16 @@ summary_generated_from:
       const jeffreyRisk = stewardship.items.find((item) => item.id === "per_jeffrey");
       assert.equal(jeffreyRisk.aliasConflicts.some((item) => item.alias === "Jeff"), true);
 
+      const stewardshipV2 = JSON.parse(
+        (await workbench.handleWorkbenchRoute(riskRoot, { method: "GET", url: "/api/entities/stewardship-v2?kind=person" })).body
+      );
+      assert.equal(stewardshipV2.version, "entity-stewardship-v2");
+      assert.equal(stewardshipV2.summary.identity_risk >= 1, true);
+      const jeffRiskV2 = stewardshipV2.items.find((item) => item.id === "per_jeff");
+      assert.equal(jeffRiskV2.recommendedReviewLane, "identity_risk");
+      assert.equal(jeffRiskV2.nearDuplicates.includes("per_jeffrey"), true);
+      assert.equal(jeffRiskV2.symbolicFactIds.some((id) => id.startsWith("sym_fact_")), true);
+
       const riskDetail = JSON.parse(
         (await workbench.handleWorkbenchRoute(riskRoot, { method: "GET", url: "/api/entities/detail?id=per_jeff" })).body
       );

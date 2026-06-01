@@ -12,6 +12,8 @@ import {
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
   buildEntityStewardshipResult,
+  buildEntityStewardshipV2,
+  buildSymbolicIndex,
   buildImportAssistantResult,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
@@ -84,7 +86,9 @@ import {
   type PersonalDogfoodEvalResult,
   type ExtractionProvider,
   type EntityKind,
+  type EntityClaimSummary,
   type EntityStewardshipPreview,
+  type EntityStewardshipV2Result,
   type FrictionLogCreateResult,
   type FrictionLogPreviewResult,
   type FrontmatterValue,
@@ -667,6 +671,16 @@ export async function handleWorkbenchRoute(
     }
 
     return jsonRoute(200, await buildEntityStewardshipResult(root, kind));
+  }
+
+  if (requestUrl.pathname === "/api/entities/stewardship-v2") {
+    const kind = optionalEntityKind(requestUrl);
+
+    if (!kind) {
+      return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
+    }
+
+    return jsonRoute(200, await buildWorkbenchEntityStewardshipV2(root, kind));
   }
 
   if (requestUrl.pathname === "/api/entities/stewardship/detail") {
@@ -1488,6 +1502,96 @@ async function createDogfoodEvalRun(root: string, input: Record<string, unknown>
   return runPersonalDogfoodEval(root, {
     questionsPath: questionsPath ? path.resolve(root, questionsPath) : undefined
   });
+}
+
+async function buildWorkbenchEntityStewardshipV2(root: string, kind: EntityKind): Promise<{
+  version: "entity-stewardship-v2";
+  generated_at: string;
+  kind: EntityKind;
+  items: Array<EntityStewardshipV2Result & { id?: string; path: string; type?: string; name: string; legacyReviewLane?: string }>;
+  summary: Record<string, number>;
+  warnings: string[];
+}> {
+  const base = await buildEntityStewardshipResult(root, kind);
+  const symbolicIndex = await buildSymbolicIndex({ root });
+  const items: Array<EntityStewardshipV2Result & { id?: string; path: string; type?: string; name: string; legacyReviewLane?: string }> = [];
+
+  for (const item of base.items) {
+    const detail = await getEntityDetail(root, item.id ?? item.path);
+    const claims = entityStewardshipV2Claims([
+      ...detail.activeClaims,
+      ...detail.stagedClaims,
+      ...detail.supersededClaims,
+      ...detail.staleClaims,
+      ...detail.conflictingClaims
+    ]);
+    const v2 = buildEntityStewardshipV2({
+      entity: {
+        id: detail.id ?? detail.path,
+        kind: detail.type ?? kind,
+        name: detail.name,
+        aliases: detail.aliases
+      },
+      claims,
+      symbolicFacts: symbolicIndex.derived_facts,
+      nearDuplicates: (detail.nearDuplicates ?? []).map((candidate) => candidate.id ?? candidate.path),
+      aliasConflicts: (detail.aliasConflicts ?? []).map((candidate) => candidate.alias)
+    });
+
+    items.push({
+      ...v2,
+      id: detail.id,
+      path: detail.path,
+      type: detail.type,
+      name: detail.name,
+      legacyReviewLane: detail.recommendedReviewLane
+    });
+  }
+
+  return {
+    version: "entity-stewardship-v2",
+    generated_at: base.generated_at,
+    kind,
+    items,
+    summary: {
+      total: items.length,
+      safe: items.filter((item) => item.recommendedReviewLane === "safe").length,
+      identity_risk: items.filter((item) => item.recommendedReviewLane === "identity_risk").length,
+      role_change: items.filter((item) => item.recommendedReviewLane === "role_change").length,
+      reporting_change: items.filter((item) => item.recommendedReviewLane === "reporting_change").length,
+      ownership_change: items.filter((item) => item.recommendedReviewLane === "ownership_change").length,
+      stale: items.filter((item) => item.recommendedReviewLane === "stale").length,
+      conflict: items.filter((item) => item.recommendedReviewLane === "conflict").length
+    },
+    warnings: uniqueStrings([
+      ...base.warnings,
+      "Entity stewardship v2 adds derived ontology and symbolic-risk lanes only.",
+      "No merge, split, delete, supersession, or canonical edit occurs from this endpoint."
+    ])
+  };
+}
+
+function entityStewardshipV2Claims(claims: EntityClaimSummary[]) {
+  const seen = new Set<string>();
+  const output = [];
+
+  for (const claim of claims) {
+    if (seen.has(claim.claim_id)) {
+      continue;
+    }
+
+    seen.add(claim.claim_id);
+    output.push({
+      claim_id: claim.claim_id,
+      text: claim.statement,
+      claim_state: claim.claim_state,
+      source_events: claim.evidence,
+      scope_state: claim.scope_state,
+      valid_to: claim.valid_to
+    });
+  }
+
+  return output;
 }
 
 async function createEntityAliasPreview(
