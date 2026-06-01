@@ -59,9 +59,22 @@ export async function runCoreSourceInboxTests() {
     await assert.rejects(() => readVaultFile(root, "memory/events/2026/2026-06/2026-06-01-001.md"), /ENOENT/);
     await assert.rejects(() => readVaultFile(root, "memory/transactions/pending/tx_2026_06_01_001.md"), /ENOENT/);
 
-    const cleared = await inbox.clearSourceInboxSessions(root, { session_id: "srcin_20260601120000_demo" });
-    assert.equal(cleared.cleared_count, 1);
-    assert.deepEqual(cleared.removed_sessions, ["srcin_20260601120000_demo"]);
+    const adapters = await loadTsModule("packages/core/src/source-adapters/index.ts");
+    const preview = await adapters.previewSourceAdapterImport({
+      kind: "slack_json",
+      root,
+      rawText: JSON.stringify({ messages: [{ user_name: "Joe", text: "Search depends on Billing." }] })
+    });
+    const previewSession = await inbox.createSourceInboxSessionFromPreview(root, preview, {
+      now: "2026-06-01T13:00:00Z",
+      source_label: "slack export"
+    });
+    assert.equal(previewSession.adapter_kind, "slack_json");
+    assert.equal(previewSession.units[0].metadata.platform, "slack");
+
+    const cleared = await inbox.clearSourceInboxSessions(root);
+    assert.equal(cleared.cleared_count, 2);
+    assert.deepEqual(cleared.removed_sessions.sort(), ["srcin_20260601120000_demo", previewSession.session_id].sort());
     assert.equal((await inbox.listSourceInboxSessions(root)).session_count, 0);
   } finally {
     await rm(root, { recursive: true, force: true });

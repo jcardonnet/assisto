@@ -8,8 +8,29 @@ import { collectCalendarSourceUnits } from "./calendar";
 import { collectChatSourceUnits } from "./chat";
 import { collectEmailSourceUnits } from "./email";
 import { collectMarkdownSourceUnits } from "./markdown";
+import {
+  collectGithubJsonSourceUnits,
+  collectIcsSourceUnits,
+  collectMboxSourceUnits,
+  collectSlackJsonSourceUnits,
+  collectTeamsJsonSourceUnits,
+  collectTrackerCsvSourceUnits
+} from "./export-kinds";
 
-export type SourceAdapterKind = "markdown" | "text" | "email" | "calendar" | "chat";
+export type SourceAdapterKind =
+  | "markdown"
+  | "text"
+  | "email"
+  | "calendar"
+  | "chat"
+  | "eml"
+  | "mbox"
+  | "ics"
+  | "slack_json"
+  | "teams_json"
+  | "github_json"
+  | "tracker_csv"
+  | "repo_markdown";
 
 export interface SourceSpan {
   source_path?: string;
@@ -139,14 +160,43 @@ async function withResolvedRawText(input: SourceAdapterInput): Promise<SourceAda
 }
 
 async function collectParsedUnits(input: SourceAdapterInput): Promise<SourceAdapterParsedUnit[]> {
-  const units =
-    input.kind === "email"
-      ? collectEmailSourceUnits(input)
-      : input.kind === "calendar"
-        ? collectCalendarSourceUnits(input)
-        : input.kind === "chat"
-          ? collectChatSourceUnits(input)
-          : collectMarkdownSourceUnits(input);
+  let units: SourceAdapterParsedUnit[];
+
+  switch (input.kind) {
+    case "email":
+    case "eml":
+      units = collectEmailSourceUnits(input);
+      break;
+    case "mbox":
+      units = collectMboxSourceUnits(input);
+      break;
+    case "calendar":
+      units = collectCalendarSourceUnits(input);
+      break;
+    case "ics":
+      units = collectIcsSourceUnits(input);
+      break;
+    case "chat":
+      units = collectChatSourceUnits(input);
+      break;
+    case "slack_json":
+      units = collectSlackJsonSourceUnits(input);
+      break;
+    case "teams_json":
+      units = collectTeamsJsonSourceUnits(input);
+      break;
+    case "github_json":
+      units = collectGithubJsonSourceUnits(input);
+      break;
+    case "tracker_csv":
+      units = collectTrackerCsvSourceUnits(input);
+      break;
+    case "repo_markdown":
+    case "markdown":
+    case "text":
+      units = collectMarkdownSourceUnits(input);
+      break;
+  }
 
   return limitParsedUnits(units, input.limit);
 }

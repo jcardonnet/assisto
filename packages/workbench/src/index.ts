@@ -33,6 +33,7 @@ import {
   createImportTriage,
   createSeedKit,
   createSourceAdapterImport,
+  createSourceInboxSessionFromPreview,
   listSourceInboxSessions,
   readSourceInboxSession,
   createWorkdayCapture,
@@ -919,6 +920,10 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createImportTriagePreview(root, input, true));
     }
 
+    if (pathname === "/api/source-inbox/preview") {
+      return jsonRoute(200, await createSourceInboxPreview(root, input));
+    }
+
     if (pathname === "/api/source/import/preview") {
       return jsonRoute(200, await createSourceAdapterPreview(root, input, false));
     }
@@ -1192,14 +1197,33 @@ async function createImportTriagePreview(
   return { ...result, session_id: session.session_id };
 }
 
+async function createSourceInboxPreview(
+  root: string,
+  input: Record<string, unknown>
+): Promise<SourceAdapterPreviewResult & { source_inbox_session: Awaited<ReturnType<typeof createSourceInboxSessionFromPreview>> }> {
+  const adapterInput = sourceAdapterInputFromWorkbench(root, input, true);
+  const preview = await previewSourceAdapterImport(adapterInput);
+  const sourceInboxSession = await createSourceInboxSessionFromPreview(root, preview, {
+    source_path: adapterInput.path,
+    source_label: adapterInput.source_label
+  });
+
+  return { ...preview, source_inbox_session: sourceInboxSession };
+}
+
 async function createSourceAdapterPreview(
   root: string,
   input: Record<string, unknown>,
   created: boolean
 ): Promise<SourceAdapterPreviewResult | SourceAdapterCreateResult> {
-  const kind = sourceAdapterKindInput(input);
-  const adapterInput = {
-    kind,
+  const adapterInput = sourceAdapterInputFromWorkbench(root, input, !created);
+
+  return created ? createSourceAdapterImport(adapterInput) : previewSourceAdapterImport(adapterInput);
+}
+
+function sourceAdapterInputFromWorkbench(root: string, input: Record<string, unknown>, dryRun: boolean) {
+  return {
+    kind: sourceAdapterKindInput(input),
     root,
     text: undefined,
     path: optionalStringInput(input, "path") ?? undefined,
@@ -1208,20 +1232,32 @@ async function createSourceAdapterPreview(
     observed_at: optionalStringInput(input, "observedAt", "observed_at") ?? undefined,
     context: optionalStringInput(input, "context") ?? undefined,
     limit: optionalPositiveIntegerInput(input, "limit"),
-    dryRun: !created
+    dryRun
   };
-
-  return created ? createSourceAdapterImport(adapterInput) : previewSourceAdapterImport(adapterInput);
 }
 
 function sourceAdapterKindInput(input: Record<string, unknown>): SourceAdapterKind {
   const value = optionalStringInput(input, "kind");
 
-  if (value === "markdown" || value === "text" || value === "email" || value === "calendar" || value === "chat") {
+  if (
+    value === "markdown" ||
+    value === "text" ||
+    value === "email" ||
+    value === "calendar" ||
+    value === "chat" ||
+    value === "eml" ||
+    value === "mbox" ||
+    value === "ics" ||
+    value === "slack_json" ||
+    value === "teams_json" ||
+    value === "github_json" ||
+    value === "tracker_csv" ||
+    value === "repo_markdown"
+  ) {
     return value;
   }
 
-  throw new Error("Source adapter import requires kind markdown, text, email, calendar, or chat.");
+  throw new Error("Source adapter import requires a supported source adapter kind.");
 }
 
 interface ImportSessionRecord {

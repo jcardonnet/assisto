@@ -1294,6 +1294,22 @@ export async function runWorkbenchTests() {
     );
     assert.equal(sourceInboxSession.units[0].source_hash, "sha256:" + "d".repeat(64));
 
+    const sourceInboxPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/source-inbox/preview",
+          body: JSON.stringify({
+            kind: "github_json",
+            rawText: JSON.stringify({ issues: [{ number: 7, title: "Search owner", body: "Joe owns Search." }] })
+          })
+        })
+      ).body
+    );
+    assert.equal(sourceInboxPreview.adapter_kind, "github_json");
+    assert.equal(sourceInboxPreview.source_inbox_session.adapter_kind, "github_json");
+    assert.equal(sourceInboxPreview.source_inbox_session.units[0].metadata.platform, "github");
+
     const importTriageCreateRoot = await makeTempVault("assisto-workbench-import-triage-route-");
 
     try {
