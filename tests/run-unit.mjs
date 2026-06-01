@@ -19,6 +19,7 @@ import { runCoreActivationTests } from "./core-activation.mjs";
 import { runCoreDailyTests } from "./core-daily.mjs";
 import { runCoreUseTomorrowTests } from "./core-use-tomorrow.mjs";
 import { runCoreWorkdayModeTests } from "./core-workday-modes.mjs";
+import { runCoreSourcesTests } from "./core-sources.mjs";
 import { runCoreSourceAdapterTests } from "./core-source-adapters.mjs";
 import { runCoreWorkdayCaptureTests } from "./core-workday-capture.mjs";
 
@@ -43,6 +44,7 @@ export async function runUnitTests() {
   await runCoreDailyTests();
   await runCoreUseTomorrowTests();
   await runCoreWorkdayModeTests();
+  await runCoreSourcesTests();
   await runCoreSourceAdapterTests();
   await runCoreWorkdayCaptureTests();
 }

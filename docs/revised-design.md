@@ -2457,6 +2457,10 @@ Email → Context directly
 
 All adapters must output normalized Events, then use the normal extraction → transaction → validation path.
 
+### Source adapter boundary
+
+Source adapters normalize curated inputs into source units with raw text, source label, observed time, path when available, and `source_hash`. They do not extract active truth and do not write canonical Person, Topic, Context, FollowUp, or ReviewItem pages. Adapter output may be routed into existing Event and Transaction creation paths. The compatibility `sources` API is a small deterministic facade over this boundary for tests, tooling, and future adapter integrations.
+
 ### Future evidence granularity ladder
 
 MVP provenance requires each durable claim to cite at least one Event ID. For short notes this is sufficient. For transcripts, documents, and longer imported material, claims should eventually cite a source span.
