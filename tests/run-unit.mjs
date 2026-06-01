@@ -28,6 +28,7 @@ import { runCoreWorkdayCaptureTests } from "./core-workday-capture.mjs";
 import { runSymbolicIndexBuilderTests } from "./symbolic-index-builder.mjs";
 import { runSymbolicQueryTests } from "./symbolic-query.mjs";
 import { runEntityStewardshipV2Tests } from "./entity-stewardship-v2.mjs";
+import { runEntityRepairActionsV2Tests } from "./entity-repair-actions-v2.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -59,6 +60,7 @@ export async function runUnitTests() {
   await runSymbolicIndexBuilderTests();
   await runSymbolicQueryTests();
   await runEntityStewardshipV2Tests();
+  await runEntityRepairActionsV2Tests();
 }
 
 export function assertRequiredPaths() {

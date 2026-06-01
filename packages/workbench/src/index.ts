@@ -57,6 +57,7 @@ import {
   transactionFilePaths,
   previewCaptureNote,
   previewCaptureFeedback,
+  previewEntityRepairActionV2,
   previewFrictionLog,
   previewImportNotes,
   previewImportTriage,
@@ -86,6 +87,8 @@ import {
   type PersonalDogfoodEvalResult,
   type ExtractionProvider,
   type EntityKind,
+  type EntityRepairActionV2Kind,
+  type EntityRepairActionV2Preview,
   type EntityClaimSummary,
   type EntityStewardshipPreview,
   type EntityStewardshipV2Result,
@@ -940,6 +943,15 @@ async function handleWorkbenchPostRoute(
       return jsonRoute(200, await createEntityContextPreview(root, input, true));
     }
 
+    if (pathname === "/api/entities/repair-v2/preview") {
+      return jsonRoute(200, await createEntityRepairActionV2(root, input, false));
+    }
+
+    if (pathname === "/api/entities/repair-v2/stage") {
+      const result = await createEntityRepairActionV2(root, input, true);
+      return jsonRoute(result.allowed === false ? 400 : 200, result);
+    }
+
     if (pathname === "/api/entities/role/preview") {
       return jsonRoute(200, await createEntityClaimRepairPreview(root, input, "role", false));
     }
@@ -1628,6 +1640,96 @@ async function createEntityContextPreview(
     ...result,
     created
   };
+}
+
+async function createEntityRepairActionV2(
+  root: string,
+  input: Record<string, unknown>,
+  created: boolean
+): Promise<EntityRepairActionV2Preview | (EntityRepairActionV2Preview & { created: true; staged: EntityStewardshipPreview })> {
+  const kind = requiredEntityRepairActionV2Kind(input);
+  const id = requiredStringInput(input, "id", "entityId", "entity_id");
+  const note = optionalStringInput(input, "note") ?? undefined;
+  const newTargetId = optionalStringInput(input, "newTargetId", "new_target_id", "target") ?? undefined;
+  const alias = optionalStringInput(input, "alias") ?? undefined;
+  const statement = optionalStringInput(input, "statement") ?? undefined;
+  const supersedeClaimId = optionalStringInput(input, "supersede", "supersedeClaimId", "supersede_claim_id") ?? undefined;
+  const preview = previewEntityRepairActionV2({
+    kind,
+    entityId: id,
+    newTargetId,
+    statement,
+    alias,
+    supersedeClaimId,
+    note
+  });
+
+  if (!created || !preview.allowed) {
+    return preview;
+  }
+
+  const staged = await stageEntityRepairActionV2(root, input, kind, id, { alias, statement, newTargetId, note, supersedeClaimId });
+  return {
+    ...preview,
+    created: true,
+    staged
+  };
+}
+
+function requiredEntityRepairActionV2Kind(input: Record<string, unknown>): EntityRepairActionV2Kind {
+  const kind = requiredStringInput(input, "kind");
+  if (kind === "alias" || kind === "role" || kind === "reporting" || kind === "ownership" || kind === "identity_review") {
+    return kind;
+  }
+
+  throw new Error("Repair action kind must be alias, role, reporting, ownership, or identity_review.");
+}
+
+async function stageEntityRepairActionV2(
+  root: string,
+  input: Record<string, unknown>,
+  kind: EntityRepairActionV2Kind,
+  id: string,
+  values: { alias?: string; statement?: string; newTargetId?: string; note?: string; supersedeClaimId?: string }
+): Promise<EntityStewardshipPreview> {
+  if (kind === "alias") {
+    return createEntityAliasPreview(root, {
+      ...input,
+      id,
+      alias: values.alias ?? values.newTargetId,
+      note: values.note
+    }, true);
+  }
+
+  if (kind === "identity_review") {
+    return createEntityIdentityReviewPreview(root, {
+      ...input,
+      id,
+      note: values.note,
+      reason: values.note ?? "Needs identity review."
+    }, true);
+  }
+
+  return createEntityClaimRepairPreview(root, {
+    ...input,
+    id,
+    statement: values.statement ?? entityRepairActionV2Statement(kind, id, values.newTargetId),
+    note: values.note,
+    supersedeClaimId: values.supersedeClaimId
+  }, kind, true);
+}
+
+function entityRepairActionV2Statement(kind: Exclude<EntityRepairActionV2Kind, "alias" | "identity_review">, id: string, target?: string): string {
+  const normalizedTarget = target ?? "the selected target";
+  if (kind === "reporting") {
+    return id + " reports to " + normalizedTarget + ".";
+  }
+
+  if (kind === "ownership") {
+    return id + " owns " + normalizedTarget + ".";
+  }
+
+  return id + " role is " + normalizedTarget + ".";
 }
 
 async function createEntityClaimRepairPreview(

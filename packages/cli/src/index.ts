@@ -36,6 +36,7 @@ import {
   previewCaptureNote,
   previewWorkdayCapture,
   previewCaptureFeedback,
+  previewEntityRepairActionV2,
   previewFrictionLog,
   previewImportNotes,
   previewSeedKit,
@@ -52,6 +53,7 @@ import {
   transactionFilePaths,
   validateDocuments,
   validateTransaction,
+  type EntityRepairActionV2Kind,
   type FrontmatterValue,
   type ImportAssistantResult,
   type ImportNotesResult,
@@ -1111,8 +1113,12 @@ async function commandEntities(root: string, args: string[], io: CliIo): Promise
     return 0;
   }
 
+  if (subcommand === "repair-v2") {
+    return commandEntityRepairV2(rest, io);
+  }
+
   if (subcommand !== "stewardship") {
-    throw new Error("Usage: wm entities stewardship [--kind person|topic|context] [--json]");
+    throw new Error("Usage: wm entities <stewardship|repair-v2> [options]");
   }
 
   const kind = optionValue(rest, "--kind") ?? "person";
@@ -1145,6 +1151,49 @@ async function commandEntities(root: string, args: string[], io: CliIo): Promise
   }
 
   return 0;
+}
+
+async function commandEntityRepairV2(args: string[], io: CliIo): Promise<number> {
+  const kind = optionValue(args, "--kind");
+  const entityId = optionValue(args, "--id") ?? optionValue(args, "--entity");
+  const json = args.includes("--json");
+
+  if (!kind || !entityId) {
+    throw new Error("Usage: wm entities repair-v2 --kind <alias|role|reporting|ownership|identity_review> --id <id|path> [--target <id>] [--statement <text>] [--alias <text>] [--supersede <claim-id>] [--note <text>] [--json]");
+  }
+
+  if (!isEntityRepairActionV2Kind(kind)) {
+    throw new Error("Repair action kind must be alias, role, reporting, ownership, or identity_review.");
+  }
+
+  const result = previewEntityRepairActionV2({
+    kind,
+    entityId,
+    newTargetId: optionValue(args, "--target") ?? undefined,
+    statement: optionValue(args, "--statement") ?? undefined,
+    alias: optionValue(args, "--alias") ?? undefined,
+    supersedeClaimId: optionValue(args, "--supersede") ?? undefined,
+    note: optionValue(args, "--note") ?? undefined
+  });
+
+  if (json) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return result.allowed ? 0 : 1;
+  }
+
+  io.stdout("Entity repair v2: " + (result.allowed ? "allowed" : "blocked") + "\n");
+  for (const error of result.errors) {
+    io.stdout("- " + error.code + ": " + error.message + "\n");
+  }
+  if (result.transaction) {
+    io.stdout("Operations: " + result.transaction.operations.map((operation) => operation.op).join(", ") + "\n");
+  }
+
+  return result.allowed ? 0 : 1;
+}
+
+function isEntityRepairActionV2Kind(kind: string): kind is EntityRepairActionV2Kind {
+  return kind === "alias" || kind === "role" || kind === "reporting" || kind === "ownership" || kind === "identity_review";
 }
 
 async function commandDogfood(root: string, args: string[], io: CliIo): Promise<number> {
@@ -2106,6 +2155,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] context operating-room <id|path> [--json]",
       "  wm [--root <path>] context timeline <id|path> [--json]",
       "  wm [--root <path>] entities stewardship [--kind person|topic|context] [--json]",
+      "  wm [--root <path>] entities repair-v2 --kind <alias|role|reporting|ownership|identity_review> --id <id|path> [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",
