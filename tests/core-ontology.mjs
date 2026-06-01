@@ -26,14 +26,22 @@ export async function runCoreOntologyTests() {
     await writeRegistry(root, ontology.defaultOntologyRegistry);
     const registry = await ontology.loadOntologyRegistry(root);
 
-    assert.equal(registry.ontology_version, "2026-05-31.1");
+    assert.equal(registry.ontology_version, "2026-06-01.1");
     assert.equal(registry.relations.some((relation) => relation.relation === "reports_to"), true);
 
     const reportsTo = registry.relations.find((relation) => relation.relation === "reports_to");
     assert.equal(reportsTo.domain, "Person");
     assert.equal(reportsTo.range, "Person");
-    assert.equal(reportsTo.requires_scope, true);
+    assert.equal(reportsTo.requires_scope, false);
     assert.equal(reportsTo.review_risk, "high");
+    assert.equal(reportsTo.review_lane, "reporting_change");
+    assert.equal(reportsTo.cardinality, "many_to_one");
+
+    const defaultRegistry = ontology.loadDefaultOntologyRegistry();
+    assert.equal(defaultRegistry.ontology_version, registry.ontology_version);
+    assert.equal(ontology.findOntologyRelation(defaultRegistry, "manages").inverse, "reports_to");
+    assert.equal(ontology.findOntologyRelation(defaultRegistry, "owns_system").domain, "Person");
+    assert.equal(ontology.findOntologyRelation(defaultRegistry, "owned_by").range, "Person");
 
     const validOwnership = ontology.validateOntologyFrame({
       subject_kind: "Person",

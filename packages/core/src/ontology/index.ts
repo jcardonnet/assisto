@@ -3,6 +3,8 @@ import path from "node:path";
 
 export type OntologyEntityKind = "Person" | "Context" | "Topic" | "System" | "Team" | "Role";
 export type OntologyReviewRisk = "low" | "medium" | "high";
+export type OntologyRelationCardinality = "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many";
+export type OntologyReviewLane = "none" | "role_change" | "reporting_change" | "ownership_change" | "identity_risk" | "technology_change" | "dependency_change";
 export type OntologyFrameChangeType = "new" | "change";
 
 export interface OntologyRelationDefinition {
@@ -12,6 +14,8 @@ export interface OntologyRelationDefinition {
   inverse?: string;
   requires_scope?: boolean;
   review_risk?: OntologyReviewRisk;
+  review_lane?: OntologyReviewLane;
+  cardinality?: OntologyRelationCardinality;
   transitive?: boolean;
   symmetric?: boolean;
 }
@@ -57,7 +61,7 @@ export interface OntologyFrameValidationResult {
 }
 
 export const defaultOntologyRegistry: OntologyRegistry = {
-  ontology_version: "2026-05-31.1",
+  ontology_version: "2026-06-01.1",
   entity_kinds: ["Person", "Context", "Topic", "System", "Team", "Role"],
   relations: [
     {
@@ -65,8 +69,20 @@ export const defaultOntologyRegistry: OntologyRegistry = {
       domain: "Person",
       range: "Person",
       inverse: "manages",
-      requires_scope: true,
-      review_risk: "high"
+      requires_scope: false,
+      review_risk: "high",
+      review_lane: "reporting_change",
+      cardinality: "many_to_one"
+    },
+    {
+      relation: "manages",
+      domain: "Person",
+      range: "Person",
+      inverse: "reports_to",
+      requires_scope: false,
+      review_risk: "high",
+      review_lane: "reporting_change",
+      cardinality: "one_to_many"
     },
     {
       relation: "owns",
@@ -74,24 +90,61 @@ export const defaultOntologyRegistry: OntologyRegistry = {
       range: ["Context", "System", "Topic"],
       inverse: "owned_by",
       requires_scope: true,
-      review_risk: "medium"
+      review_risk: "medium",
+      review_lane: "ownership_change",
+      cardinality: "many_to_many"
+    },
+    {
+      relation: "owns_system",
+      domain: "Person",
+      range: "Topic",
+      inverse: "owned_by",
+      requires_scope: true,
+      review_risk: "medium",
+      review_lane: "ownership_change",
+      cardinality: "many_to_many"
+    },
+    {
+      relation: "owned_by",
+      domain: "Topic",
+      range: "Person",
+      inverse: "owns_system",
+      requires_scope: true,
+      review_risk: "medium",
+      review_lane: "ownership_change",
+      cardinality: "many_to_many"
     },
     {
       relation: "uses_technology",
       domain: "Context",
       range: "Topic",
       requires_scope: true,
-      review_risk: "medium"
+      review_risk: "medium",
+      review_lane: "technology_change",
+      cardinality: "many_to_many"
     },
     {
       relation: "depends_on",
       domain: ["Context", "System"],
       range: ["Context", "System", "Topic"],
       requires_scope: true,
-      review_risk: "medium"
+      review_risk: "medium",
+      review_lane: "dependency_change",
+      cardinality: "many_to_many"
     }
   ]
 };
+
+export function loadDefaultOntologyRegistry(): OntologyRegistry {
+  return defaultOntologyRegistry;
+}
+
+export function findOntologyRelation(
+  registry: OntologyRegistry,
+  relationName: string
+): OntologyRelationDefinition | undefined {
+  return registry.relations.find((candidate) => candidate.relation === relationName);
+}
 
 export async function loadOntologyRegistry(root: string): Promise<OntologyRegistry> {
   const registryPath = path.join(root, "memory", "schema", "ontology", "registry.json");
@@ -143,7 +196,7 @@ export function validateOntologyFrame(
   registry: OntologyRegistry = defaultOntologyRegistry
 ): OntologyFrameValidationResult {
   const errors: OntologyFrameValidationIssue[] = [];
-  const relation = registry.relations.find((candidate) => candidate.relation === frame.relation);
+  const relation = findOntologyRelation(registry, frame.relation);
   const subjectKind = safeNormalizeEntityKind(frame.subject_kind);
   const objectKind = safeNormalizeEntityKind(frame.object_kind);
 
@@ -239,6 +292,8 @@ function parseRelationDefinition(value: unknown): OntologyRelationDefinition {
     inverse: optionalString(value.inverse),
     requires_scope: value.requires_scope === true,
     review_risk: optionalReviewRisk(value.review_risk),
+    review_lane: optionalReviewLane(value.review_lane),
+    cardinality: optionalCardinality(value.cardinality),
     transitive: value.transitive === true,
     symmetric: value.symmetric === true
   };
@@ -291,6 +346,38 @@ function optionalReviewRisk(value: unknown): OntologyReviewRisk | undefined {
   }
 
   throw new Error(`Invalid ontology review risk: ${String(value)}.`);
+}
+
+function optionalReviewLane(value: unknown): OntologyReviewLane | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (
+    value === "none" ||
+    value === "role_change" ||
+    value === "reporting_change" ||
+    value === "ownership_change" ||
+    value === "identity_risk" ||
+    value === "technology_change" ||
+    value === "dependency_change"
+  ) {
+    return value;
+  }
+
+  throw new Error("Invalid ontology review lane.");
+}
+
+function optionalCardinality(value: unknown): OntologyRelationCardinality | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (value === "one_to_one" || value === "one_to_many" || value === "many_to_one" || value === "many_to_many") {
+    return value;
+  }
+
+  throw new Error("Invalid ontology cardinality.");
 }
 
 function optionalString(value: unknown): string | undefined {
