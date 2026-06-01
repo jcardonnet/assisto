@@ -1,3 +1,4 @@
+import { validateOntologyFrame, type OntologyRegistry } from "../ontology";
 import type {
   FrameEntityKind,
   MemoryFrame,
@@ -22,8 +23,16 @@ const ENTITY_KINDS: FrameEntityKind[] = ["Person", "Context", "Topic", "System",
 const EVIDENCE_STRENGTHS: MemoryFrameEvidenceStrength[] = ["explicit", "inferred", "weak"];
 const SCOPE_STATES: MemoryFrameScopeState[] = ["complete", "partial", "unknown"];
 
-export function validateMemoryFrame(frame: MemoryFrame): MemoryFrameValidationResult {
+export interface MemoryFrameValidationOptions {
+  ontology?: OntologyRegistry;
+}
+
+export function validateMemoryFrame(
+  frame: MemoryFrame,
+  options: MemoryFrameValidationOptions = {}
+): MemoryFrameValidationResult {
   const errors: MemoryFrameValidationIssue[] = [];
+  const reviewReasons: MemoryFrameValidationErrorCode[] = [];
 
   if (!hasText(frame.frame_id)) {
     errors.push(issue("FRAME_MISSING_ID", "Typed memory frames require a stable frame_id.", "frame_id"));
@@ -80,12 +89,15 @@ export function validateMemoryFrame(frame: MemoryFrame): MemoryFrameValidationRe
   }
 
   addKindSpecificIssues(frame, errors);
+  addOntologyIssues(frame, options, errors, reviewReasons);
+
+  const allReviewReasons = unique([...errors.map((error) => error.code), ...reviewReasons]);
 
   return {
     passed: errors.length === 0,
     errors,
-    requires_review: errors.length > 0,
-    review_reasons: unique(errors.map((error) => error.code))
+    requires_review: allReviewReasons.length > 0,
+    review_reasons: allReviewReasons
   };
 }
 
@@ -122,6 +134,46 @@ function addKindSpecificIssues(frame: MemoryFrame, errors: MemoryFrameValidation
         hasText(frame.statement) ? "statement" : "value"
       )
     );
+  }
+}
+
+function addOntologyIssues(
+  frame: MemoryFrame,
+  options: MemoryFrameValidationOptions,
+  errors: MemoryFrameValidationIssue[],
+  reviewReasons: MemoryFrameValidationErrorCode[]
+): void {
+  if (
+    !options.ontology ||
+    frame.frame_kind !== "relation" ||
+    !hasText(frame.relation) ||
+    !frame.subject ||
+    !frame.object
+  ) {
+    return;
+  }
+
+  const ontology = validateOntologyFrame(
+    {
+      subject_id: frame.subject.entity_id,
+      subject_kind: frame.subject.entity_kind,
+      relation: frame.relation,
+      object_id: frame.object.entity_id,
+      object_kind: frame.object.entity_kind,
+      statement: frame.statement ?? frame.value ?? frame.relation,
+      scope: frame.scope ?? (frame.scope_state === "unknown" ? null : frame.scope_state),
+      evidence: frame.source_events,
+      change_type: frame.change_type
+    },
+    options.ontology
+  );
+
+  for (const error of ontology.errors) {
+    errors.push(issue(error.code as MemoryFrameValidationErrorCode, error.message, error.field));
+  }
+
+  for (const reason of ontology.review_reasons) {
+    reviewReasons.push(reason as MemoryFrameValidationErrorCode);
   }
 }
 

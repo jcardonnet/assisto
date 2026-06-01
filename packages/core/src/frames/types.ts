@@ -29,6 +29,7 @@ export interface MemoryFrame {
   value?: string;
   statement?: string;
   scope?: string | null;
+  change_type?: "new" | "change";
 }
 
 export type MemoryFrameValidationErrorCode =
@@ -44,7 +45,13 @@ export type MemoryFrameValidationErrorCode =
   | "FRAME_RELATION_MISSING_RELATION"
   | "FRAME_RELATION_MISSING_OBJECT"
   | "FRAME_ATTRIBUTE_MISSING_ATTRIBUTE"
-  | "FRAME_VALUE_REQUIRED";
+  | "FRAME_VALUE_REQUIRED"
+  | "ONTOLOGY_RELATION_UNKNOWN"
+  | "ONTOLOGY_DOMAIN_INVALID"
+  | "ONTOLOGY_RANGE_INVALID"
+  | "ONTOLOGY_SCOPE_REQUIRED"
+  | "ONTOLOGY_FRAME_MISSING_EVIDENCE"
+  | "ONTOLOGY_HIGH_RISK_RELATION_CHANGE";
 
 export interface MemoryFrameValidationIssue {
   code: MemoryFrameValidationErrorCode;
