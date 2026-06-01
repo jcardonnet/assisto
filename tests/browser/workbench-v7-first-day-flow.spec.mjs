@@ -116,6 +116,9 @@ test("v7 first-day dogfood loop exposes activation, eval, modes, feedback, revie
     await page.locator('[data-entity-kind="context"]').click();
     await page.locator("article.item").filter({ hasText: "ctx_inventory_project" }).first().getByRole("button", { name: "Open detail" }).click();
     await expect(page.getByRole("heading", { name: "Context operating page" })).toBeVisible();
+    const roomV3 = await page.evaluate(async () => (await globalThis.fetch("/api/contexts/operating-room-v3?id=ctx_inventory_project")).json());
+    assert.equal(roomV3.version, "context-operating-room-v3");
+    assert.equal(roomV3.canonical_writes.length, 0);
 
     assert.equal(await readVaultFile(root, "memory/people/jeff.md"), beforeJeff);
     assert.equal(await readVaultFile(root, "memory/contexts/inventory-project.md"), beforeContext);

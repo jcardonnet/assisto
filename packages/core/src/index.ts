@@ -29,5 +29,6 @@ export * from "./sources";
 export * from "./source-adapters";
 export * from "./workday-capture";
 export * from "./entities";
+export * from "./contexts";
 export * from "./friction";
 export * from "./symbolic";

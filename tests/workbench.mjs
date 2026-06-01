@@ -1856,6 +1856,19 @@ export async function runWorkbenchTests() {
     assert.equal(contextOperatingRoom.quickActions.some((action) => action.action_id === "capture_context_note"), true);
     assert.match(contextOperatingRoom.warnings.join("\n"), /derived/);
 
+    const contextOperatingRoomV3 = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/contexts/operating-room-v3?id=ctx_inventory_project"
+        })
+      ).body
+    );
+    assert.equal(contextOperatingRoomV3.version, "context-operating-room-v3");
+    assert.equal(contextOperatingRoomV3.context.id, "ctx_inventory_project");
+    assert.equal(contextOperatingRoomV3.canonical_writes.length, 0);
+    assert.equal(Array.isArray(contextOperatingRoomV3.symbolicFacts), true);
+
     const contextTimeline = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {
