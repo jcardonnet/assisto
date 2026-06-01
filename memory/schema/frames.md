@@ -106,6 +106,12 @@ Ontology-aware validation is a separate policy layer. A frame can be syntactical
 valid and still require review when the ontology marks the relation as high-risk,
 scope-sensitive, ambiguous, or unsupported.
 
+## Deterministic Extraction
+
+Rule-based detectors may emit candidate_frames in ingest and reprocess results. These frames are preview/response data only: they are not serialized into Event raw text and they do not add proposed canonical page writes by themselves.
+
+Current deterministic frame extraction covers manager/reporting relations, role-title attributes, scoped and unscoped technology-use relations, decision statements, and open questions when those signals appear explicitly in the source note.
+
 ## Write Safety
 
 Frames may be stored in pending Transactions, ReviewItems, derived indexes, eval

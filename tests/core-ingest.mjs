@@ -44,6 +44,20 @@ export async function runCoreIngestTests() {
     const transaction = transactions.parseTransactionMarkdown(transactionMarkdown);
 
     assert.equal(result.event_id, "ev_2026_05_20_001");
+    assert.equal(
+      result.candidate_frames.some((frame) =>
+        frame.frame_kind === "attribute" &&
+        frame.attribute === "role_title" &&
+        frame.subject.entity_id === "person_joe"
+      ),
+      true
+    );
+    assert.equal(
+      result.candidate_frames.some((frame) =>
+        frame.relation === "uses_technology" && frame.object?.entity_id === "topic_mysql"
+      ),
+      true
+    );
     assert.match(event, /Joe is the DBA\. We use MySQL\./);
     assert.deepEqual(operationsOf(transaction), ["UPSERT_CLAIM", "STAGE_REVIEW"]);
     assert.ok(proposedWrite(transaction, "memory/people/joe.md"));

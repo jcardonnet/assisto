@@ -19,6 +19,7 @@ import { resolveDetectorProposals } from "./entity-resolution";
 import { buildIngestExtractionDraft } from "./transaction-builder";
 import { mergeProposedWritesWithExistingPages } from "./page-upsert";
 import { contextsFromOption } from "./metadata";
+import { extractCandidateFramesFromText, type MemoryFrame } from "../frames";
 
 export interface IngestNoteOptions {
   now?: string;
@@ -46,6 +47,7 @@ export interface IngestNoteResult {
   extracted_claim_ids: string[];
   staged_review_paths: string[];
   followup_paths: string[];
+  candidate_frames: MemoryFrame[];
 }
 
 const defaultNow = "2026-05-20T12:00:00-03:00";
@@ -82,6 +84,10 @@ export async function ingestNote(
     sourceSpans: options.source_spans
   };
 
+  const candidateFrames = extractCandidateFramesFromText({
+    text: normalizedNote,
+    sourceEventId: eventId
+  });
   const proposals = detectCandidateProposals(context);
   const resolvedCandidates = resolveDetectorProposals(proposals, index);
   const extraction = buildIngestExtractionDraft(context, resolvedCandidates);
@@ -132,7 +138,8 @@ export async function ingestNote(
     applied: options.apply === true,
     extracted_claim_ids: extraction.claims.map((claim) => claim.claim_id),
     staged_review_paths: extraction.stagedReviewPaths,
-    followup_paths: extraction.followupPaths
+    followup_paths: extraction.followupPaths,
+    candidate_frames: candidateFrames
   };
 }
 
@@ -168,6 +175,10 @@ export async function reprocessEvent(
     eventLinkPath: stripMemoryPrefix(found.path).replace(/\.md$/i, ""),
     transactionId
   };
+  const reprocessedCandidateFrames = extractCandidateFramesFromText({
+    text: normalizedNote,
+    sourceEventId: found.id
+  });
   const proposals = detectCandidateProposals(context);
   const resolvedCandidates = resolveDetectorProposals(proposals, index);
   const extraction = buildIngestExtractionDraft(context, resolvedCandidates);
@@ -203,7 +214,8 @@ export async function reprocessEvent(
     applied: false,
     extracted_claim_ids: extraction.claims.map((claim) => claim.claim_id),
     staged_review_paths: extraction.stagedReviewPaths,
-    followup_paths: extraction.followupPaths
+    followup_paths: extraction.followupPaths,
+    candidate_frames: reprocessedCandidateFrames
   };
 }
 

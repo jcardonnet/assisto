@@ -10,6 +10,7 @@ import { runCoreExtractionTests } from "./core-extraction.mjs";
 import { runCoreRetrievalTests } from "./core-retrieval.mjs";
 import { runCoreOntologyTests } from "./core-ontology.mjs";
 import { runCoreFrameTests } from "./core-frames.mjs";
+import { runCoreFrameExtractionTests } from "./core-frame-extraction.mjs";
 import { runCoreAnswerContractV3Tests } from "./core-answer-contract-v3.mjs";
 import { runCoreHealthTests } from "./core-health.mjs";
 import { runCoreBriefTests } from "./core-briefs.mjs";
@@ -36,6 +37,7 @@ export async function runUnitTests() {
   await runCoreRetrievalTests();
   await runCoreOntologyTests();
   await runCoreFrameTests();
+  await runCoreFrameExtractionTests();
   await runCoreAnswerContractV3Tests();
   await runCoreHealthTests();
   await runCoreBriefTests();

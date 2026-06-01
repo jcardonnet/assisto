@@ -29,6 +29,7 @@ import { resolveDetectorProposals } from "../ingest/entity-resolution";
 import { buildIngestExtractionDraft } from "../ingest/transaction-builder";
 import { contextsFromOption } from "../ingest/metadata";
 import { loadOntologyRegistry, validateOntologyFrame, type OntologyAwareFrame, type OntologyRegistry } from "../ontology";
+import { extractCandidateFramesFromText } from "../frames";
 
 export type CandidateEntityResolution = "exact_match" | "alias_match" | "near_match" | "new_entity" | "ambiguous";
 
@@ -284,6 +285,10 @@ export async function ingestWithExtractionProvider(
   const normalizedNote = normalizeWhitespace(note);
   const index = await loadIndexOrEmpty(root);
   const context = createPipelineContext(root, normalizedNote, now, index, { ...options, raw_note: rawNote });
+  const candidateFrames = extractCandidateFramesFromText({
+    text: normalizedNote,
+    sourceEventId: context.eventId
+  });
   const providerOutput = await provider.extract({ note: context.note, now });
   const ontologyRegistry = await loadOntologyRegistry(root);
   const providerCandidates = providerOutputToCandidates(context, providerOutput, ontologyRegistry);
@@ -337,6 +342,7 @@ export async function ingestWithExtractionProvider(
       .filter((write) => write.operation === "STAGE_REVIEW")
       .map((write) => write.path),
     followup_paths: extraction.followupPaths,
+    candidate_frames: candidateFrames,
     provider_name: provider.name,
     deterministic_review_reasons: providerCandidates.reviewReasons.map((reason) => reason.code)
   };
