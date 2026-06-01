@@ -6,6 +6,8 @@ import { makeTempVault, readVaultFile } from "../helpers/temp-vault.mjs";
 import { loadTsModule } from "../ts-module-loader.mjs";
 import { writeWorkbenchFixture } from "../workbench.mjs";
 
+test.describe.configure({ timeout: 60_000 });
+
 test("ask tab stays active when the initial today load finishes late", async ({ page }) => {
   const root = await makeTempVault("assisto-browser-ask-tab-race-");
   const workbench = await loadTsModule("packages/workbench/src/index.ts");
@@ -69,6 +71,7 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(page.getByRole("heading", { name: "What memory can say" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Supporting claims" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Conflicts or stale facts" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Proof paths" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Repair actions" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Suggested next questions" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Evidence Events" })).toBeVisible();
@@ -80,6 +83,7 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(page.getByRole("heading", { name: "Cited answer export" })).toBeVisible();
     const answerSection = page.locator('[data-ask-section="what-memory-can-say"]');
     const citationSection = page.locator('[data-ask-section="citation-explorer"]');
+    const proofSection = page.locator('[data-ask-section="proof-paths"]');
     const pagePreviewSection = page.locator('[data-ask-section="matched-page-preview"]');
     const eventPreviewSection = page.locator('[data-ask-section="source-event-preview"]');
     const repairSection = page.locator('[data-ask-section="repair-actions"]');
@@ -93,12 +97,16 @@ test("ask tab renders structured cited answer basis with non-persistent copy con
     await expect(answerSection.getByRole("button", { name: "Open Person page" })).toBeVisible();
     await expect(citationSection.getByText("clm_jeff_manager")).toBeVisible();
     await expect(citationSection.getByText("ev_2026_05_21_001")).toBeVisible();
+    await expect(citationSection.getByText(/sym_proof_/).first()).toBeVisible();
+    await expect(proofSection.getByText(/canonical_frame|inverse_relation/).first()).toBeVisible();
+    await expect(proofSection.getByRole("button", { name: "Copy proof path" }).first()).toBeVisible();
     await expect(pagePreviewSection.getByText("memory/people/jeff.md")).toBeVisible();
     await expect(eventPreviewSection.getByText("Jeff is my manager.")).toBeVisible();
     await expect(repairSection.getByText("Inspect matched memory pages")).toBeVisible();
     await expect(repairSection.getByRole("button", { name: "Open entities" })).toBeVisible();
     await expect(page.locator("#answer-contract-export-text")).toContainText("## What memory can say");
     await expect(page.locator("#answer-contract-export-text")).toContainText("clm_jeff_manager");
+    await expect(page.locator("#answer-contract-export-text")).toContainText("## Proof paths");
 
     await page.getByRole("button", { name: "Pin question" }).click();
     await expect(page.locator('[data-ask-section="pinned-questions"]').getByText("Who is my manager?")).toBeVisible();

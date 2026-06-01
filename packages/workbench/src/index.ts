@@ -148,6 +148,7 @@ export interface WorkbenchAskCitationExplorer {
   page_paths: string[];
   review_item_ids: string[];
   followup_ids: string[];
+  proof_ids: string[];
 }
 
 export interface WorkbenchAskPagePreview {
@@ -633,7 +634,7 @@ export async function handleWorkbenchRoute(
       : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
-  if (requestUrl.pathname === "/api/ask/contract-v3") {
+  if (requestUrl.pathname === "/api/ask/contract-v3" || requestUrl.pathname === "/api/ask/answer-contract-v3") {
     const query = optionalQuery(requestUrl);
     return query
       ? jsonRoute(200, await retrieveCitedAnswerContractV3(root, query))
@@ -1207,7 +1208,8 @@ function buildCitationExplorer(basis: WorkbenchAskBasis): WorkbenchAskCitationEx
       ...(basis.answerCandidates ?? []).map((candidate) => candidate.page_path)
     ]),
     review_item_ids: uniqueStrings((basis.linkedReviewItems ?? []).map((item) => item.id).filter((value): value is string => typeof value === "string")),
-    followup_ids: uniqueStrings((basis.linkedFollowUps ?? []).map((item) => item.id).filter((value): value is string => typeof value === "string"))
+    followup_ids: uniqueStrings((basis.linkedFollowUps ?? []).map((item) => item.id).filter((value): value is string => typeof value === "string")),
+    proof_ids: uniqueStrings((basis.directAnswers ?? []).flatMap((answer) => (answer as { proof_paths?: Array<{ proof_id: string }> }).proof_paths?.map((proof) => proof.proof_id) ?? []))
   };
 }
 
@@ -1217,7 +1219,8 @@ function emptyCitationExplorer(): WorkbenchAskCitationExplorer {
     event_ids: [],
     page_paths: [],
     review_item_ids: [],
-    followup_ids: []
+    followup_ids: [],
+    proof_ids: []
   };
 }
 
@@ -6020,6 +6023,7 @@ function renderAskResult(result, session = null) {
     askSectionHtml("Source Event preview", session?.source_event_previews ?? [], sourceEventPreviewHtml, "No source Event previews."),
     askSectionHtml("What memory cannot confirm", cannotConfirm, missingInfoHtml, "No missing information detected for loaded active claims."),
     askSectionHtml("Conflicts or stale facts", conflictOrStaleItems, conflictOrStaleHtml, "No conflicts or stale facts surfaced."),
+    askSectionHtml("Proof paths", proofPathItems(result), proofPathHtml, "No symbolic proof paths available."),
     askSectionHtml("Uncertainty", result.uncertainClaims ?? [], uncertainClaimHtml, "No staged, partial, superseded, rejected, or contested claims were loaded."),
     askSectionHtml("Evidence Events", result.evidenceEvents ?? [], eventHtml, "No cited Event pages were loaded."),
     askSectionHtml("Linked ReviewItems", result.linkedReviewItems ?? [], linkedItemHtml, "No linked ReviewItems."),
@@ -6090,7 +6094,8 @@ function citationExplorerFromBasis(result) {
       ...(result.supportingClaims ?? []).map((claim) => claim.page_path)
     ]),
     review_item_ids: uniqueClientStrings((result.linkedReviewItems ?? []).map((item) => item.id)),
-    followup_ids: uniqueClientStrings((result.linkedFollowUps ?? []).map((item) => item.id))
+    followup_ids: uniqueClientStrings((result.linkedFollowUps ?? []).map((item) => item.id)),
+    proof_ids: uniqueClientStrings((result.directAnswers ?? []).flatMap((answer) => (answer.proof_paths ?? []).map((proof) => proof.proof_id)))
   };
 }
 
@@ -6123,7 +6128,8 @@ function citationExplorerHtml(explorer) {
     ["Event IDs", explorer.event_ids ?? []],
     ["Page paths", explorer.page_paths ?? []],
     ["ReviewItems", explorer.review_item_ids ?? []],
-    ["FollowUps", explorer.followup_ids ?? []]
+    ["FollowUps", explorer.followup_ids ?? []],
+    ["Proof IDs", explorer.proof_ids ?? []]
   ];
 
   return \`<section data-ask-section="citation-explorer">
@@ -6290,6 +6296,35 @@ function askSectionHtml(label, items, renderItem, emptyText) {
     ? \`<div class="grid">\${items.map(renderItem).join("")}</div>\`
     : \`<article class="item"><h3>Empty</h3><p class="meta">\${escapeHtml(emptyText)}</p></article>\`;
   return \`<section data-ask-section="\${escapeHtml(sectionSlug(label))}"><h2>\${escapeHtml(label)}</h2>\${body}</section>\`;
+}
+
+function proofPathItems(result) {
+  return (result.directAnswers ?? []).flatMap((answer) =>
+    (answer.proof_paths ?? []).map((proof) => ({
+      answer_id: answer.answer_id ?? answer.claim_id,
+      claim_id: answer.claim_id,
+      proof
+    }))
+  );
+}
+
+function proofPathHtml(item) {
+  const proof = item.proof ?? {};
+  const lines = [
+    "proof_id: " + (proof.proof_id ?? "unknown"),
+    "answer: " + (item.answer_id ?? "unknown"),
+    "rule: " + (proof.rule ?? "unknown"),
+    "claim_ids: " + ((proof.source_claim_ids ?? []).join(", ") || "none"),
+    "event_ids: " + ((proof.source_events ?? []).join(", ") || "none"),
+    "source_fact_ids: " + ((proof.source_fact_ids ?? []).join(", ") || "none")
+  ];
+
+  return \`<article class="item ask-card">
+    <h3>\${escapeHtml(proof.proof_id ?? item.answer_id ?? "proof")}</h3>
+    <p class="pill">\${escapeHtml(proof.rule ?? "symbolic proof")}</p>
+    \${citationLinesHtml(lines)}
+    <button type="button" class="copy-derived-text" data-copy-text="\${escapeHtml(lines.join("; "))}">Copy proof path</button>
+  </article>\`;
 }
 
 function answerCannotConfirmItems(result) {
@@ -6648,6 +6683,21 @@ function answerContractExportText(result) {
       ...(result.conflicts ?? []).map((item) => \`- conflict \${item.claim_id}: \${item.message}\`),
       ...(result.staleSignals ?? []).map((item) => \`- stale \${item.claim_id}: \${item.message}\`)
     ]),
+    "",
+    "## Proof paths",
+    ...listOrEmpty(proofPathItems(result).map((item) => {
+      const proof = item.proof ?? {};
+      const claimIds = (proof.source_claim_ids ?? []).join(", " );
+      const eventIds = (proof.source_events ?? []).join(", " );
+      return "- "
+        + (proof.proof_id ?? item.answer_id ?? "proof")
+        + ": "
+        + (proof.rule ?? "symbolic proof")
+        + "; claim_ids "
+        + (claimIds.length ? claimIds : "none")
+        + "; event_ids "
+        + (eventIds.length ? eventIds : "none");
+    })),
     "",
     "## Repair actions",
     ...listOrEmpty((result.repairActions ?? result.manualActions ?? []).map((action) => \`- \${action.label}: \${action.reason}\`))
