@@ -78,6 +78,7 @@ pnpm eval:dogfood-local
 pnpm eval:v7
 pnpm eval:answers
 pnpm eval:v8
+pnpm eval:v9
 pnpm test:browser
 pnpm check:memory-data
 ```
