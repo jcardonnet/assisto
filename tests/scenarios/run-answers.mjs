@@ -19,6 +19,8 @@ const metrics = {
   generatedPersistenceViolations: 0,
   contractV3DirectCitationCoverage: 0,
   contractV3RepairLinkCoverage: 0,
+  proofPathCoverage: 0,
+  unsupportedDirectAnswers: 0
 };
 
 const root = await makeTempVault("eval-answers-");
@@ -54,7 +56,9 @@ try {
       answer.claim_id === "clm_mike_manager" &&
       answer.citations.some((citation) => citation.kind === "claim" && citation.id === "clm_mike_manager") &&
       answer.citations.some((citation) => citation.kind === "event" && citation.id === "ev_manager") &&
-      answer.inference_paths.includes("claim:clm_mike_manager")
+      answer.inference_paths.includes("claim:clm_mike_manager") &&
+      (answer.proof_paths ?? []).length > 0 &&
+      answer.inference_paths.some((item) => item.startsWith("proof:"))
     ), true);
     const noMatchItem = noMatch.cannotConfirm.find((item) => item.code === "no_match");
     assert.ok(noMatchItem);
@@ -64,7 +68,9 @@ try {
     assert.equal(noMatchItem.repair_action_ids.some((actionId) => noMatch.repairActions.some((action) => action.action_id === actionId && action.action === "log_friction")), true);
 
     metrics.contractV3DirectCitationCoverage += countSupportedDirectAnswersV3(manager);
+    metrics.proofPathCoverage += proofPathCoverage(manager);
     metrics.unsupportedAnswerCount += manager.directAnswers.length - countSupportedDirectAnswersV3(manager);
+    metrics.unsupportedDirectAnswers += manager.directAnswers.length - countSupportedDirectAnswersV3(manager);
     metrics.contractV3RepairLinkCoverage += noMatch.cannotConfirm.filter((item) =>
       item.repair_action_ids.length >= 2 &&
       item.repair_action_ids.every((actionId) => noMatch.repairActions.some((action) => action.action_id === actionId))
@@ -142,6 +148,8 @@ assertAtLeast("stale signal coverage", metrics.staleSignalCoverage, thresholds.s
 assertAtLeast("repair action coverage", metrics.repairActionCoverage, thresholds.repairActionCoverageMin);
 assertAtLeast("contract v3 direct citation coverage", metrics.contractV3DirectCitationCoverage, thresholds.contractV3DirectCitationCoverageMin);
 assertAtLeast("contract v3 repair link coverage", metrics.contractV3RepairLinkCoverage, thresholds.contractV3RepairLinkCoverageMin);
+assertAtLeast("proof path coverage", metrics.proofPathCoverage, thresholds.proofPathCoverageMin);
+assertAtMost("unsupported direct answers", metrics.unsupportedDirectAnswers, thresholds.unsupportedDirectAnswersMax);
 assertAtMost(
   "generated persistence violations",
   metrics.generatedPersistenceViolations,
@@ -173,6 +181,14 @@ function countSupportedDirectAnswersV3(result) {
       (answer.citations ?? []).some((citation) => citation.kind === "event") &&
       (answer.citation_ids ?? []).every((citationId) => result.citationIndex?.[citationId]);
   }).length;
+}
+
+function proofPathCoverage(result) {
+  const answers = result.directAnswers ?? [];
+  if (answers.length === 0) {
+    return 1;
+  }
+  return answers.filter((answer) => (answer.proof_paths ?? []).length > 0).length / answers.length;
 }
 
 function countUnsupportedDirectAnswers(result) {

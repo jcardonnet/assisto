@@ -130,6 +130,9 @@ export async function runCoreAnswerContractV3Tests() {
     assert.equal(direct.citation_ids.every((citationId) => manager.citationIndex[citationId]), true);
     assert.equal(manager.directAnswers.every((answer) => hasResolvedClaimPageAndEventCitations(answer, manager)), true);
     assert.equal(direct.inference_paths.includes("claim:clm_mike_manager"), true);
+    assert.equal(direct.proof_paths.length > 0, true);
+    assert.equal(direct.proof_paths.every((proof) => proof.source_claim_ids.includes("clm_mike_manager")), true);
+    assert.equal(direct.inference_paths.some((item) => item.startsWith("proof:")), true);
 
     const role = await retrieval.retrieveCitedAnswerContractV3(root, "What changed about Joe's role?");
     assert.equal(role.directAnswers.some((answer) => answer.claim_id === "clm_joe_role_engineer"), true);

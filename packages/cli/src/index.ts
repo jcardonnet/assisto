@@ -1458,19 +1458,20 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
   const answerBasisQuestion = optionValue(args, "--answer-basis");
   const answerContractQuestion = optionValue(args, "--answer-contract");
   const contractV3Question = optionValue(args, "--contract-v3");
+  const answerContractV3Question = optionValue(args, "--answer-contract-v3");
   const draftQuestion = optionValue(args, "--draft");
 
-  if ([packContextQuestion, answerBasisQuestion, answerContractQuestion, contractV3Question, draftQuestion].filter(Boolean).length > 1) {
+  if ([packContextQuestion, answerBasisQuestion, answerContractQuestion, contractV3Question, answerContractV3Question, draftQuestion].filter(Boolean).length > 1) {
     throw new Error(
-      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --draft "<question>"'
+      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --answer-contract-v3 "<question>" | --draft "<question>"'
     );
   }
 
-  const question = packContextQuestion ?? answerBasisQuestion ?? answerContractQuestion ?? contractV3Question ?? draftQuestion;
+  const question = packContextQuestion ?? answerBasisQuestion ?? answerContractQuestion ?? contractV3Question ?? answerContractV3Question ?? draftQuestion;
 
   if (!question) {
     throw new Error(
-      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --draft "<question>"'
+      'Usage: wm ask --pack-context "<question>" | --answer-basis "<question>" | --answer-contract "<question>" | --contract-v3 "<question>" | --answer-contract-v3 "<question>" | --draft "<question>"'
     );
   }
 
@@ -1484,7 +1485,7 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
     return 0;
   }
 
-  if (contractV3Question) {
+  if (contractV3Question || answerContractV3Question) {
     io.stdout(`${JSON.stringify(await retrieveCitedAnswerContractV3(root, question), null, 2)}\n`);
     return 0;
   }
@@ -2120,6 +2121,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] ask --answer-basis "<question>"',
       '  wm [--root <path>] ask --answer-contract "<question>"',
       '  wm [--root <path>] ask --contract-v3 "<question>"',
+      '  wm [--root <path>] ask --answer-contract-v3 "<question>"',
       '  wm [--root <path>] ask --draft "<question>"',
       "  wm [--root <path>] health check [--stage-review] [--note <text>]",
       "  wm [--root <path>] brief <today|person|context|review|followups|recent> [id|path]",

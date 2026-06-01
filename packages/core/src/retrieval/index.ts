@@ -9,6 +9,7 @@ import {
 } from "../markdown";
 import { loadVaultIndex, type VaultIndex, type VaultIndexEntry } from "../vault";
 import { buildCitedAnswerContractV3, type CitedAnswerContractV3 } from "../answers";
+import { buildSymbolicIndex, querySymbolicFacts, type SymbolicQueryResult } from "../symbolic";
 
 export type RetrievalTargetKind = "person" | "topic" | "context";
 
@@ -479,7 +480,28 @@ export async function retrieveCitedAnswerContract(root: string, query: string): 
 }
 
 export async function retrieveCitedAnswerContractV3(root: string, query: string): Promise<CitedAnswerContractV3> {
-  return buildCitedAnswerContractV3(await retrieveContextForAnswer(root, query));
+  const basis = await retrieveContextForAnswer(root, query);
+  const symbolicMatches = await symbolicMatchesForAnswerBasis(root, basis);
+  return buildCitedAnswerContractV3(basis, { symbolicMatches });
+}
+
+async function symbolicMatchesForAnswerBasis(
+  root: string,
+  basis: AnswerBasisResult
+): Promise<SymbolicQueryResult["matches"]> {
+  if (basis.directAnswers.length === 0) {
+    return [];
+  }
+
+  const answerClaimIds = new Set(basis.directAnswers.map((answer) => answer.claim_id));
+  const symbolicIndex = await buildSymbolicIndex({ root });
+
+  return querySymbolicFacts({
+    facts: symbolicIndex.derived_facts,
+    proofs: symbolicIndex.proofs
+  }).matches.filter((match) =>
+    match.proof.source_claim_ids.some((claimId) => answerClaimIds.has(claimId))
+  );
 }
 
 export async function previewAnswerDraft(
