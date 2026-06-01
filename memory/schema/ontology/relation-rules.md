@@ -8,14 +8,15 @@ Inverse or transitive relations are derived views unless separately captured thr
 
 ## Starter Relations
 
-| relation | domain | range | scope | review risk |
-| --- | --- | --- | --- | --- |
-| `reports_to` | `Person` | `Person` | required | high |
-| `manages` | derived inverse of `reports_to` | derived inverse of `reports_to` | required | high |
-| `owns` | `Person`, `Team` | `Context`, `System`, `Topic` | required | medium |
-| `owned_by` | derived inverse of `owns` | derived inverse of `owns` | required | medium |
-| `uses_technology` | `Context` | `Topic` | required | medium |
-| `depends_on` | `Context`, `System` | `Context`, `System`, `Topic` | required | medium |
+| relation | domain | range | scope | cardinality | review risk | review lane |
+| --- | --- | --- | --- | --- | --- | --- |
+| reports_to | Person | Person | not required | many_to_one | high | reporting_change |
+| manages | Person | Person | not required | one_to_many | high | reporting_change |
+| owns | Person, Team | Context, System, Topic | required | many_to_many | medium | ownership_change |
+| owns_system | Person | Topic | required | many_to_many | medium | ownership_change |
+| owned_by | Topic | Person | required | many_to_many | medium | ownership_change |
+| uses_technology | Context | Topic | required | many_to_many | medium | technology_change |
+| depends_on | Context, System | Context, System, Topic | required | many_to_many | medium | dependency_change |
 
 ## Review Gates
 
@@ -28,5 +29,5 @@ Ontology-aware frames must stage review when:
 - the frame has no source evidence marker;
 - the frame represents a high-risk relation change.
 
-Staged review must happen through a pending Transaction with `STAGE_REVIEW`.
+Staged review must happen through a pending Transaction with STAGE_REVIEW.
 Ontology validation does not authorize direct canonical page writes, entity merges, contradiction resolution, or generated explanation persistence.

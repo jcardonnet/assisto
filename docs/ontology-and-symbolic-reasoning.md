@@ -17,7 +17,7 @@ memory/indexes/ontology/
 memory/indexes/symbolic/
 ```
 
-The registry defines entity kinds, relation kinds, claim patterns, scopes, and review rules.
+The registry defines entity kinds, relation kinds, claim patterns, scopes, and review rules. The v9 registry adds explicit cardinality hints and review lanes so later symbolic reasoning can distinguish reporting changes, ownership changes, technology changes, and dependency changes without treating the ontology as canonical graph state.
 
 ## Relation Definitions
 
