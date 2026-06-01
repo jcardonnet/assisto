@@ -227,7 +227,7 @@ function addBlockerAndRiskFrames(input: ExtractCandidateFramesInput, frames: Mem
     addRiskRelationFromStatement(input, frames, risk, scoped);
   }
 
-  const blockerPattern = /\b(?<risk>[A-Z][A-Za-z0-9&.'/-]*(?:\s+[A-Za-z0-9&.'/-]+){0,5})\s+(?:blocks|is\s+blocking)\s+(?:the\s+)?(?<target>[^.?!]+?)(?:[.?!]|$)/gi;
+  const blockerPattern = /\b(?<risk>[A-Z][A-Za-z0-9&'/-]*(?:\s+[A-Za-z0-9&'/-]+){0,5})\s+(?:blocks|is\s+blocking)\s+(?:the\s+)?(?<target>[^.?!]+?)(?:[.?!]|$)/gi;
   let match: RegExpExecArray | null;
 
   while ((match = blockerPattern.exec(input.text)) !== null) {
@@ -239,7 +239,7 @@ function addBlockerAndRiskFrames(input: ExtractCandidateFramesInput, frames: Mem
     }
 
     frames.push(
-      relationFrame(input, "blocks", riskRef(risk), workObjectRef(target), `${risk} blocks ${target}.`, scoped.scopeState, scoped.scope)
+      relationFrame(input, "blocks", blockerSubjectRef(risk), workObjectRef(target), `${risk} blocks ${target}.`, scoped.scopeState, scoped.scope)
     );
   }
 }
@@ -588,6 +588,12 @@ function workObjectRef(name: string): MemoryFrameEntityRef {
   }
 
   return topicRef(name);
+}
+
+function blockerSubjectRef(name: string): MemoryFrameEntityRef {
+  return /\b(api|service|system|platform|project|context|repo|repository|dashboard|document|doc|report|artifact|runbook|playbook|rollout)\b/i.test(name)
+    ? workObjectRef(name)
+    : riskRef(name);
 }
 
 function frameId(prefix: string, ...parts: string[]): string {

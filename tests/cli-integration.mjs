@@ -103,6 +103,86 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /capture presets/);
   assert.match(help.stdout, /capture quick/);
   assert.match(help.stdout, /source inbox/);
+  assert.match(help.stdout, /query-symbolic/);
+
+
+
+  const symbolicRoot = await makeTempVault();
+
+  try {
+    await writeVaultFile(
+      symbolicRoot,
+      "memory/events/2026/2026-06/2026-06-01-001.md",
+      `---
+id: ev_cli_symbolic_001
+type: event
+object_state: active
+review_state: reviewed
+recorded_at: 2026-06-01T10:00:00.000Z
+observed_at: 2026-06-01
+source_type: user_note
+source_actor: user
+participants: []
+topics: []
+contexts: []
+derived_claims: []
+transactions: []
+---
+
+# Event ev_cli_symbolic_001
+
+## Raw text
+
+Search API depends on Billing repository.
+`
+    );
+    await writeVaultFile(
+      symbolicRoot,
+      "memory/contexts/search.md",
+      `---
+id: ctx_search
+type: context
+object_state: active
+review_state: reviewed
+created_at: 2026-06-01T10:00:00.000Z
+updated_at: 2026-06-01T10:00:00.000Z
+aliases: []
+source_events:
+  - ev_cli_symbolic_001
+related: []
+summary_generated_from:
+  - clm_cli_symbolic_dep
+---
+
+# Search
+
+## Active claims
+
+- claim_id: clm_cli_symbolic_dep
+  statement: Search API depends on Billing repository.
+  claim_kind: fact
+  claim_state: active
+  evidence_strength: explicit
+  scope: Search
+  scope_state: complete
+  evidence: [ev_cli_symbolic_001]
+  recorded_at: 2026-06-01T10:00:00.000Z
+  observed_at: 2026-06-01
+  valid_from: null
+  valid_to: null
+`
+    );
+
+    const symbolicResult = await runWm(symbolicRoot, ["indexes", "query-symbolic", "What does Search API depend on?", "--json"]);
+    const symbolicJson = JSON.parse(symbolicResult.stdout);
+    assert.equal(symbolicJson.version, "symbolic-reasoning-v2");
+    assert.equal(symbolicJson.query_plan.intent, "dependency_chain");
+    assert.equal(symbolicJson.matches.some((match) => match.fact.relation === "depends_on"), true);
+    assert.equal(symbolicJson.matches.every((match) => match.proof_tree.source_events.includes("ev_cli_symbolic_001")), true);
+    await expectMissing(symbolicRoot, "memory/indexes/symbolic/facts.jsonl");
+  } finally {
+    await rm(symbolicRoot, { recursive: true, force: true });
+  }
 
   const doctorRoot = await makeTempVault();
 

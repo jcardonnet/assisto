@@ -4,7 +4,7 @@ import { listMarkdownFiles, readMarkdownPage } from "../fs";
 import { parseClaimBlocks, parseMarkdownFile } from "../markdown";
 import type { ClaimBlock } from "../model";
 import { extractCandidateFramesFromText, type MemoryFrame } from "../frames";
-import { findOntologyRelation, loadOntologyRegistry } from "../ontology";
+import { findOntologyRelation, loadOntologyRegistry, type OntologyRegistry } from "../ontology";
 import { writeJsonl } from "./jsonl";
 import type { SymbolicFact, SymbolicIndexResult, SymbolicProof } from "./types";
 
@@ -78,6 +78,8 @@ export async function buildSymbolicIndex(options: { root: string; write?: boolea
       }
     }
   }
+
+  addTransitiveFacts(facts, proofs, ontology);
 
   facts.sort(compareById);
   proofs.sort(compareById);
@@ -186,6 +188,67 @@ function inverseProof(inverseFact: SymbolicFact, sourceFact: SymbolicFact): Symb
   };
 }
 
+
+function addTransitiveFacts(facts: SymbolicFact[], proofs: SymbolicProof[], ontology: OntologyRegistry): void {
+  const transitiveRelations = new Set(
+    ontology.relations.filter((relation) => relation.transitive === true).map((relation) => relation.relation)
+  );
+  let added = true;
+
+  while (added) {
+    added = false;
+    const snapshot = [...facts];
+
+    for (const left of snapshot) {
+      if (!transitiveRelations.has(left.relation) || !left.object_id) {
+        continue;
+      }
+
+      for (const right of snapshot) {
+        if (left.relation !== right.relation || left.object_id !== right.subject_id || !right.object_id) {
+          continue;
+        }
+
+        if (left.subject_id === right.object_id) {
+          continue;
+        }
+
+        if (
+          facts.some(
+            (candidate) =>
+              candidate.relation === left.relation &&
+              candidate.subject_id === left.subject_id &&
+              candidate.object_id === right.object_id
+          )
+        ) {
+          continue;
+        }
+
+        const fact: SymbolicFact = {
+          fact_id: symbolicId("fact", ["transitive_relation", left.relation, left.subject_id, right.object_id, left.fact_id, right.fact_id]),
+          relation: left.relation,
+          subject_id: left.subject_id,
+          object_id: right.object_id,
+          source_claim_ids: unique([...left.source_claim_ids, ...right.source_claim_ids]),
+          source_events: unique([...left.source_events, ...right.source_events]),
+          inference_rule: "transitive_relation"
+        };
+
+        facts.push(fact);
+        proofs.push({
+          proof_id: symbolicId("proof", ["transitive_relation", fact.fact_id, left.fact_id, right.fact_id]),
+          derived_fact_id: fact.fact_id,
+          rule: "transitive_relation",
+          source_fact_ids: [left.fact_id, right.fact_id],
+          source_claim_ids: fact.source_claim_ids,
+          source_events: fact.source_events
+        });
+        added = true;
+      }
+    }
+  }
+}
+
 function indexPageEntity(entities: Map<string, PageEntity>, entity: PageEntity): void {
   entities.set(entity.id, entity);
 
@@ -227,6 +290,10 @@ function symbolicId(prefix: string, parts: string[]): string {
     .digest("hex")
     .slice(0, 16);
   return `sym_${prefix}_${digest}`;
+}
+
+function unique<T>(items: T[]): T[] {
+  return Array.from(new Set(items));
 }
 
 function stringValue(value: unknown): string | undefined {

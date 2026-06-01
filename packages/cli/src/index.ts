@@ -838,36 +838,79 @@ async function commandReason(root: string, args: string[], io: CliIo): Promise<n
 }
 async function commandIndexes(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand, ...rest] = args;
-  const usage = "Usage: wm indexes rebuild-symbolic [--json]";
+  const usage = [
+    "Usage: wm indexes rebuild-symbolic [--json]",
+    "   or: wm indexes query-symbolic <query> [--json]"
+  ].join("\n");
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
     io.stdout(usage + "\n");
     return 0;
   }
 
-  if (subcommand !== "rebuild-symbolic") {
-    throw new Error(usage);
-  }
+  if (subcommand === "rebuild-symbolic") {
+    if (rest.some((arg) => arg !== "--json") || rest.filter((arg) => arg === "--json").length > 1) {
+      throw new Error(usage);
+    }
 
-  if (rest.some((arg) => arg !== "--json") || rest.filter((arg) => arg === "--json").length > 1) {
-    throw new Error(usage);
-  }
+    const result = await buildSymbolicIndex({ root, write: true });
 
-  const result = await buildSymbolicIndex({ root, write: true });
+    if (rest.includes("--json")) {
+      io.stdout(JSON.stringify(result, null, 2) + "\n");
+      return 0;
+    }
 
-  if (rest.includes("--json")) {
-    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    io.stdout("Symbolic facts: " + result.derived_facts.length + "\n");
+    io.stdout("Symbolic proofs: " + result.proofs.length + "\n");
+    io.stdout("Index files:\n");
+    for (const indexPath of result.index_paths) {
+      io.stdout("- " + indexPath + "\n");
+    }
+
     return 0;
   }
 
-  io.stdout("Symbolic facts: " + result.derived_facts.length + "\n");
-  io.stdout("Symbolic proofs: " + result.proofs.length + "\n");
-  io.stdout("Index files:\n");
-  for (const indexPath of result.index_paths) {
-    io.stdout("- " + indexPath + "\n");
+  if (subcommand === "query-symbolic") {
+    if (rest.filter((arg) => arg === "--json").length > 1) {
+      throw new Error(usage);
+    }
+
+    const queryParts = rest.filter((arg) => arg !== "--json");
+    const query = queryParts.join(" ").trim();
+
+    if (!query) {
+      throw new Error(usage);
+    }
+
+    const index = await buildSymbolicIndex({ root });
+    const result = querySymbolicFacts({
+      facts: index.derived_facts,
+      proofs: index.proofs,
+      query
+    });
+
+    if (rest.includes("--json")) {
+      io.stdout(JSON.stringify(result, null, 2) + "\n");
+      return 0;
+    }
+
+    io.stdout("Symbolic intent: " + result.query_plan.intent + "\n");
+    io.stdout("Symbolic matches: " + result.matches.length + "\n");
+    for (const match of result.matches) {
+      const target = match.fact.object_id ?? match.fact.value ?? "";
+      io.stdout("- " + match.fact.relation + " " + match.fact.subject_id + " -> " + target + " (" + match.proof.proof_id + ")\n");
+      io.stdout("  rule: " + match.proof_tree.rule + "\n");
+      io.stdout("  claims: " + match.proof.source_claim_ids.join(", ") + "\n");
+      io.stdout("  events: " + match.proof.source_events.join(", ") + "\n");
+    }
+    for (const missing of result.missing) {
+      io.stdout("Missing: " + missing + "\n");
+    }
+
+    return 0;
   }
 
-  return 0;
+  throw new Error(usage);
 }
 
 async function commandSeed(root: string, args: string[], io: CliIo, cwd: string): Promise<number> {
@@ -2494,6 +2537,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] source inbox <list|show|clear> [id|--id <id>] [--json]',
       '  wm [--root <path>] source create-events --session <id> [--json]',
       "  wm [--root <path>] indexes rebuild-symbolic [--json]",
+      '  wm [--root <path>] indexes query-symbolic "<query>" [--json]',
       "  wm [--root <path>] reason query --relation <relation> [--subject <id>] [--object <id>] [--json]",
       "  wm [--root <path>] seed kit --file <json|md> [--dry-run]",
       "  wm [--root <path>] today [--json]",
