@@ -23,6 +23,7 @@
     "eval:v7": "node tests/scenarios/run-v7.mjs",
     "eval:v8": "node tests/scenarios/run-v8.mjs",
     "eval:v9": "node tests/scenarios/run-v9.mjs",
+    "eval:v10": "node tests/scenarios/run-v10.mjs",
     "eval:answers": "node tests/scenarios/run-answers.mjs",
     "eval:source-adapters": "node tests/scenarios/run-source-adapters.mjs",
     "eval:dogfood-local": "node tests/scenarios/run-dogfood-local.mjs",

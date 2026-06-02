@@ -90,3 +90,6 @@ jobs:
 
       - name: v9 eval
         run: pnpm eval:v9
+
+      - name: v10 eval
+        run: pnpm eval:v10
