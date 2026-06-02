@@ -58,6 +58,9 @@ summary_generated_from:
     await page.getByRole("button", { name: "People/Topics/Contexts" }).click();
     await expect(page.getByRole("heading", { name: "Entity stewardship" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Risk lanes" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Symbolic stewardship lanes" })).toBeVisible();
+    await expect(page.locator(".entity-command-center")).toContainText("Identity risk");
+    await expect(page.locator(".entity-command-center")).toContainText("With symbolic facts");
     await page.getByRole("button", { name: /Identity ambiguity/ }).click();
 
     const jeffCard = page.locator("article.item").filter({ hasText: /per_jeff\b/ }).first();
