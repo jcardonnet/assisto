@@ -49,6 +49,18 @@ type CitedAnswerContractV3 = {
 
 `contextPack` remains available for compatibility. The older `wm ask --answer-contract` and `/api/ask/answer-contract` surfaces are preserved; v3 is the stricter Ask/Pi/UI contract. The contract is derived output, not memory.
 
+
+## Portable Cited Context Packs
+
+Use portable packs when another tool, agent, meeting prep note, or debugging session needs a compact cited slice of memory without gaining write authority.
+
+```bash
+wm pack task "Who is my manager?"
+wm pack person Jeff --json
+```
+
+`PortableContextPack` includes the pack kind, target, active and uncertain claims, source Events, conflicts, stale signals, cannot-confirm items, repair actions, warnings, the legacy `contextPack`, and `compact_markdown`. It always reports `canonical_writes: []`; generating a pack must not create Events, Transactions, canonical pages, generated explanations, or session truth. Durable corrections discovered from a pack go back through capture, friction logging, review, or another transaction-backed repair path.
+
 ## Evidence hydration
 
 Before emitting a direct answer, Assisto hydrates the source Events for cited claims when the answer is high-impact, contested, stale, sparse, temporal, or used for repair.
@@ -85,6 +97,7 @@ Context rooms are derived project views. They show current state, owners, system
 
 ```bash
 pnpm eval:answers
+pnpm eval:context-packs
 pnpm eval:v8
 ```
 

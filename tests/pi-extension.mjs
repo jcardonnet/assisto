@@ -39,7 +39,7 @@ export async function runPiExtensionTests() {
     assert.equal(piEntry.default, piEntry.factory);
 
     const factoryExtension = piEntry.default({ vaultRoot: root });
-    assert.equal(factoryExtension.tools.length, 17);
+    assert.equal(factoryExtension.tools.length, 18);
     assert.equal(factoryExtension.commands.length, 12);
 
     const nativeTools = [];
@@ -67,6 +67,7 @@ export async function runPiExtensionTests() {
         "wm_mark_review_item",
         "wm_events_reprocess",
         "wm_pack_context",
+        "wm_context_pack_build",
         "wm_answer_contract_v3",
         "wm_reject_transaction",
         "wm_review_inbox",
@@ -129,6 +130,7 @@ export async function runPiExtensionTests() {
         "wm_mark_review_item",
         "wm_events_reprocess",
         "wm_pack_context",
+        "wm_context_pack_build",
         "wm_answer_contract_v3",
         "wm_reject_transaction",
         "wm_review_inbox",
@@ -156,7 +158,7 @@ export async function runPiExtensionTests() {
       ].sort()
     );
     assert.equal(registeredGuards.length, 1);
-    assert.equal(registered.tools.length, 17);
+    assert.equal(registered.tools.length, 18);
     assert.equal(registered.commands.length, 12);
 
     const directCanonical = piExtension.checkWorkMemoryWrite({ path: "memory/people/joe.md" });
@@ -344,6 +346,13 @@ linked_transaction: tx_2026_05_20_010
     assert.equal(context.queryIntent.primary, "person_facts");
     assert.equal(context.plannedLookups.some((lookup) => lookup.kind === "named_targets"), true);
     assert.equal(context.answerCandidates.some((candidate) => candidate.claim_id === "clm_joe_role_dba"), true);
+
+
+    const portablePack = await tools.get("wm_context_pack_build").run({ kind: "task", target: "What should I know about Joe?" });
+    assert.equal(portablePack.kind, "task");
+    assert.equal(portablePack.active_claims.some((claim) => claim.claim_id === "clm_joe_role_dba"), true);
+    assert.match(portablePack.compact_markdown, /Portable Cited Context Pack/);
+    assert.deepEqual(portablePack.canonical_writes, []);
 
     const answerContractV3 = await tools.get("wm_answer_contract_v3").run({ question: "What should I know about Joe?" });
     assert.equal(answerContractV3.version, "answer-contract-v3");

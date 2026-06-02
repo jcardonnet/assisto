@@ -18,6 +18,7 @@ import {
   buildSymbolicIndex,
   buildImportAssistantResult,
   buildMaintenancePlan,
+  buildPortableContextPack,
   clearMaintenanceRuns,
   listMaintenanceRuns,
   readMaintenanceRun,
@@ -100,6 +101,7 @@ import {
   type CapturePreviewResult,
   type WorkdayCaptureCreate,
   type WorkdayCapturePreview,
+  type ContextPackKind,
   type ContextPackResult,
   type CitedAnswerContractV3,
   type CitedAnswerContractV4,
@@ -795,6 +797,18 @@ export async function handleWorkbenchRoute(
     return query
       ? jsonRoute(200, await retrieveCitedAnswerContractV4(root, query))
       : jsonRoute(400, { error: "Missing required query parameter: q." });
+  }
+
+  if (requestUrl.pathname === "/api/context-packs/build") {
+    const kind = optionalContextPackKind(requestUrl);
+    const target = optionalTarget(requestUrl) ?? optionalQuery(requestUrl);
+    if (!kind) {
+      return jsonRoute(400, { error: "Missing required query parameter: kind=task|person|context|meeting|debugging|agent-handoff." });
+    }
+    if (!target) {
+      return jsonRoute(400, { error: "Missing required query parameter: target or q." });
+    }
+    return jsonRoute(200, await buildPortableContextPack(root, { kind, target }));
   }
 
   if (requestUrl.pathname === "/api/ask/session") {
@@ -3213,6 +3227,18 @@ function optionalBriefTargetKind(requestUrl: URL): { kind?: SessionBriefTargetKi
   }
 
   return { error: "Invalid query parameter targetKind; expected person|context." };
+}
+
+function optionalContextPackKind(requestUrl: URL): ContextPackKind | undefined {
+  const value = requestUrl.searchParams.get("kind") ?? undefined;
+  return value === "task" ||
+    value === "person" ||
+    value === "context" ||
+    value === "meeting" ||
+    value === "debugging" ||
+    value === "agent-handoff"
+    ? value
+    : undefined;
 }
 
 function optionalEntityKind(requestUrl: URL): EntityKind | undefined {

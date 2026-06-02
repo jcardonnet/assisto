@@ -15,6 +15,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["eval:v7"], "node tests/scenarios/run-v7.mjs");
   assert.equal(packageJson.scripts["eval:v8"], "node tests/scenarios/run-v8.mjs");
   assert.equal(packageJson.scripts["eval:answers"], "node tests/scenarios/run-answers.mjs");
+  assert.equal(packageJson.scripts["eval:context-packs"], "node tests/scenarios/run-context-packs.mjs");
   assert.equal(packageJson.scripts["agent:start"], "node scripts/agent-control.mjs start");
   assert.equal(packageJson.scripts["agent:status"], "node scripts/agent-control.mjs status");
   assert.equal(packageJson.scripts["agent:handoff"], "node scripts/agent-control.mjs handoff");

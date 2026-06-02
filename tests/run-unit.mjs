@@ -14,6 +14,7 @@ import { runCoreFrameExtractionTests } from "./core-frame-extraction.mjs";
 import { runCoreOntologyAwareFrameTests } from "./core-ontology-aware-frames.mjs";
 import { runCoreAnswerContractV3Tests } from "./core-answer-contract-v3.mjs";
 import { runCoreAnswerContractV4Tests } from "./core-answer-contract-v4.mjs";
+import { runCoreContextPackTests } from "./core-context-packs.mjs";
 import { runCoreHealthTests } from "./core-health.mjs";
 import { runCoreMaintenanceTests } from "./core-maintenance.mjs";
 import { runCoreBriefTests } from "./core-briefs.mjs";
@@ -52,6 +53,7 @@ export async function runUnitTests() {
   await runCoreOntologyAwareFrameTests();
   await runCoreAnswerContractV3Tests();
   await runCoreAnswerContractV4Tests();
+  await runCoreContextPackTests();
   await runCoreHealthTests();
   await runCoreMaintenanceTests();
   await runCoreBriefTests();

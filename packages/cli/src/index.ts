@@ -17,6 +17,7 @@ import {
   buildEntityStewardshipResult,
   buildEntityStewardshipCommandCenter,
   buildImportAssistantResult,
+  buildPortableContextPack,
   buildMaintenancePlan,
   clearMaintenanceRuns,
   listMaintenanceRuns,
@@ -73,6 +74,7 @@ import {
   transactionFilePaths,
   validateDocuments,
   validateTransaction,
+  type ContextPackKind,
   type EntityClaimSummary,
   type EntityRepairActionV2Kind,
   type FrontmatterValue,
@@ -224,6 +226,10 @@ export async function main(
 
     if (command === "ask") {
       return await commandAsk(parsed.root, rest, io);
+    }
+
+    if (command === "pack") {
+      return await commandPack(parsed.root, rest, io);
     }
 
     if (command === "health") {
@@ -2017,6 +2023,47 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
   return 0;
 }
 
+async function commandPack(root: string, args: string[], io: CliIo): Promise<number> {
+  const [kindValue] = args;
+  const kinds: ContextPackKind[] = ["task", "person", "context", "meeting", "debugging", "agent-handoff"];
+  if (!kindValue || kindValue === "--help" || kindValue === "-h" || !kinds.includes(kindValue as ContextPackKind)) {
+    throw new Error("Usage: wm pack <task|person|context|meeting|debugging|agent-handoff> <target...> [--format json|markdown] [--json]");
+  }
+
+  const format = args.includes("--json") ? "json" : optionValue(args, "--format") ?? "markdown";
+  if (format !== "json" && format !== "markdown") {
+    throw new Error("wm pack --format must be json or markdown.");
+  }
+
+  const target = positionalPackArgs(args.slice(1)).join(" ").trim();
+  if (!target) {
+    throw new Error("wm pack requires a target or question.");
+  }
+
+  const pack = await buildPortableContextPack(root, { kind: kindValue as ContextPackKind, target, now: io.now });
+  io.stdout(format === "json" ? JSON.stringify(pack, null, 2) + "\n" : pack.compact_markdown);
+  return 0;
+}
+
+function positionalPackArgs(args: string[]): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === "--json") {
+      continue;
+    }
+    if (value === "--format") {
+      index += 1;
+      continue;
+    }
+    if (value.startsWith("--")) {
+      continue;
+    }
+    values.push(value);
+  }
+  return values;
+}
+
 async function commandMaintenance(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand, ...rest] = args;
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
@@ -2965,6 +3012,7 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] review apply-staged <id|path> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]',
       "  wm [--root <path>] events reprocess <event-id|path> --stage-only",
       '  wm [--root <path>] ask --pack-context "<question>"',
+      '  wm [--root <path>] pack <task|person|context|meeting|debugging|agent-handoff> <target...> [--format json|markdown] [--json]',
       '  wm [--root <path>] ask --answer-basis "<question>"',
       '  wm [--root <path>] ask --answer-contract "<question>"',
       '  wm [--root <path>] ask --contract-v3 "<question>"',

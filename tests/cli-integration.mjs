@@ -713,6 +713,20 @@ summary_generated_from:
     assert.equal(Array.isArray(contractV4.suggestedSourceImports), true);
     assert.match(contractV4.contextPack, /# Context pack/);
 
+
+    const portablePackResult = await runWm(askRoot, [
+      "pack",
+      "task",
+      "How should I explain Joe and Mike the difference between Solr and Qdrant?",
+      "--json"
+    ]);
+    const portablePack = JSON.parse(portablePackResult.stdout);
+    assert.equal(portablePack.kind, "task");
+    assert.equal(Array.isArray(portablePack.active_claims), true);
+    assert.equal(portablePack.context_pack.includes("memory/people/joe.md"), true);
+    assert.deepEqual(portablePack.canonical_writes, []);
+    assert.match(portablePack.compact_markdown, /Portable Cited Context Pack/);
+
     const oldOpenAiKey = process.env.OPENAI_API_KEY;
     const oldOpenAiModel = process.env.ASSISTO_OPENAI_MODEL;
 
