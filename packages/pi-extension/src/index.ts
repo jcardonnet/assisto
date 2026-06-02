@@ -1,5 +1,6 @@
 import {
   applyTransaction,
+  buildPortableContextPack,
   createCaptureNote,
   createWorkdayCapture,
   createReviewApplyTransaction,
@@ -18,6 +19,7 @@ import {
   transactionFilePaths,
   validateDocuments,
   validateTransaction,
+  type ContextPackKind,
   type FrontmatterValue,
   type ParsedTransaction,
   type ReviewActionState,
@@ -50,6 +52,7 @@ export type WorkMemoryToolName =
   | "wm_review_apply_staged"
   | "wm_events_reprocess"
   | "wm_pack_context"
+  | "wm_context_pack_build"
   | "wm_answer_contract_v3"
   | "wm_lint";
 
@@ -395,6 +398,15 @@ function createTools(vaultRoot: string): WorkMemoryToolDefinition[] {
       run: async (input) => retrieveContextForAnswer(rootFromInput(input, vaultRoot), stringInput(input, "question"))
     },
     {
+      name: "wm_context_pack_build",
+      description: "Build a portable cited context pack for a task, person, context, meeting, debugging session, or agent handoff.",
+      run: async (input) =>
+        buildPortableContextPack(rootFromInput(input, vaultRoot), {
+          kind: contextPackKindInput(input, "kind"),
+          target: targetOrQuestionInput(input)
+        })
+    },
+    {
       name: "wm_answer_contract_v3",
       description: "Build a strict cited answer contract v3 for a question.",
       run: async (input) => retrieveCitedAnswerContractV3(rootFromInput(input, vaultRoot), stringInput(input, "question"))
@@ -720,6 +732,7 @@ function toolLabel(name: WorkMemoryToolName): string {
     wm_review_apply_staged: "WM Review Apply Staged",
     wm_events_reprocess: "WM Events Reprocess",
     wm_pack_context: "WM Pack Context",
+    wm_context_pack_build: "WM Context Pack Build",
     wm_answer_contract_v3: "WM Answer Contract V3",
     wm_lint: "WM Lint"
   };
@@ -740,6 +753,11 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
   const reason = { type: "string" as const, description: "Human-readable rejection reason." };
   const question = { type: "string" as const, description: "Question to pack context for." };
   const target = { type: "string" as const, description: "Target Person or Topic ID/path for a staged claim." };
+  const contextPackKindSchema = {
+    type: "string" as const,
+    enum: ["task", "person", "context", "meeting", "debugging", "agent-handoff"],
+    description: "Portable context pack kind."
+  };
   const context = { type: "string" as const, description: "Existing Context ID/path to scope a staged claim." };
   const createContext = { type: "string" as const, description: "New Context name to create through review." };
   const supersede = { type: "string" as const, description: "Existing claim ID to supersede through review." };
@@ -803,6 +821,11 @@ function toolParameters(name: WorkMemoryToolName): JsonSchema {
     case "wm_pack_context":
     case "wm_answer_contract_v3":
       return objectSchema({ ...baseProperties, question }, ["question"]);
+    case "wm_context_pack_build":
+      return objectSchema(
+        { ...baseProperties, kind: contextPackKindSchema, target, question },
+        ["kind"]
+      );
     case "wm_validate":
     case "wm_list_transactions":
     case "wm_review_inbox":
@@ -1114,6 +1137,25 @@ function extractionProviderFromInput(
   }
 
   throw new Error(`Unsupported extraction provider: ${provider}`);
+}
+
+function targetOrQuestionInput(input: Record<string, unknown> | undefined): string {
+  return optionalStringInput(input, "target") ?? stringInput(input, "question");
+}
+
+function contextPackKindInput(input: Record<string, unknown> | undefined, key: string): ContextPackKind {
+  const value = stringInput(input, key);
+  if (
+    value === "task" ||
+    value === "person" ||
+    value === "context" ||
+    value === "meeting" ||
+    value === "debugging" ||
+    value === "agent-handoff"
+  ) {
+    return value;
+  }
+  throw new Error("Invalid context pack kind: " + value);
 }
 
 function reviewStateInput(input: Record<string, unknown> | undefined, key: string): ReviewActionState {

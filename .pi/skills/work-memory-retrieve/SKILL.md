@@ -21,6 +21,12 @@ Use when answering questions from existing work-memory pages or gathering contex
    wm ask --contract-v3 "<question>"
    ```
 
+   For handoffs or portable cited context, build a disposable pack:
+
+   ```bash
+   wm pack <task|person|context|meeting|debugging|agent-handoff> "<target or question>"
+   ```
+
 2. Read structured fields first:
    - `directAnswers`;
    - `cannotConfirm`;
@@ -37,6 +43,7 @@ Use when answering questions from existing work-memory pages or gathering contex
 ## Retrieval Boundaries
 
 - Cited answer contract v3 first.
+- Portable cited packs may be shared with agents, meeting prep, debugging sessions, or handoffs, but remain derived-only.
 - `contextPack` compatibility second.
 - Ontology/symbolic hints are derived-only.
 - Semantic search is discovery-only and cannot outrank cited claims.

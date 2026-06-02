@@ -1640,6 +1640,21 @@ export async function runWorkbenchTests() {
     assert.match(ask.contextPack, /clm_jeff_manager/);
     assert.match(ask.contextPack, /ev_2026_05_21_001/);
 
+
+    const contextPack = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/context-packs/build?kind=task&target=Who%20is%20my%20manager%3F"
+        })
+      ).body
+    );
+    assert.equal(contextPack.kind, "task");
+    assert.equal(contextPack.active_claims.some((claim) => claim.claim_id === "clm_jeff_manager"), true);
+    assert.equal(contextPack.evidence_events.some((event) => event.id === "ev_2026_05_21_001"), true);
+    assert.deepEqual(contextPack.canonical_writes, []);
+    assert.match(contextPack.compact_markdown, /Portable Cited Context Pack/);
+
     const answerContract = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {

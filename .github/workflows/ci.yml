@@ -85,6 +85,9 @@ jobs:
       - name: Answers eval
         run: pnpm eval:answers
 
+      - name: Context packs eval
+        run: pnpm eval:context-packs
+
       - name: v8 eval
         run: pnpm eval:v8
 
