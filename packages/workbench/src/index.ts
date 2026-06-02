@@ -17,6 +17,7 @@ import {
   buildEntityStewardshipV2,
   buildSymbolicIndex,
   buildImportAssistantResult,
+  buildSourceCaptureHub,
   buildReviewAccelerationQueue,
   buildReviewAutopilotResult,
   buildUseAssistoTomorrowResult,
@@ -40,6 +41,7 @@ import {
   triageSourceInboxSession,
   listSourceInboxSessions,
   readSourceInboxSession,
+  searchSourceInboxUnits,
   createWorkdayCapture,
   createContextNoteTransaction,
   createEntityAliasTransaction,
@@ -599,6 +601,14 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/source-inbox") {
     return jsonRoute(200, await listSourceInboxSessions(root));
+  }
+
+  if (requestUrl.pathname === "/api/source-inbox/hub") {
+    return jsonRoute(200, await buildSourceCaptureHub(root));
+  }
+
+  if (requestUrl.pathname === "/api/source-inbox/search") {
+    return jsonRoute(200, await searchSourceInboxUnits(root, sourceInboxSearchInputFromUrl(requestUrl)));
   }
 
   if (requestUrl.pathname === "/api/source-inbox/session") {
@@ -1286,6 +1296,48 @@ async function createImportTriagePreview(
   return { ...result, session_id: session.session_id };
 }
 
+
+function sourceInboxSearchInputFromUrl(requestUrl: URL) {
+  return {
+    query: requestUrl.searchParams.get("query") ?? requestUrl.searchParams.get("q") ?? undefined,
+    session_id: requestUrl.searchParams.get("session") ?? requestUrl.searchParams.get("id") ?? undefined,
+    adapter_kind: requestUrl.searchParams.get("kind") ?? undefined,
+    import_status: sourceInboxImportStatusParam(requestUrl.searchParams.get("import_status") ?? requestUrl.searchParams.get("status")),
+    triage_state: sourceInboxTriageStateParam(requestUrl.searchParams.get("triage_state") ?? requestUrl.searchParams.get("triage")),
+    duplicate_state: sourceInboxDuplicateStateParam(requestUrl.searchParams.get("duplicate_state") ?? requestUrl.searchParams.get("duplicate")),
+    context: requestUrl.searchParams.get("context") ?? undefined,
+    source_label: requestUrl.searchParams.get("source_label") ?? requestUrl.searchParams.get("sourceLabel") ?? undefined,
+    limit: positiveIntegerParam(requestUrl.searchParams.get("limit"), "limit")
+  };
+}
+
+function sourceInboxImportStatusParam(value: string | null): "previewed" | "triaged" | "events_created" | undefined {
+  if (!value) return undefined;
+  if (value === "previewed" || value === "triaged" || value === "events_created") return value;
+  throw new Error("Source Inbox import status must be previewed, triaged, or events_created.");
+}
+
+function sourceInboxTriageStateParam(value: string | null): "untriaged" | "keep" | "skip" | "split" | "merge" | undefined {
+  if (!value) return undefined;
+  if (value === "untriaged" || value === "keep" || value === "skip" || value === "split" || value === "merge") return value;
+  throw new Error("Source Inbox triage state must be untriaged, keep, skip, split, or merge.");
+}
+
+function sourceInboxDuplicateStateParam(value: string | null): "new" | "duplicate" | undefined {
+  if (!value) return undefined;
+  if (value === "new" || value === "duplicate") return value;
+  throw new Error("Source Inbox duplicate state must be new or duplicate.");
+}
+
+function positiveIntegerParam(value: string | null, name: string): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(name + " must be a positive integer.");
+  }
+  return parsed;
+}
+
 async function createSourceInboxPreview(
   root: string,
   input: Record<string, unknown>
@@ -1483,7 +1535,10 @@ function sourceAdapterKindInput(input: Record<string, unknown>): SourceAdapterKi
     value === "teams_json" ||
     value === "github_json" ||
     value === "tracker_csv" ||
-    value === "repo_markdown"
+    value === "repo_markdown" ||
+    value === "web_clip_text" ||
+    value === "browser_note" ||
+    value === "local_snippet"
   ) {
     return value;
   }
@@ -3987,7 +4042,9 @@ let entityDetail = null;
 let importTriageUnits = [];
 let captureInbox = null;
 let sourceInboxList = null;
+let sourceInboxHub = null;
 let sourceInboxSession = null;
+let sourceInboxSearchResult = null;
 
 for (const button of document.querySelectorAll("[data-tab]")) {
   button.addEventListener("click", () => {
@@ -5269,9 +5326,14 @@ function bindCaptureInboxActions(inbox) {
 }
 
 async function renderSourceInbox() {
-  if (!sourceInboxList) {
+  if (!sourceInboxList || !sourceInboxHub) {
     view.innerHTML = '<article class="item"><h2>Loading Source Inbox</h2><p class="meta">Reading local noncanonical source sessions.</p></article>';
-    sourceInboxList = await fetchJson('/api/source-inbox');
+    const [nextList, nextHub] = await Promise.all([
+      sourceInboxList ? Promise.resolve(sourceInboxList) : fetchJson('/api/source-inbox'),
+      sourceInboxHub ? Promise.resolve(sourceInboxHub) : fetchJson('/api/source-inbox/hub')
+    ]);
+    sourceInboxList = nextList;
+    sourceInboxHub = nextHub;
 
     if (activeTab !== 'source-inbox') {
       return;
@@ -5282,11 +5344,14 @@ async function renderSourceInbox() {
     <h2>Source Inbox</h2>
     <p class="meta">Inspect local export sessions before any Event or pending Transaction is created.</p>
     <div class="metrics">
-      <div class="metric"><span>Sessions</span><strong>\${escapeHtml(sourceInboxList.session_count)}</strong></div>
-      <div class="metric"><span>Units</span><strong>\${escapeHtml(sourceInboxList.sessions.reduce((sum, session) => sum + session.unit_count, 0))}</strong></div>
-      <div class="metric"><span>Duplicate units</span><strong>\${escapeHtml(sourceInboxList.sessions.reduce((sum, session) => sum + session.duplicate_units, 0))}</strong></div>
+      <div class="metric"><span>Sessions</span><strong>\${escapeHtml(sourceInboxHub.totals.sessions)}</strong></div>
+      <div class="metric"><span>Units</span><strong>\${escapeHtml(sourceInboxHub.totals.units)}</strong></div>
+      <div class="metric"><span>Untriaged</span><strong>\${escapeHtml(sourceInboxHub.totals.untriaged_units)}</strong></div>
+      <div class="metric"><span>Duplicate units</span><strong>\${escapeHtml(sourceInboxHub.totals.duplicates)}</strong></div>
     </div>
   </article>
+  \${renderSourceCaptureHub(sourceInboxHub)}
+  \${renderSourceInboxSearchPanel(sourceInboxSearchResult)}
   <section class="transaction-layout">
     <div class="grid">
       \${renderSourceInboxSessionList(sourceInboxList)}
@@ -5308,6 +5373,9 @@ async function renderSourceInbox() {
           <option value="github_json">github_json</option>
           <option value="tracker_csv">tracker_csv</option>
           <option value="repo_markdown">repo_markdown</option>
+          <option value="web_clip_text">web_clip_text</option>
+          <option value="browser_note">browser_note</option>
+          <option value="local_snippet">local_snippet</option>
           <option value="markdown">markdown</option>
           <option value="text">text</option>
           <option value="email">email</option>
@@ -5331,6 +5399,57 @@ async function renderSourceInbox() {
   <div id="source-inbox-output" class="action-output"></div>\`;
   bindSourceInboxActions();
   bindSourceInboxSessionControls();
+}
+
+
+
+function renderSourceCaptureHub(hub) {
+  if (!hub) {
+    return '';
+  }
+
+  const duplicateGroups = (hub.duplicate_groups ?? []).map((group) => group.source_hash + ' · ' + group.unit_count + ' unit(s)');
+
+  return '<section class="grid">' +
+    '<article class="item"><h2>Next source action</h2><p class="pill">' + escapeHtml(hub.next_recommended_action.action) + '</p><p class="meta">' + escapeHtml(hub.next_recommended_action.label) + '</p>' + (hub.next_recommended_action.session_id ? detailListHtml([['Session', hub.next_recommended_action.session_id]]) : '') + '</article>' +
+    '<article class="item"><h2>Review load forecast</h2>' + detailListHtml([
+      ['Total units', String(hub.review_load_forecast.total_units)],
+      ['Likely safe', String(hub.review_load_forecast.likely_safe)],
+      ['Likely staged', String(hub.review_load_forecast.likely_staged)],
+      ['Likely conflicts', String(hub.review_load_forecast.likely_conflict)],
+      ['Duplicates', String(hub.review_load_forecast.duplicates)]
+    ]) + '</article>' +
+    '<article class="item"><h2>Adapter counts</h2>' + plainListHtml('Adapters', Object.entries(hub.adapter_counts).map(([key, value]) => key + ': ' + value)) + '</article>' +
+    '<article class="item"><h2>Duplicate groups</h2>' + plainListHtml('Groups', duplicateGroups) + '</article>' +
+  '</section>';
+}
+
+function renderSourceInboxSearchPanel(result) {
+  return '<article class="item">' +
+    '<h2>Search source units</h2>' +
+    '<form id="source-inbox-search-form" class="capture-form">' +
+      '<div class="action-row">' +
+        '<label class="field" for="source-inbox-search-query"><span>Query</span><input id="source-inbox-search-query" name="query" placeholder="person, system, source text"></label>' +
+        '<label class="field" for="source-inbox-search-kind"><span>Kind</span><input id="source-inbox-search-kind" name="kind" placeholder="Optional adapter kind"></label>' +
+        '<label class="field" for="source-inbox-search-triage"><span>Triage</span><select id="source-inbox-search-triage" name="triage"><option value="">any</option><option value="untriaged">untriaged</option><option value="keep">keep</option><option value="skip">skip</option><option value="split">split</option><option value="merge">merge</option></select></label>' +
+        '<label class="field" for="source-inbox-search-duplicate"><span>Duplicate</span><select id="source-inbox-search-duplicate" name="duplicate"><option value="">any</option><option value="new">new</option><option value="duplicate">duplicate</option></select></label>' +
+      '</div>' +
+      '<div class="action-row"><button type="submit" class="secondary">Search sources</button></div>' +
+    '</form>' +
+    '<div id="source-inbox-search-results">' + (result ? renderSourceInboxSearchResult(result) : '<p class="meta">Search local Source Inbox units without creating Events.</p>') + '</div>' +
+  '</article>';
+}
+
+function renderSourceInboxSearchResult(result) {
+  const cards = (result.matches ?? []).map((match) => '<article class="item"><h3>' + escapeHtml(match.unit_id) + '</h3><p class="pill">' + escapeHtml(match.adapter_kind) + ' · ' + escapeHtml(match.triage_state) + ' · ' + escapeHtml(match.duplicate_state) + '</p>' + detailListHtml([
+    ['Session', match.session_id],
+    ['Source label', match.source_label],
+    ['Observed', match.observed_at ?? 'unknown'],
+    ['Contexts', (match.contexts ?? []).join(', ') || 'none'],
+    ['Source hash', match.source_hash],
+    ['Raw excerpt', match.raw_excerpt || 'none']
+  ]) + '</article>').join('');
+  return '<section><h3>Matches: ' + escapeHtml(String(result.match_count)) + '</h3><div class="grid">' + (cards || '<article class="item"><h3>No matches</h3><p class="meta">Try another source query or filter.</p></article>') + '</div></section>';
 }
 
 function renderSourceInboxSessionList(result) {
@@ -5371,6 +5490,27 @@ function bindSourceInboxActions() {
     });
   }
 
+  document.querySelector('#source-inbox-search-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const output = document.querySelector('#source-inbox-search-results');
+    const params = new URLSearchParams();
+    for (const key of ['query', 'kind', 'triage', 'duplicate']) {
+      const value = form.elements[key]?.value?.trim();
+      if (value) {
+        params.set(key, value);
+      }
+    }
+    output.innerHTML = '<pre>Searching</pre>';
+
+    try {
+      sourceInboxSearchResult = await fetchJson('/api/source-inbox/search?' + params.toString());
+      output.innerHTML = renderSourceInboxSearchResult(sourceInboxSearchResult);
+    } catch (error) {
+      output.innerHTML = '<pre>' + escapeHtml(error.message) + '</pre>';
+    }
+  });
+
   document.querySelector('#source-inbox-preview-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -5388,6 +5528,7 @@ function bindSourceInboxActions() {
         limit: form.elements.limit.value
       });
       sourceInboxList = await fetchJson('/api/source-inbox');
+      sourceInboxHub = await fetchJson('/api/source-inbox/hub');
       sourceInboxSession = result.source_inbox_session;
       await renderSourceInbox();
       document.querySelector('#source-inbox-output').innerHTML = renderSourceInboxPreviewResult(result);
@@ -5422,6 +5563,7 @@ function bindSourceInboxSessionControls() {
     try {
       sourceInboxSession = await postJson('/api/source-inbox/triage', { sessionId: sourceInboxSession.session_id, decisions });
       sourceInboxList = await fetchJson('/api/source-inbox');
+      sourceInboxHub = await fetchJson('/api/source-inbox/hub');
       detail.innerHTML = renderSourceInboxSession(sourceInboxSession);
       bindSourceInboxSessionControls();
       output.innerHTML = \`<pre>\${escapeHtml(JSON.stringify({ session_id: sourceInboxSession.session_id, import_status: sourceInboxSession.import_status, triage_counts: sourceInboxSession.triage_counts }, null, 2))}</pre>\`;
@@ -5440,6 +5582,7 @@ function bindSourceInboxSessionControls() {
     try {
       const result = await postJson('/api/source-inbox/create-events', { sessionId: sourceInboxSession.session_id });
       sourceInboxList = await fetchJson('/api/source-inbox');
+      sourceInboxHub = await fetchJson('/api/source-inbox/hub');
       sourceInboxSession = await fetchJson(\`/api/source-inbox/session?id=\${encodeURIComponent(sourceInboxSession.session_id)}\`);
       detail.innerHTML = renderSourceInboxSession(sourceInboxSession);
       bindSourceInboxSessionControls();

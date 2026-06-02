@@ -191,6 +191,31 @@ export async function runCoreSourceAdapterTests() {
       rawText: ["# Search README", "", "Owner: Joe"].join("\n")
     });
     assert.equal(repoMarkdown.units[0].adapter_kind, "repo_markdown");
+
+    const webClip = await adapters.previewSourceAdapterImport({
+      kind: "web_clip_text",
+      root: structuredRoot,
+      rawText: "Search API runbook says Billing owns rollout tokens.",
+      source_label: "browser clip",
+      observed_at: "2026-06-02",
+      context: "ctx_search"
+    });
+    assert.equal(webClip.adapter_kind, "web_clip_text");
+    assert.equal(webClip.units[0].adapter_kind, "web_clip_text");
+    assert.equal(webClip.units[0].source_label, "browser clip");
+    assert.equal(webClip.units[0].metadata.capture_surface, "source_clip");
+    assert.equal(webClip.units[0].metadata.clip_kind, "web_clip_text");
+    assert.deepEqual(webClip.units[0].contexts, ["ctx_search"]);
+    assert.deepEqual(webClip.canonical_writes, []);
+
+    const localSnippet = await adapters.previewSourceAdapterImport({
+      kind: "local_snippet",
+      root: structuredRoot,
+      rawText: "Ravi owns Search API.\n---\nBilling blocks Search API."
+    });
+    assert.equal(localSnippet.units.length, 2);
+    assert.equal(localSnippet.units[0].source_label, "local_snippet import");
+    assert.equal(localSnippet.units[1].metadata.clip_kind, "local_snippet");
   } finally {
     await rm(structuredRoot, { recursive: true, force: true });
   }

@@ -23,6 +23,20 @@ test("Workbench v10 runs the source-to-reasoning loop without direct canonical w
     await page.goto(server.url);
 
     await page.getByRole("button", { name: "Source Inbox" }).click();
+    await expect(page.getByRole("heading", { name: "Next source action" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Search source units" })).toBeVisible();
+    await page.locator("#source-inbox-kind").selectOption("web_clip_text");
+    await page.locator("#source-inbox-source-label").fill("browser clip");
+    await page.locator("#source-inbox-raw-text").fill("Browser clip says Search API needs the Billing rollout runbook.");
+    await page.getByRole("button", { name: "Preview source export" }).click();
+    await expect(page.getByRole("heading", { name: "Source preview saved" })).toBeVisible();
+    await expect(page.locator("#source-inbox-output")).toContainText("web_clip_text");
+    await expect(page.locator("#source-inbox-output")).toContainText("capture_surface: source_clip");
+    await page.locator("#source-inbox-search-query").fill("Billing rollout runbook");
+    await page.getByRole("button", { name: "Search sources" }).click();
+    await expect(page.locator("#source-inbox-search-results")).toContainText("Matches: 1");
+    await expect(page.locator("#source-inbox-search-results")).toContainText("Browser clip says Search API");
+
     await page.locator("#source-inbox-kind").selectOption("repo_markdown");
     await page.locator("#source-inbox-source-label").fill("browser v10 repo export");
     await page.locator("#source-inbox-raw-text").fill("Search API depends on Billing repository.\n---\nRavi owns Search API.");

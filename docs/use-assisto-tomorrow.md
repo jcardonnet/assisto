@@ -73,14 +73,14 @@ Use citations, `cannotConfirm`, conflicts, stale signals, inference paths, and p
 
 When you have local exports, use Source Inbox before broad import:
 
-1. Preview a small EML, ICS, Slack/Teams JSON, GitHub JSON, tracker CSV, or repo Markdown export.
+1. Check Source Capture Hub with `wm source hub`, search existing Source Inbox units with `wm source search`, or preview a small EML, ICS, Slack/Teams JSON, GitHub JSON, tracker CSV, repo Markdown export, browser clip, browser note, or local snippet.
 2. Triage each unit with keep/skip/context/observed date/source label.
 3. Create Events plus pending Transactions.
 4. Review one staged item.
 5. Ask with `wm ask --contract-v4` or Workbench Ask and inspect proof paths/source excerpts.
 6. Log missing memory when the answer contract cannot confirm a fact.
 
-The Source Inbox session is local state, not canonical memory. Generated answers and briefs remain disposable.
+The Source Inbox session is local state, not canonical memory. Manual clips (`web_clip_text`, `browser_note`, `local_snippet`) also stay in Source Inbox until you explicitly create Events plus pending Transactions. Generated answers and briefs remain disposable.
 
 ## 35-45 Minutes: Import 10 Curated Notes
 

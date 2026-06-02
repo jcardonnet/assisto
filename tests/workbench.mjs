@@ -1334,6 +1334,31 @@ export async function runWorkbenchTests() {
     );
     assert.equal(sourceInboxSession.units[0].source_hash, "sha256:" + "d".repeat(64));
 
+    const sourceInboxHub = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/source-inbox/hub"
+        })
+      ).body
+    );
+    assert.equal(sourceInboxHub.version, "source-capture-hub-v1");
+    assert.equal(sourceInboxHub.totals.sessions, 1);
+    assert.equal(sourceInboxHub.totals.untriaged_units, 1);
+    assert.deepEqual(sourceInboxHub.canonical_writes, []);
+
+    const sourceInboxSearch = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "GET",
+          url: "/api/source-inbox/search?duplicate=new&triage=untriaged"
+        })
+      ).body
+    );
+    assert.equal(sourceInboxSearch.version, "source-inbox-search-v1");
+    assert.equal(sourceInboxSearch.match_count, 1);
+    assert.equal(sourceInboxSearch.matches[0].session_id, "srcin_20260601120000_workbench");
+
     const sourceInboxPreview = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {
@@ -1349,6 +1374,23 @@ export async function runWorkbenchTests() {
     assert.equal(sourceInboxPreview.adapter_kind, "github_json");
     assert.equal(sourceInboxPreview.source_inbox_session.adapter_kind, "github_json");
     assert.equal(sourceInboxPreview.source_inbox_session.units[0].metadata.platform, "github");
+
+    const sourceClipPreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/source-inbox/preview",
+          body: JSON.stringify({
+            kind: "web_clip_text",
+            rawText: "Search API browser clip says Billing owns rollout tokens.",
+            sourceLabel: "browser clip"
+          })
+        })
+      ).body
+    );
+    assert.equal(sourceClipPreview.adapter_kind, "web_clip_text");
+    assert.equal(sourceClipPreview.source_inbox_session.units[0].metadata.capture_surface, "source_clip");
+    assert.deepEqual(sourceClipPreview.canonical_writes, []);
 
     const sourceInboxTriage = JSON.parse(
       (
