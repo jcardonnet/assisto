@@ -106,10 +106,25 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /source hub/);
   assert.match(help.stdout, /source search/);
   assert.match(help.stdout, /source clip/);
+  assert.match(help.stdout, /review throughput/);
   assert.match(help.stdout, /query-symbolic/);
   assert.match(help.stdout, /dogfood control-room/);
 
 
+
+  const reviewRoot = await makeTempVault();
+
+  try {
+    await writeWorkbenchFixture(reviewRoot);
+    const throughputResult = await runWm(reviewRoot, ["review", "throughput", "--json"]);
+    const throughput = JSON.parse(throughputResult.stdout);
+    assert.equal(throughput.version, "review-throughput-v1");
+    assert.equal(throughput.batchApplyAllowed, false);
+    assert.equal(throughput.total_items >= 1, true);
+    assert.equal(throughput.next_action.item_id, "rev_mysql_scope");
+  } finally {
+    await rm(reviewRoot, { recursive: true, force: true });
+  }
 
   const sourceRoot = await makeTempVault();
 

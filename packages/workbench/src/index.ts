@@ -20,6 +20,7 @@ import {
   buildSourceCaptureHub,
   buildReviewAccelerationQueue,
   buildReviewAutopilotResult,
+  buildReviewThroughputResult,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
   readDailySession,
@@ -249,6 +250,20 @@ export interface WorkbenchReviewNext {
   item: WorkbenchReviewTurboItem | null;
   previous_item_id: string | null;
   next_item_id: string | null;
+}
+
+export interface WorkbenchReviewThroughput {
+  version: "review-throughput-v1";
+  generated_at: string;
+  total_items: number;
+  ready_now_count: number;
+  needs_input_count: number;
+  risk_review_count: number;
+  lanes: Array<{ lane_id: WorkbenchReviewLaneId; label: string; item_count: number; ready_count: number; blocked_count: number; required_inputs: string[]; action_checklist: string[]; item_ids: string[] }>;
+  bottlenecks: Array<{ lane_id: WorkbenchReviewLaneId; label: string; item_count: number; ready_count: number; blocked_count: number; required_inputs: string[]; action_checklist: string[]; item_ids: string[] }>;
+  next_action: { item_id: string; lane_id: WorkbenchReviewLaneId; label: string; endpoint: string; preview_endpoint: string; required_inputs: string[]; checklist: string[] } | null;
+  batchApplyAllowed: false;
+  warnings: string[];
 }
 
 export interface WorkbenchReviewAutopilot {
@@ -714,6 +729,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/review/acceleration") {
     return jsonRoute(200, await collectReviewAcceleration(root));
+  }
+
+  if (requestUrl.pathname === "/api/review/throughput") {
+    return jsonRoute(200, await collectReviewThroughput(root));
   }
 
   if (requestUrl.pathname === "/api/review/autopilot") {
@@ -2511,6 +2530,17 @@ async function collectReviewAcceleration(root: string): Promise<ReviewAccelerati
   return collectReviewAccelerationForTurbo(root, turbo.items);
 }
 
+async function collectReviewThroughput(root: string): Promise<WorkbenchReviewThroughput> {
+  const turbo = await collectReviewTurbo(root);
+  const acceleration = await collectReviewAccelerationForTurbo(root, turbo.items);
+  const throughput = buildReviewThroughputResult(acceleration);
+
+  return {
+    ...throughput,
+    generated_at: turbo.generated_at
+  };
+}
+
 async function collectReviewAutopilot(root: string): Promise<WorkbenchReviewAutopilot> {
   const turbo = await collectReviewTurbo(root);
   const acceleration = await collectReviewAccelerationForTurbo(root, turbo.items);
@@ -4031,6 +4061,7 @@ let reviewLaneFilter = "all";
 let reviewQueueIndex = 0;
 let reviewTurbo = null;
 let reviewAutopilot = null;
+let reviewThroughput = null;
 let transactionStateFilter = "pending";
 let transactionDetail = null;
 let briefTargets = { person: null, context: null };
@@ -4193,7 +4224,8 @@ async function runQuickCapture(path, body) {
       dailyQueueIndex = 0;
       activationStatus = null;
       reviewTurbo = null;
-    reviewAutopilot = null;
+      reviewAutopilot = null;
+      reviewThroughput = null;
       captureInbox = null;
     }
     output.innerHTML = renderActionResult(result);
@@ -6830,11 +6862,12 @@ async function runTransactionAction(path, body) {
 }
 
 async function renderReview() {
-  if (!reviewTurbo || !reviewAutopilot) {
+  if (!reviewTurbo || !reviewAutopilot || !reviewThroughput) {
     view.innerHTML = '<article class="item"><h2>Loading review lanes</h2><p class="meta">Reading staged ReviewItems.</p></article>';
-    [reviewTurbo, reviewAutopilot] = await Promise.all([
+    [reviewTurbo, reviewAutopilot, reviewThroughput] = await Promise.all([
       fetchJson("/api/review/turbo"),
-      fetchJson("/api/review/autopilot")
+      fetchJson("/api/review/autopilot"),
+      fetchJson("/api/review/throughput")
     ]);
 
     if (activeTab !== "review") {
@@ -6853,6 +6886,7 @@ function renderReviewTurbo(turbo) {
     : '<article class="item"><h2>Empty</h2><p class="meta">No matching memory objects.</p></article>';
 
   view.innerHTML = \`\${reviewAutopilotHtml(reviewAutopilot)}
+  \${renderReviewThroughput(reviewThroughput)}
   \${reviewLaneSummaryHtml(turbo)}
   \${reviewSummaryHtml(snapshot.review)}
   \${reviewQueueNavigatorHtml(items)}
@@ -6927,6 +6961,39 @@ function reviewAutopilotHtml(autopilot) {
   </section>\`;
 }
 
+
+function renderReviewThroughput(throughput) {
+  if (!throughput) {
+    return '';
+  }
+
+  const laneCards = (throughput.bottlenecks ?? []).map((lane) => '<article class="item"><h3>' + escapeHtml(lane.label) + '</h3>' + detailListHtml([
+    ['Items', String(lane.item_count)],
+    ['Ready', String(lane.ready_count)],
+    ['Blocked', String(lane.blocked_count)],
+    ['Required inputs', lane.required_inputs.join(', ') || 'none']
+  ]) + plainListHtml('Checklist', lane.action_checklist ?? []) + '</article>').join('');
+  const next = throughput.next_action;
+
+  return '<section class="review-throughput-panel">' +
+    '<h2>Review throughput</h2>' +
+    '<p class="meta">One recommended item, one preview, one explicit action. Batch apply disabled.</p>' +
+    '<div class="metrics">' +
+      '<div class="metric"><span>Total</span><strong>' + escapeHtml(String(throughput.total_items)) + '</strong></div>' +
+      '<div class="metric"><span>Ready now</span><strong>' + escapeHtml(String(throughput.ready_now_count)) + '</strong></div>' +
+      '<div class="metric"><span>Needs input</span><strong>' + escapeHtml(String(throughput.needs_input_count)) + '</strong></div>' +
+      '<div class="metric"><span>Risk review</span><strong>' + escapeHtml(String(throughput.risk_review_count)) + '</strong></div>' +
+    '</div>' +
+    (next ? '<article class="item"><h3>Next throughput action</h3>' + detailListHtml([
+      ['Item', next.item_id],
+      ['Lane', next.lane_id],
+      ['Preview endpoint', next.preview_endpoint],
+      ['Required inputs', next.required_inputs.join(', ') || 'none']
+    ]) + plainListHtml('Checklist', next.checklist ?? []) + '</article>' : '<article class="item"><h3>Next throughput action</h3><p class="meta">No staged review item is waiting.</p></article>') +
+    '<div class="grid">' + (laneCards || '<article class="item"><h3>No bottlenecks</h3><p class="meta">Review queue is clear.</p></article>') + '</div>' +
+    plainListHtml('Throughput warnings', throughput.warnings ?? []) +
+  '</section>';
+}
 function reviewLaneSummaryHtml(turbo) {
   const total = turbo.items.length;
   const laneButtons = turbo.lanes.map((lane) => \`<button type="button" class="reason-filter" data-review-lane="\${escapeHtml(lane.lane_id)}" aria-pressed="\${String(reviewLaneFilter === lane.lane_id)}">
