@@ -17,6 +17,12 @@ import {
   buildEntityStewardshipResult,
   buildEntityStewardshipCommandCenter,
   buildImportAssistantResult,
+  buildMaintenancePlan,
+  clearMaintenanceRuns,
+  listMaintenanceRuns,
+  readMaintenanceRun,
+  runMaintenance,
+  stageMaintenanceFinding,
   buildSourceCaptureHub,
   buildReviewAccelerationQueue,
   buildReviewThroughputResult,
@@ -71,6 +77,8 @@ import {
   type EntityRepairActionV2Kind,
   type FrontmatterValue,
   type ImportAssistantResult,
+  type MaintenanceMode,
+  type MaintenancePlanOptions,
   type ImportNotesResult,
   type ParsedTransaction,
   type ReviewActionState,
@@ -196,6 +204,10 @@ export async function main(
 
     if (command === "doctor") {
       return await commandDoctor(parsed.root, rest, io, cwd);
+    }
+
+    if (command === "maintenance") {
+      return await commandMaintenance(parsed.root, rest, io);
     }
 
     if (command === "friction") {
@@ -1990,6 +2002,107 @@ async function commandAsk(root: string, args: string[], io: CliIo): Promise<numb
   return 0;
 }
 
+async function commandMaintenance(root: string, args: string[], io: CliIo): Promise<number> {
+  const [subcommand, ...rest] = args;
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") {
+    io.stdout("Usage: wm maintenance <plan|run|list|show|clear|stage-finding> [options]\n");
+    return 0;
+  }
+
+  if (subcommand === "plan") {
+    const result = await buildMaintenancePlan(root, maintenanceOptions(rest, io));
+    return printMaintenancePlan(result, rest.includes("--json"), io);
+  }
+
+  if (subcommand === "run") {
+    const result = await runMaintenance(root, maintenanceOptions(rest, io));
+    return printMaintenancePlan(result, rest.includes("--json"), io);
+  }
+
+  if (subcommand === "list") {
+    const result = await listMaintenanceRuns(root);
+    if (rest.includes("--json")) {
+      io.stdout(`${JSON.stringify({ runs: result }, null, 2)}\n`);
+      return 0;
+    }
+    io.stdout("Maintenance runs\n");
+    for (const run of result) {
+      io.stdout(`- ${run.run_id} (${run.mode}) ${run.finding_count} finding(s) ${run.run_path}\n`);
+    }
+    return 0;
+  }
+
+  if (subcommand === "show") {
+    const id = rest[0] ?? optionValue(rest, "--id");
+    if (!id) {
+      throw new Error("Usage: wm maintenance show <run-id|path> [--json]");
+    }
+    const result = await readMaintenanceRun(root, id);
+    return printMaintenancePlan(result, rest.includes("--json"), io);
+  }
+
+  if (subcommand === "clear") {
+    const result = await clearMaintenanceRuns(root);
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  if (subcommand === "stage-finding") {
+    const findingId = optionValue(rest, "--finding") ?? optionValue(rest, "--finding-id") ?? optionValue(rest, "--id");
+    if (!findingId) {
+      throw new Error("Usage: wm maintenance stage-finding --finding <finding-id> [--note <text>] [--json]");
+    }
+    const result = await stageMaintenanceFinding(root, findingId, { now: io.now, note: optionValue(rest, "--note") ?? undefined });
+    if (rest.includes("--json")) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+    io.stdout(`Pending maintenance transaction: ${result.transaction_id} (${result.transaction_path})\n`);
+    return 0;
+  }
+
+  throw new Error("Usage: wm maintenance <plan|run|list|show|clear|stage-finding> [options]");
+}
+
+function maintenanceOptions(args: string[], io: CliIo): MaintenancePlanOptions {
+  const mode = optionValue(args, "--mode") ?? "full";
+  if (!isMaintenanceMode(mode)) {
+    throw new Error("Maintenance mode must be changed, random, topic, or full.");
+  }
+  if (mode === "topic" && !optionValue(args, "--topic")) {
+    throw new Error("Maintenance topic mode requires --topic <text>.");
+  }
+  const limit = optionValue(args, "--limit");
+  return {
+    mode,
+    seed: optionValue(args, "--seed") ?? undefined,
+    topic: optionValue(args, "--topic") ?? undefined,
+    limit: limit ? Number.parseInt(limit, 10) : undefined,
+    now: io.now
+  };
+}
+
+function isMaintenanceMode(value: string): value is MaintenanceMode {
+  return value === "changed" || value === "random" || value === "topic" || value === "full";
+}
+
+function printMaintenancePlan(result: Awaited<ReturnType<typeof buildMaintenancePlan>>, json: boolean, io: CliIo): number {
+  if (json) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  const run = "run_id" in result ? ` ${result.run_id}` : "";
+  io.stdout(`Maintenance Dream Cycle${run}: ${result.mode} (${result.generated_at})\n`);
+  io.stdout(`Findings: ${result.summary.total_findings}; stageable: ${result.summary.stageable}; high/medium/low: ${result.summary.high}/${result.summary.medium}/${result.summary.low}\n`);
+  for (const finding of result.findings.slice(0, 10)) {
+    io.stdout(`- ${finding.finding_id} ${finding.severity} ${finding.code}: ${finding.message}\n`);
+  }
+  for (const warning of result.warnings) {
+    io.stdout(`warning: ${warning}\n`);
+  }
+  return 0;
+}
+
 async function commandHealth(root: string, args: string[], io: CliIo): Promise<number> {
   const [subcommand] = args;
 
@@ -2828,6 +2941,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] dogfood eval [--questions <path>] [--json]",
       "  wm [--root <path>] dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]",
       "  wm [--root <path>] doctor memory-data [--json]",
+      "  wm [--root <path>] maintenance <plan|run|list|show|clear|stage-finding> [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',
       '  wm [--root <path>] review throughput [--json]',

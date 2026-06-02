@@ -15,6 +15,7 @@ import { runCoreOntologyAwareFrameTests } from "./core-ontology-aware-frames.mjs
 import { runCoreAnswerContractV3Tests } from "./core-answer-contract-v3.mjs";
 import { runCoreAnswerContractV4Tests } from "./core-answer-contract-v4.mjs";
 import { runCoreHealthTests } from "./core-health.mjs";
+import { runCoreMaintenanceTests } from "./core-maintenance.mjs";
 import { runCoreBriefTests } from "./core-briefs.mjs";
 import { runCoreTodayTests } from "./core-today.mjs";
 import { runCoreDogfoodTests } from "./core-dogfood.mjs";
@@ -52,6 +53,7 @@ export async function runUnitTests() {
   await runCoreAnswerContractV3Tests();
   await runCoreAnswerContractV4Tests();
   await runCoreHealthTests();
+  await runCoreMaintenanceTests();
   await runCoreBriefTests();
   await runCoreTodayTests();
   await runCoreDogfoodTests();

@@ -18,7 +18,8 @@ test("health tab previews and stages one finding without direct ReviewItem write
     await page.goto(server.url);
     await page.locator('[data-tab="health"]').click();
     await expect(page.getByRole("heading", { name: "Findings" })).toBeVisible();
-
+    await expect(page.getByRole("heading", { name: "Maintenance Dream Cycle" })).toBeVisible();
+    await expect(page.locator(".maintenance-panel")).toContainText("Stageable");
     const staleFinding = page.locator("[data-finding-id]").filter({ hasText: "stale noop event" }).first();
     await expect(staleFinding.getByText(/hlth_stale_noop_event_[a-f0-9]{12}/)).toBeVisible();
     await staleFinding.getByPlaceholder("Finding note").fill("Reprocess this one.");

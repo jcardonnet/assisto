@@ -2509,6 +2509,37 @@ summary_generated_from:
     await rm(path.join(root, "memory/followups/broken.md"), { force: true });
     await rm(path.join(root, "memory/topics/broken.md"), { force: true });
 
+    const maintenancePlan = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/maintenance/plan?mode=changed&seed=test" })).body);
+    assert.equal(maintenancePlan.version, "maintenance-dream-cycle-v1");
+    assert.equal(maintenancePlan.canonical_writes.length, 0);
+    assert.equal(maintenancePlan.summary.stageable > 0, true);
+    const maintenanceStageable = maintenancePlan.findings.find((finding) => finding.stageable);
+    assert.ok(maintenanceStageable);
+    const maintenancePreview = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/maintenance/stage-finding/preview",
+          body: JSON.stringify({ findingId: maintenanceStageable.finding_id, note: "Maintenance preview." })
+        })
+      ).body
+    );
+    assert.equal(maintenancePreview.created, false);
+    assert.equal(maintenancePreview.maintenance_finding_id, maintenanceStageable.finding_id);
+    await assert.rejects(() => readVaultFile(root, maintenancePreview.transaction_path), /ENOENT/);
+    const maintenanceRun = JSON.parse(
+      (
+        await workbench.handleWorkbenchRoute(root, {
+          method: "POST",
+          url: "/api/maintenance/run",
+          body: JSON.stringify({ mode: "changed", seed: "test" })
+        })
+      ).body
+    );
+    assert.equal(maintenanceRun.run_path.startsWith(".assisto-local/lint-runs/"), true);
+    const maintenanceRuns = JSON.parse((await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/maintenance/runs" })).body);
+    assert.equal(maintenanceRuns.runs.some((run) => run.run_id === maintenanceRun.run_id), true);
+
     const staleNoopFinding = health.findings.find((finding) => finding.code === "stale_noop_event");
     assert.ok(staleNoopFinding);
     const singleHealthPreview = JSON.parse(

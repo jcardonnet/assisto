@@ -93,3 +93,6 @@ jobs:
 
       - name: v10 eval
         run: pnpm eval:v10
+
+      - name: Maintenance eval
+        run: pnpm eval:maintenance
