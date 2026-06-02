@@ -9,6 +9,7 @@ import {
   buildActivationStatusResult,
   buildDailyQueueResult,
   buildDogfoodHomeResult,
+  buildDogfoodControlRoomResult,
   buildContextDashboardResult,
   buildContextOperatingRoomResult,
   buildContextOperatingRoomV3,
@@ -1427,7 +1428,7 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   const [subcommand] = args;
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    io.stdout("Usage: wm dogfood <status|eval|feedback> [--questions <path>] [--json]\n");
+    io.stdout("Usage: wm dogfood <status|control-room|eval|feedback> [--questions <path>] [--json]\n");
     io.stdout("       wm dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]\n");
     return 0;
   }
@@ -1464,6 +1465,32 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
     return result.validation.passed ? 0 : 1;
   }
 
+  if (subcommand === "control-room") {
+    const result = await buildDogfoodControlRoomResult(root);
+
+    if (args.includes("--json")) {
+      io.stdout(JSON.stringify(result, null, 2) + "\n");
+      return 0;
+    }
+
+    io.stdout("Dogfood Control Room (" + result.generated_at + ")\n");
+    io.stdout("Next action: " + result.next_recommended_action.label + "\n");
+    io.stdout("Source Inbox: " + result.source_inbox_backlog.untriaged_units + " untriaged / " + result.source_inbox_backlog.units_total + " unit(s)\n");
+    io.stdout("Import review load: " + result.import_progress.review_load_level + " (" + result.import_progress.estimated_review_minutes + " min)\n");
+    io.stdout("Unanswered dogfood questions: " + result.top_unanswered_questions.length + "\n");
+    io.stdout("Review bottlenecks: " + result.review_bottlenecks.length + "\n");
+    io.stdout("Proof coverage: " + result.proof_coverage.facts_with_event_citations + "/" + result.proof_coverage.fact_count + " facts cite Events\n");
+
+    if (result.stale_or_missing_source_warnings.length > 0) {
+      io.stdout("\nWarnings\n");
+      for (const warning of result.stale_or_missing_source_warnings) {
+        io.stdout("- " + warning + "\n");
+      }
+    }
+
+    return 0;
+  }
+
   if (subcommand === "eval") {
     const questionsPath = optionValue(args, "--questions");
     const result = await runPersonalDogfoodEval(root, {
@@ -1495,7 +1522,7 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
   }
 
   if (subcommand !== "status") {
-    throw new Error("Usage: wm dogfood <status|eval|feedback> [--questions <path>] [--json]");
+    throw new Error("Usage: wm dogfood <status|control-room|eval|feedback> [--questions <path>] [--json]");
   }
 
   const home = await buildDogfoodHomeResult(root);
@@ -2560,6 +2587,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",
+      "  wm [--root <path>] dogfood control-room [--json]",
       "  wm [--root <path>] dogfood eval [--questions <path>] [--json]",
       "  wm [--root <path>] dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]",
       "  wm [--root <path>] doctor memory-data [--json]",

@@ -104,8 +104,24 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /capture quick/);
   assert.match(help.stdout, /source inbox/);
   assert.match(help.stdout, /query-symbolic/);
+  assert.match(help.stdout, /dogfood control-room/);
 
 
+
+  const dogfoodRoot = await makeTempVault();
+
+  try {
+    await writeWorkbenchFixture(dogfoodRoot);
+    const controlRoomResult = await runWm(dogfoodRoot, ["dogfood", "control-room", "--json"]);
+    const controlRoom = JSON.parse(controlRoomResult.stdout);
+
+    assert.equal(controlRoom.version, "dogfood-control-room-v10");
+    assert.equal(controlRoom.next_recommended_action.action, "review_pending_transaction");
+    assert.equal(controlRoom.source_inbox_backlog.session_count, 0);
+    assert.deepEqual(controlRoom.canonical_writes, []);
+  } finally {
+    await rm(dogfoodRoot, { recursive: true, force: true });
+  }
 
   const symbolicRoot = await makeTempVault();
 

@@ -12,6 +12,7 @@ import {
   buildDailyQueueResult,
   buildCaptureInboxResult,
   buildDogfoodHomeResult,
+  buildDogfoodControlRoomResult,
   buildEntityStewardshipResult,
   buildEntityStewardshipV2,
   buildSymbolicIndex,
@@ -653,6 +654,10 @@ export async function handleWorkbenchRoute(
 
   if (requestUrl.pathname === "/api/dogfood/home") {
     return jsonRoute(200, await buildDogfoodHomeResult(root));
+  }
+
+  if (requestUrl.pathname === "/api/dogfood/control-room") {
+    return jsonRoute(200, await buildDogfoodControlRoomResult(root));
   }
 
   if (requestUrl.pathname === "/api/dogfood/eval") {
@@ -3958,6 +3963,7 @@ const quickCaptureForm = document.querySelector("#quick-capture-form");
 let snapshot = null;
 let health = null;
 let dogfoodHome = null;
+let dogfoodControlRoom = null;
 let dogfoodEvalResult = null;
 let useTomorrow = null;
 let dailyQueue = null;
@@ -4124,6 +4130,7 @@ async function runQuickCapture(path, body) {
       snapshot = await fetchJson("/api/snapshot");
       health = null;
       dogfoodHome = null;
+      dogfoodControlRoom = null;
       useTomorrow = null;
       dailyQueue = null;
       dailyQueueIndex = 0;
@@ -4406,16 +4413,18 @@ function percentText(value) {
 }
 
 async function renderToday() {
-  if (!dogfoodHome || !activationStatus || !dailyQueue || !dailySession || !useTomorrow) {
+  if (!dogfoodHome || !dogfoodControlRoom || !activationStatus || !dailyQueue || !dailySession || !useTomorrow) {
     view.innerHTML = '<article class="item"><h2>Loading Dogfood Home</h2><p class="meta">Reading local markdown memory.</p></article>';
-    const [loadedHome, loadedActivationStatus, loadedDailyQueue, loadedDailySession, loadedUseTomorrow] = await Promise.all([
+    const [loadedHome, loadedControlRoom, loadedActivationStatus, loadedDailyQueue, loadedDailySession, loadedUseTomorrow] = await Promise.all([
       fetchJson("/api/dogfood/home"),
+      fetchJson("/api/dogfood/control-room"),
       fetchJson("/api/activation/status"),
       fetchJson("/api/daily/queue"),
       fetchJson("/api/daily/session"),
       fetchJson("/api/use-tomorrow")
     ]);
     dogfoodHome = loadedHome;
+    dogfoodControlRoom = loadedControlRoom;
     activationStatus = loadedActivationStatus;
     dailyQueue = loadedDailyQueue;
     dailySession = loadedDailySession;
@@ -4432,7 +4441,7 @@ async function renderToday() {
   }
 
   renderActivationWizard(activationStatus);
-  renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
+  renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession, dogfoodControlRoom);
 }
 
 function renderActivationWizard(result) {
@@ -4472,7 +4481,7 @@ function renderActivationWizard(result) {
   }
 }
 
-function renderDogfoodHome(result, queue, tomorrow, session) {
+function renderDogfoodHome(result, queue, tomorrow, session, controlRoom = dogfoodControlRoom) {
   const countCards = Object.keys(result.counts).map((key) => \`<article class="item">
     <h3>\${escapeHtml(key.replaceAll("_", " "))}</h3>
     <p class="pill">\${escapeHtml(result.counts[key])}</p>
@@ -4537,6 +4546,29 @@ function renderDogfoodHome(result, queue, tomorrow, session) {
   bindTodayActions();
   bindWorkdayModes();
   bindBriefLinks();
+}
+
+function renderControlRoom(result) {
+  if (!result) {
+    return "";
+  }
+
+  const warnings = (result.stale_or_missing_source_warnings ?? []).slice(0, 4).map((warning) => "<li>" + escapeHtml(warning) + "</li>").join("");
+  const bottlenecks = (result.review_bottlenecks ?? []).slice(0, 4).map((item) => "<li><strong>" + escapeHtml(item.review_reason) + "</strong> · " + escapeHtml(item.count) + " · " + escapeHtml(item.severity) + "</li>").join("");
+
+  return '<section><h2>Source-to-answer control room</h2>' +
+    '<div class="grid">' +
+      '<article class="item"><h3>Source Inbox</h3><p class="pill">' + escapeHtml(result.source_inbox_backlog.untriaged_units) + ' untriaged</p><p class="meta">' + escapeHtml(result.source_inbox_backlog.units_total) + ' source unit(s)</p></article>' +
+      '<article class="item"><h3>Dogfood questions</h3><p class="pill">' + escapeHtml(result.top_unanswered_questions.length) + ' unanswered</p><p class="meta">Missing-memory feedback stays noncanonical.</p></article>' +
+      '<article class="item"><h3>Proof coverage</h3><p class="pill">' + escapeHtml(result.proof_coverage.facts_with_event_citations) + '/' + escapeHtml(result.proof_coverage.fact_count) + '</p><p class="meta">facts cite Events</p></article>' +
+      '<article class="item"><h3>Import load</h3><p class="pill">' + escapeHtml(result.import_progress.review_load_level) + '</p><p class="meta">next batch: ' + escapeHtml(result.import_progress.suggested_next_batch_size) + '</p></article>' +
+    '</div>' +
+    '<article class="item"><h3>One next action</h3><p><strong>' + escapeHtml(result.next_recommended_action.label) + '</strong></p><p class="meta">' + escapeHtml(result.next_recommended_action.detail) + '</p></article>' +
+    '<div class="grid">' +
+      '<article class="item"><h3>Review bottlenecks</h3><ul>' + (bottlenecks || '<li>No review bottlenecks.</li>') + '</ul></article>' +
+      '<article class="item"><h3>Source warnings</h3><ul>' + (warnings || '<li>No source warnings.</li>') + '</ul></article>' +
+    '</div>' +
+  '</section>';
 }
 
 function bindWorkdayModes() {
@@ -6462,6 +6494,7 @@ async function runEntityAction(path, body) {
     if (result.created) {
       snapshot = await fetchJson("/api/snapshot");
       dogfoodHome = null;
+      dogfoodControlRoom = null;
       useTomorrow = null;
       health = null;
       reviewTurbo = null;
@@ -6641,6 +6674,7 @@ async function runTransactionAction(path, body) {
     snapshot = await fetchJson("/api/snapshot");
     health = null;
     dogfoodHome = null;
+      dogfoodControlRoom = null;
     useTomorrow = null;
     reviewTurbo = null;
     reviewAutopilot = null;
@@ -6973,6 +7007,7 @@ async function refreshAfterAction() {
   snapshot = await fetchJson("/api/snapshot");
   health = null;
   dogfoodHome = null;
+      dogfoodControlRoom = null;
   useTomorrow = null;
   reviewTurbo = null;
     reviewAutopilot = null;
@@ -7699,6 +7734,7 @@ function bindAskFrictionLog(result) {
         snapshot = await fetchJson("/api/snapshot");
         health = null;
         dogfoodHome = null;
+      dogfoodControlRoom = null;
         useTomorrow = null;
         reviewTurbo = null;
     reviewAutopilot = null;
