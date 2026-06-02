@@ -53,6 +53,7 @@ export interface FrictionLogResult {
   affected_files: string[];
   source_events: string[];
   proposed_file_writes: TransactionFileWrite[];
+  canonical_writes: string[];
   source_label: string;
   event_raw_text: string;
   transaction: ParsedTransaction;
@@ -169,6 +170,7 @@ async function runFrictionLog(
     affected_files: transaction.affected_files,
     source_events: transaction.source_events,
     proposed_file_writes: transaction.proposed_file_writes,
+    canonical_writes: [],
     source_label: sourceLabel,
     event_raw_text: rawText,
     transaction

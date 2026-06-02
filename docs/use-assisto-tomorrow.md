@@ -69,6 +69,19 @@ Ask:
 
 Use citations, `cannotConfirm`, conflicts, stale signals, inference paths, and proof paths. Repair actions are previews until you confirm creation of an Event or pending Transaction.
 
+## Source-To-Reasoning Upgrade
+
+When you have local exports, use Source Inbox before broad import:
+
+1. Preview a small EML, ICS, Slack/Teams JSON, GitHub JSON, tracker CSV, or repo Markdown export.
+2. Triage each unit with keep/skip/context/observed date/source label.
+3. Create Events plus pending Transactions.
+4. Review one staged item.
+5. Ask with `wm ask --contract-v4` or Workbench Ask and inspect proof paths/source excerpts.
+6. Log missing memory when the answer contract cannot confirm a fact.
+
+The Source Inbox session is local state, not canonical memory. Generated answers and briefs remain disposable.
+
 ## 35-45 Minutes: Import 10 Curated Notes
 
 Do not import full meeting transcripts during this first-day loop. Use curated excerpts or reviewed sections only.

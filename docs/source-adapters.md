@@ -39,6 +39,10 @@ Preview is read-only. Create writes one Event plus one pending Transaction per k
 
 The Event preserves source metadata. The pending Transaction may propose current-page mutations for review, but adapters themselves never apply Transactions and never edit current pages directly.
 
+## Source Inbox Triage
+
+Workbench Source Inbox is the preferred dogfood path for local exports. It stores noncanonical sessions under `.assisto-local/source-inbox/**`, lets the user inspect source units and duplicate state, and requires explicit triage before creating Events plus pending Transactions. Source Inbox sessions are not memory truth and may be deleted.
+
 ## CLI And Workbench
 
 Minimal CLI support:
