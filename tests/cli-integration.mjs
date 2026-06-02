@@ -811,6 +811,8 @@ summary_generated_from:
           },
           {
             question: "What is the Neptune deploy key?",
+            expected_cannot_confirm: ["No deterministic memory page"],
+            expected_repair_actions: ["capture_note"],
             tags: ["no_match"]
           }
         ]
@@ -820,7 +822,14 @@ summary_generated_from:
     const dogfoodEvalJson = JSON.parse(dogfoodEvalResult.stdout);
     assert.equal(dogfoodEvalJson.metrics.total_questions, 2);
     assert.equal(dogfoodEvalJson.metrics.answerability, 1);
+    assert.equal(dogfoodEvalJson.metrics.cannot_confirm_quality, 1);
+    assert.equal(dogfoodEvalJson.metrics.repair_action_precision, 0.5);
+    assert.equal(dogfoodEvalJson.questions[1].repair_suggestions.some((suggestion) => suggestion.action === "log_retrieval_miss"), true);
     assert.equal(dogfoodEvalJson.metrics.generated_persistence_violations, 0);
+    const dogfoodEvalText = await runWm(todayRoot, ["dogfood", "eval"]);
+    assert.match(dogfoodEvalText.stdout, /Cannot-confirm quality: 100%/);
+    assert.match(dogfoodEvalText.stdout, /Repair precision: 50%/);
+    assert.match(dogfoodEvalText.stdout, /Repair suggestions/);
 
     const activation = await runWm(todayRoot, ["activate", "status"]);
     assert.match(activation.stdout, /Activation/);

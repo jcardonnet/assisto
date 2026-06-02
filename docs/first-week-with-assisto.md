@@ -35,6 +35,28 @@ Use Entity Stewardship and Context Operating Rooms as reading and repair surface
 
 Briefs are compact derived views. Copy/export does not persist anything unless you separately route source text through capture/import.
 
+## Personal Dogfood Eval
+
+Create `.assisto-local/eval/questions.json` with real private questions and expected cited objects. The format can include direct expectations and safe miss expectations:
+
+```json
+{
+  "questions": [
+    {
+      "question": "Who owns Inventory?",
+      "expected_claim_ids": ["clm_inventory_owner"],
+      "expected_event_ids": ["ev_inventory_intro"],
+      "expected_page_paths": ["memory/contexts/inventory.md"],
+      "expected_cannot_confirm": ["deployment window"],
+      "expected_repair_actions": ["capture_note", "log_friction"],
+      "tags": ["inventory", "ownership"]
+    }
+  ]
+}
+```
+
+`wm dogfood eval --json` reports answerability, citation coverage, cannot-confirm quality, repair precision, irrelevant inclusions, review/follow-up surfacing, generated-persistence violations, and regression against `.assisto-local/eval/last-result.json` when present. It only reads memory and local eval files; it does not write canonical memory.
+
 ## Weekly Cleanup
 
 Once or twice a week:

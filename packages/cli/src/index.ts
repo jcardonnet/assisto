@@ -1634,8 +1634,10 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
 
   if (subcommand === "eval") {
     const questionsPath = optionValue(args, "--questions");
+    const previousResultPath = optionValue(args, "--previous-result");
     const result = await runPersonalDogfoodEval(root, {
-      questionsPath: questionsPath ? path.resolve(root, questionsPath) : undefined
+      questionsPath: questionsPath ? path.resolve(root, questionsPath) : undefined,
+      previousResultPath: previousResultPath ? path.resolve(root, previousResultPath) : undefined
     });
 
     if (args.includes("--json")) {
@@ -1648,9 +1650,22 @@ async function commandDogfood(root: string, args: string[], io: CliIo): Promise<
     io.stdout("Answerability: " + formatPercent(result.metrics.answerability) + "\n");
     io.stdout("Citation coverage: " + formatPercent(result.metrics.citation_coverage) + "\n");
     io.stdout("Irrelevant inclusions: " + result.metrics.irrelevant_inclusion_count + "\n");
+    io.stdout("Cannot-confirm quality: " + formatPercent(result.metrics.cannot_confirm_quality) + "\n");
+    io.stdout("Repair precision: " + formatPercent(result.metrics.repair_action_precision) + "\n");
     io.stdout("Missing-memory guidance: " + result.metrics.missing_memory_guidance_count + "\n");
     io.stdout("Review/follow-up surfacing: " + result.metrics.review_followup_surfacing_count + "\n");
     io.stdout("Generated persistence violations: " + result.metrics.generated_persistence_violations + "\n");
+    io.stdout("Regression since last run: " + result.metrics.regression_since_last_run + "\n");
+
+    const repairSuggestions = result.questions.flatMap((question) =>
+      question.repair_suggestions.map((suggestion) => ({ question: question.question, suggestion }))
+    );
+    if (repairSuggestions.length > 0) {
+      io.stdout("\nRepair suggestions\n");
+      for (const item of repairSuggestions.slice(0, 10)) {
+        io.stdout("- " + item.question + ": " + item.suggestion.label + (item.suggestion.endpoint ? " (" + item.suggestion.endpoint + ")" : "") + "\n");
+      }
+    }
 
     if (result.warnings.length > 0) {
       io.stdout("\nWarnings\n");
@@ -2938,7 +2953,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] use-tomorrow [--json]",
       "  wm [--root <path>] dogfood status [--json]",
       "  wm [--root <path>] dogfood control-room [--json]",
-      "  wm [--root <path>] dogfood eval [--questions <path>] [--json]",
+      "  wm [--root <path>] dogfood eval [--questions <path>] [--previous-result <path>] [--json]",
       "  wm [--root <path>] dogfood feedback --kind <retrieval_miss|bad_answer|wrong_extraction|missing_context|other> --note <text> [--question <question>] [--dry-run]",
       "  wm [--root <path>] doctor memory-data [--json]",
       "  wm [--root <path>] maintenance <plan|run|list|show|clear|stage-finding> [--json]",

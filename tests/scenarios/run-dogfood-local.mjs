@@ -38,6 +38,8 @@ try {
           },
           {
             question: "What is the Neptune deploy key?",
+            expected_cannot_confirm: ["No deterministic memory page"],
+            expected_repair_actions: ["capture_note"],
             tags: ["no_match"]
           }
         ]
@@ -57,9 +59,12 @@ try {
   assert.equal(result.metrics.answerability, 1);
   assert.equal(result.metrics.citation_coverage, 1);
   assert.equal(result.metrics.irrelevant_inclusion_count, 0);
+  assert.equal(result.metrics.cannot_confirm_quality, 1);
+  assert.equal(result.metrics.repair_action_precision, 0.5);
   assert.equal(result.metrics.missing_memory_guidance_count, 1);
   assert.equal(result.metrics.review_followup_surfacing_count, 2);
   assert.equal(result.metrics.generated_persistence_violations, 0);
+  assert.equal(result.questions[3].repair_suggestions.some((suggestion) => suggestion.action === "log_retrieval_miss"), true);
 
   console.log("✓ local personal question scoring");
   const metricsV2 = dogfoodEvalV2.summarizePersonalDogfoodEvalV2(result);

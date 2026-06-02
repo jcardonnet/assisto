@@ -32,9 +32,28 @@ export async function runCoreDogfoodEvalTests() {
         },
         {
           question: "What is the Neptune deploy key?",
+          expected_cannot_confirm: ["No deterministic memory page"],
+          expected_repair_actions: ["capture_note"],
           tags: ["no_match"]
         }
       ]
+    });
+    await writeJson(path.join(root, ".assisto-local", "eval", "last-result.json"), {
+      metrics: {
+        total_questions: 4,
+        answerable_questions: 4,
+        answerability: 1,
+        expected_items: 7,
+        found_expected_items: 7,
+        citation_coverage: 1,
+        irrelevant_inclusion_count: 0,
+        cannot_confirm_quality: 1,
+        repair_action_precision: 1,
+        missing_memory_guidance_count: 1,
+        review_followup_surfacing_count: 2,
+        generated_persistence_violations: 0,
+        regression_since_last_run: 0
+      }
     });
     const before = await snapshotMemory(root);
 
@@ -44,18 +63,25 @@ export async function runCoreDogfoodEvalTests() {
     assert.deepEqual(after, before);
     assert.equal(result.questions_path, questionsPath);
     assert.equal(result.metrics.total_questions, 4);
-    assert.equal(result.metrics.expected_items, 5);
-    assert.equal(result.metrics.found_expected_items, 5);
+    assert.equal(result.metrics.expected_items, 7);
+    assert.equal(result.metrics.found_expected_items, 7);
     assert.equal(result.metrics.citation_coverage, 1);
     assert.equal(result.metrics.answerability, 1);
+    assert.equal(result.metrics.cannot_confirm_quality, 1);
+    assert.equal(result.metrics.repair_action_precision, 0.5);
     assert.equal(result.metrics.missing_memory_guidance_count, 1);
     assert.equal(result.metrics.review_followup_surfacing_count, 2);
     assert.equal(result.metrics.generated_persistence_violations, 0);
+    assert.equal(result.metrics.regression_since_last_run, 1);
     assert.equal(result.questions[0].found_claim_ids.includes("clm_jeff_manager"), true);
     assert.equal(result.questions[0].found_event_ids.includes("ev_manager"), true);
     assert.equal(result.questions[1].found_review_ids.includes("rev_mysql_scope"), true);
     assert.equal(result.questions[2].found_followup_ids.includes("fu_ask_jeff"), true);
     assert.equal(result.questions[3].missing_memory_guidance, true);
+    assert.equal(result.questions[3].found_cannot_confirm.includes("No deterministic memory page"), true);
+    assert.equal(result.questions[3].found_repair_actions.includes("capture_note"), true);
+    assert.equal(result.questions[3].repair_suggestions.some((suggestion) => suggestion.action === "log_retrieval_miss"), true);
+    assert.equal(result.questions[3].repair_suggestions.some((suggestion) => suggestion.action === "pin_question"), true);
 
     const missing = await dogfoodEval.runPersonalDogfoodEval(root, {
       questionsPath: path.join(root, ".assisto-local", "eval", "missing.json")
