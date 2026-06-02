@@ -757,6 +757,7 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /renderUseTomorrow/);
     assert.match(client.body, /renderDailyQueue/);
     assert.match(client.body, /renderDogfoodHome/);
+    assert.match(client.body, /Source-to-answer control room/);
     assert.match(client.body, /\/api\/dogfood\/home/);
     assert.match(client.body, /next recommended action/);
     assert.match(client.body, /daily review complete/);
@@ -1004,6 +1005,14 @@ export async function runWorkbenchTests() {
     assert.equal(dogfoodHome.next_recommended_action.action, "review_pending_transaction");
     assert.equal(dogfoodHome.next_recommended_action.target_id, "tx_2026_05_21_apply");
     assert.equal(dogfoodHome.quick_briefs.some((brief) => brief.kind === "today"), true);
+
+    const dogfoodControlRoom = JSON.parse(
+      (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/dogfood/control-room" })).body
+    );
+    assert.equal(dogfoodControlRoom.version, "dogfood-control-room-v10");
+    assert.equal(dogfoodControlRoom.next_recommended_action.action, "review_pending_transaction");
+    assert.equal(dogfoodControlRoom.source_inbox_backlog.session_count, 0);
+    assert.deepEqual(dogfoodControlRoom.canonical_writes, []);
 
     const activationStatus = JSON.parse(
       (await workbench.handleWorkbenchRoute(root, { method: "GET", url: "/api/activation/status" })).body

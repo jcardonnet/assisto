@@ -6,6 +6,7 @@ import { writeContextProjectScenario } from "./helpers/scenario-factory.mjs";
 
 export async function runCoreDogfoodTests() {
   const dogfoodModule = await loadTsModule("packages/core/src/dogfood/index.ts");
+  const sourceInboxModule = await loadTsModule("packages/core/src/source-inbox/index.ts");
   const root = await makeTempVault("assisto-core-dogfood-");
 
   try {
@@ -29,6 +30,34 @@ export async function runCoreDogfoodTests() {
     assert.equal(home.quick_briefs.some((brief) => brief.kind === "today"), true);
     assert.equal(home.quick_briefs.some((brief) => brief.kind === "recent"), true);
     assert.equal(home.today.counts.pending_transactions, 4);
+
+    await sourceInboxModule.createSourceInboxSession(root, {
+      session_id: "srcin_20260527050000_control",
+      adapter_kind: "repo_markdown",
+      source_label: "repo export",
+      now: "2026-05-27T05:00:00.000Z",
+      units: [
+        {
+          unit_id: "unit_1",
+          raw_text: "Search API depends on Billing repository.",
+          source_label: "repo export",
+          source_hash: "sha256:controlroom1",
+          duplicate_state: "new"
+        }
+      ]
+    });
+    const controlRoom = await dogfoodModule.buildDogfoodControlRoomResult(root, {
+      now: "2026-05-27T05:00:00.000Z",
+      recentLimit: 2
+    });
+
+    assert.equal(controlRoom.version, "dogfood-control-room-v10");
+    assert.equal(controlRoom.source_inbox_backlog.session_count, 1);
+    assert.equal(controlRoom.source_inbox_backlog.untriaged_units, 1);
+    assert.equal(controlRoom.next_recommended_action.action, "triage_source_inbox");
+    assert.equal(controlRoom.review_bottlenecks[0].review_reason, "unscoped_claim");
+    assert.equal(controlRoom.proof_coverage.fact_count > 0, true);
+    assert.deepEqual(controlRoom.canonical_writes, []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -41,6 +70,10 @@ export async function runCoreDogfoodTests() {
     assert.equal(home.daily_progress.completed, true);
     assert.equal(home.daily_progress.open_items, 0);
     assert.equal(home.next_recommended_action.action, "capture_note");
+
+    const controlRoom = await dogfoodModule.buildDogfoodControlRoomResult(emptyRoot);
+    assert.equal(controlRoom.source_inbox_backlog.session_count, 0);
+    assert.equal(controlRoom.canonical_writes.length, 0);
   } finally {
     await rm(emptyRoot, { recursive: true, force: true });
   }
