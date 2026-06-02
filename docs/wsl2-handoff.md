@@ -7,6 +7,7 @@ Use this file to restart Assisto work in `/home/jc/assisto`.
 ```text
 AGENTS.md
 README.md
+docs/project-architecture.md
 docs/revised-design.md
 docs/cited-work-memory.md
 docs/use-assisto-tomorrow.md

@@ -8,6 +8,10 @@ Assisto has progressed from a safe MVP into a local-first Work-Memory OS surface
 Raw input → Event → Candidate claims → Transaction → Validated mutation or staged review → Current pages
 ```
 
+For a consolidated architecture and package/module map, start with
+`docs/project-architecture.md`. This file owns implementation status, roadmap,
+and validation guidance.
+
 ## Implemented tracks
 
 - **MVP**: transaction-safe core, schemas, validators, deterministic staging.
