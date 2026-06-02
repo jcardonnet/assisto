@@ -109,4 +109,6 @@ wm mode morning
 wm dogfood eval
 ```
 
+For local dogfood questions, add optional expectations such as `expected_cannot_confirm` and `expected_repair_actions` in `.assisto-local/eval/questions.json`. Good misses should surface cannot-confirm text plus repair actions like `capture_note` and `log_friction`, not invented facts.
+
 The goal is enough cited, reviewed memory that one real question, one review decision, and one brief are useful.

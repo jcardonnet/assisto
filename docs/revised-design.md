@@ -3111,6 +3111,8 @@ Example eval item:
   "expected_claim_ids": ["clm_example"],
   "expected_event_ids": ["ev_example"],
   "expected_page_paths": ["memory/people/example.md"],
+  "expected_cannot_confirm": ["fact the system should refuse to invent"],
+  "expected_repair_actions": ["capture_note", "log_friction"],
   "tags": ["manager", "person"]
 }
 ```
@@ -3124,7 +3126,8 @@ irrelevant inclusion count
 cannot-confirm quality
 review/follow-up surfacing
 generated-persistence violations
-missing-memory action quality
+repair action precision
+regression since last run
 ```
 
 Retrieval misses should become repair suggestions, not hallucinated answers.

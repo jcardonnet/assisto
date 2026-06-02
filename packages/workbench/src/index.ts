@@ -4409,9 +4409,12 @@ function dogfoodEvalMetricsHtml(result) {
       \${metricHtml("Answerability", percentText(metrics.answerability))}
       \${metricHtml("Citation coverage", percentText(metrics.citation_coverage))}
       \${metricHtml("Irrelevant inclusions", metrics.irrelevant_inclusion_count)}
+      \${metricHtml("Cannot-confirm quality", percentText(metrics.cannot_confirm_quality))}
+      \${metricHtml("Repair precision", percentText(metrics.repair_action_precision))}
       \${metricHtml("Missing-memory guidance", metrics.missing_memory_guidance_count)}
       \${metricHtml("Review/follow-up surfacing", metrics.review_followup_surfacing_count)}
       \${metricHtml("Generated persistence violations", metrics.generated_persistence_violations)}
+      \${metricHtml("Regression since last run", metrics.regression_since_last_run)}
     </div>
   </section>\`;
 }
@@ -4433,6 +4436,9 @@ function dogfoodEvalQuestionHtml(question) {
     \${dogfoodEvalFoundHtml("Found pages", question.found_page_paths)}
     \${dogfoodEvalFoundHtml("Found ReviewItems", question.found_review_ids)}
     \${dogfoodEvalFoundHtml("Found FollowUps", question.found_followup_ids)}
+    \${dogfoodEvalFoundHtml("Cannot confirm", question.found_cannot_confirm ?? [])}
+    \${dogfoodEvalFoundHtml("Repair actions", question.found_repair_actions ?? [])}
+    \${dogfoodEvalRepairSuggestionsHtml(question.repair_suggestions ?? [])}
     \${dogfoodEvalMissingHtml(question)}
   </article>\`;
 }
@@ -4441,13 +4447,23 @@ function dogfoodEvalFoundHtml(label, items) {
   return items.length ? plainListHtml(label, items) : "";
 }
 
+function dogfoodEvalRepairSuggestionsHtml(suggestions) {
+  if (!suggestions.length) {
+    return "";
+  }
+
+  return plainListHtml("Repair suggestions", suggestions.map((suggestion) => suggestion.label + (suggestion.endpoint ? " · " + suggestion.endpoint : "")));
+}
+
 function dogfoodEvalMissingHtml(question) {
   const missing = [
     ...missingExpected("Missing claims", question.expected_claim_ids, question.found_claim_ids),
     ...missingExpected("Missing Events", question.expected_event_ids, question.found_event_ids),
     ...missingExpected("Missing pages", question.expected_page_paths, question.found_page_paths),
     ...missingExpected("Missing ReviewItems", question.expected_review_ids, question.found_review_ids),
-    ...missingExpected("Missing FollowUps", question.expected_followup_ids, question.found_followup_ids)
+    ...missingExpected("Missing FollowUps", question.expected_followup_ids, question.found_followup_ids),
+    ...missingExpected("Missing cannot-confirm", question.expected_cannot_confirm ?? [], question.found_cannot_confirm ?? []),
+    ...missingExpected("Missing repair actions", question.expected_repair_actions ?? [], question.found_repair_actions ?? [])
   ];
 
   return missing.length ? \`<div class="warning-list">\${plainListHtml("Failing expectations", missing)}</div>\` : "";
@@ -4472,9 +4488,12 @@ function dogfoodEvalExportText(result) {
     \`answerability: \${percentText(metrics.answerability)}\`,
     \`citation_coverage: \${percentText(metrics.citation_coverage)}\`,
     \`irrelevant_inclusion_count: \${metrics.irrelevant_inclusion_count}\`,
+    \`cannot_confirm_quality: \${percentText(metrics.cannot_confirm_quality)}\`,
+    \`repair_action_precision: \${percentText(metrics.repair_action_precision)}\`,
     \`missing_memory_guidance_count: \${metrics.missing_memory_guidance_count}\`,
     \`review_followup_surfacing_count: \${metrics.review_followup_surfacing_count}\`,
     \`generated_persistence_violations: \${metrics.generated_persistence_violations}\`,
+    \`regression_since_last_run: \${metrics.regression_since_last_run}\`,
     "",
     "## Questions"
   ];

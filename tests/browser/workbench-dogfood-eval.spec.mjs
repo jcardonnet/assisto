@@ -26,6 +26,8 @@ test("dogfood eval tab runs local questions and shows failing expectations witho
           },
           {
             question: "What is the Neptune deploy key?",
+            expected_cannot_confirm: ["No deterministic memory page"],
+            expected_repair_actions: ["capture_note"],
             tags: ["no_match"]
           }
         ]
@@ -41,6 +43,10 @@ test("dogfood eval tab runs local questions and shows failing expectations witho
     await expect(page.getByText("clm_missing_manager")).toBeVisible();
     await expect(page.getByRole("heading", { name: "What is the Neptune deploy key?" })).toBeVisible();
     await expect(page.getByText("missing-memory guidance surfaced")).toBeVisible();
+    await expect(page.getByText("Cannot-confirm quality")).toBeVisible();
+    await expect(page.getByText("Repair precision")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Repair suggestions" }).first()).toBeVisible();
+    await expect(page.getByText("Log retrieval miss · /api/dogfood/feedback/preview").first()).toBeVisible();
 
     await page.getByRole("button", { name: "Run eval" }).click();
     await expect(page.getByText("Dogfood eval refreshed")).toBeVisible();
