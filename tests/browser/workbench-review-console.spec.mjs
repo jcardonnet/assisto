@@ -55,6 +55,9 @@ affected_files:
     await page.goto(server.url);
     await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Review summary" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Review throughput" })).toBeVisible();
+    await expect(page.locator(".review-throughput-panel")).toContainText("Ready now");
+    await expect(page.locator(".review-throughput-panel")).toContainText("Batch apply disabled");
     await expect(page.getByRole("heading", { name: "Review lanes" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Review Autopilot" })).toBeVisible();
     await expect(page.locator(".review-autopilot-console")).toContainText("Preview-only grouping");

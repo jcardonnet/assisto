@@ -47,6 +47,41 @@ export interface ReviewAccelerationQueue {
   batchApplyAllowed: false;
 }
 
+
+export interface ReviewThroughputLane {
+  lane_id: ReviewAccelerationLaneId;
+  label: string;
+  item_count: number;
+  ready_count: number;
+  blocked_count: number;
+  required_inputs: string[];
+  action_checklist: string[];
+  item_ids: string[];
+}
+
+export interface ReviewThroughputNextAction {
+  item_id: string;
+  lane_id: ReviewAccelerationLaneId;
+  label: string;
+  endpoint: string;
+  preview_endpoint: string;
+  required_inputs: string[];
+  checklist: string[];
+}
+
+export interface ReviewThroughputResult {
+  version: "review-throughput-v1";
+  total_items: number;
+  ready_now_count: number;
+  needs_input_count: number;
+  risk_review_count: number;
+  lanes: ReviewThroughputLane[];
+  bottlenecks: ReviewThroughputLane[];
+  next_action: ReviewThroughputNextAction | null;
+  batchApplyAllowed: false;
+  warnings: string[];
+}
+
 export interface ReviewAutopilotLaneSummary {
   lane_id: ReviewAccelerationLaneId;
   label: string;
@@ -135,6 +170,37 @@ export function buildReviewAccelerationQueue(input: ReviewAccelerationInput): Re
   };
 }
 
+
+export function buildReviewThroughputResult(queue: ReviewAccelerationQueue): ReviewThroughputResult {
+  const lanes = queue.lanes.map((lane) => {
+    const requiredInputs = requiredInputsForLane(lane.id);
+
+    return {
+      lane_id: lane.id,
+      label: lane.label,
+      item_count: lane.items.length,
+      ready_count: lane.items.filter((item) => throughputReadinessFor(item.lane_id) === "ready").length,
+      blocked_count: lane.items.filter((item) => throughputReadinessFor(item.lane_id) !== "ready").length,
+      required_inputs: requiredInputs,
+      action_checklist: actionChecklistForLane(lane.id),
+      item_ids: lane.items.map((item) => item.id)
+    };
+  });
+
+  return {
+    version: "review-throughput-v1",
+    total_items: queue.items.length,
+    ready_now_count: queue.items.filter((item) => throughputReadinessFor(item.lane_id) === "ready").length,
+    needs_input_count: queue.items.filter((item) => throughputReadinessFor(item.lane_id) === "needs_input").length,
+    risk_review_count: queue.items.filter((item) => throughputReadinessFor(item.lane_id) === "risk_review").length,
+    lanes,
+    bottlenecks: [...lanes].sort(compareThroughputLanes).slice(0, 3),
+    next_action: queue.nextItem ? nextThroughputAction(queue.nextItem) : null,
+    batchApplyAllowed: false,
+    warnings: ["Review throughput is derived and one-item-at-a-time; it never batch applies, supersedes, or edits memory directly."]
+  };
+}
+
 export function buildReviewAutopilotResult(queue: ReviewAccelerationQueue): ReviewAutopilotResult {
   return {
     version: "review-autopilot-v1",
@@ -152,6 +218,83 @@ export function buildReviewAutopilotResult(queue: ReviewAccelerationQueue): Revi
     batchApplyAllowed: false,
     warnings: ["Autopilot is preview-only; durable apply, reject, reprocess, and supersede actions remain one item at a time."]
   };
+}
+
+
+function throughputReadinessFor(laneId: ReviewAccelerationLaneId): "ready" | "needs_input" | "risk_review" {
+  switch (laneId) {
+    case "safe_apply":
+    case "stale_noop":
+      return "ready";
+    case "needs_context":
+    case "identity_ambiguity":
+      return "needs_input";
+    case "needs_ontology_review":
+    case "conflict_or_change":
+    case "other":
+      return "risk_review";
+  }
+}
+
+function requiredInputsForLane(laneId: ReviewAccelerationLaneId): string[] {
+  switch (laneId) {
+    case "needs_context":
+      return ["context"];
+    case "identity_ambiguity":
+      return ["identity_choice"];
+    case "conflict_or_change":
+      return ["target", "optional_supersede_claim_id"];
+    case "needs_ontology_review":
+      return ["ontology_or_frame_validation_review"];
+    case "safe_apply":
+      return ["target"];
+    case "stale_noop":
+      return ["event_id"];
+    case "other":
+      return ["human_review_decision"];
+  }
+}
+
+function actionChecklistForLane(laneId: ReviewAccelerationLaneId): string[] {
+  switch (laneId) {
+    case "needs_context":
+      return ["Choose existing Context or create Context through review", "Preview apply-staged", "Create one pending Transaction"];
+    case "identity_ambiguity":
+      return ["Inspect near matches", "Stage identity review or alias correction", "Keep false-merge risk staged"];
+    case "conflict_or_change":
+      return ["Compare staged claim against current active claims", "Select supersede claim only if explicit", "Preview apply-staged"];
+    case "needs_ontology_review":
+      return ["Inspect ontology/frame violation", "Stage correction or contest ReviewItem", "Do not promote unsafe frame"];
+    case "safe_apply":
+      return ["Preview apply-staged", "Confirm target page", "Create one pending Transaction"];
+    case "stale_noop":
+      return ["Preview stage-only Event reprocess", "Create one pending Transaction", "Preserve raw Event text"];
+    case "other":
+      return ["Open ReviewItem", "Preview mark/apply action", "Leave staged if uncertain"];
+  }
+}
+
+function nextThroughputAction(item: ReviewAccelerationItem): ReviewThroughputNextAction {
+  const staleNoop = item.lane_id === "stale_noop";
+
+  return {
+    item_id: item.id,
+    lane_id: item.lane_id,
+    label: staleNoop ? "Preview stage-only Event reprocess" : "Preview one review action",
+    endpoint: staleNoop ? "/api/events/reprocess" : "/api/review/apply-staged",
+    preview_endpoint: staleNoop ? "/api/events/reprocess/preview" : "/api/review/apply-staged/preview",
+    required_inputs: requiredInputsForLane(item.lane_id),
+    checklist: actionChecklistForLane(item.lane_id)
+  };
+}
+
+function compareThroughputLanes(left: ReviewThroughputLane, right: ReviewThroughputLane): number {
+  return (
+    right.item_count - left.item_count ||
+    right.blocked_count - left.blocked_count ||
+    reviewPriorityFor(left.lane_id) - reviewPriorityFor(right.lane_id) ||
+    left.lane_id.localeCompare(right.lane_id)
+  );
 }
 
 function riskFactorsForLane(laneId: ReviewAccelerationLaneId): string[] {

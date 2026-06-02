@@ -28,7 +28,7 @@ Import handles curated Markdown/text batches and curated transcript excerpts. It
 
 ## Review
 
-Review groups staged items and shows suggested manual actions. Apply, contest, archive, reprocess, and supersede flows are transaction-backed.
+Review groups staged items and shows suggested manual actions. The Review Throughput panel is derived: it counts ready-now, needs-input, and risk-review work, names bottleneck lanes, and points to exactly one preview-first next action. Apply, contest, archive, reprocess, and supersede flows are transaction-backed.
 
 ## Transactions
 

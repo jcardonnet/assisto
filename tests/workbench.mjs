@@ -818,6 +818,8 @@ export async function runWorkbenchTests() {
     assert.match(client.body, /data-review-lane/);
     assert.match(client.body, /claim-diff-card/);
     assert.match(client.body, /Review lanes/);
+    assert.match(client.body, /Review throughput/);
+    assert.match(client.body, /renderReviewThroughput/);
     assert.match(client.body, /Suggested action/);
     assert.match(client.body, /renderAnswerBasis/);
     assert.match(client.body, /renderAnswerDraft/);

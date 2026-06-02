@@ -55,7 +55,7 @@ All repair actions are still Events and/or pending Transactions. The answer, pro
 
 ## 15-25 Minutes: Review One Thing
 
-Use Today Daily Queue or Review. Pick one item, preview the action, then apply, reject, contest, archive, or reprocess through transaction-backed helpers.
+Use Today Daily Queue or Review. Start with Review Throughput: check the next recommended item, required inputs, and lane checklist. Pick one item, preview the action, then apply, reject, contest, archive, or reprocess through transaction-backed helpers.
 
 Do not batch apply.
 

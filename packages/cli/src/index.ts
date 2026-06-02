@@ -17,6 +17,8 @@ import {
   buildEntityStewardshipResult,
   buildImportAssistantResult,
   buildSourceCaptureHub,
+  buildReviewAccelerationQueue,
+  buildReviewThroughputResult,
   buildSymbolicIndex,
   loadSymbolicIndex,
   querySymbolicFacts,
@@ -1805,6 +1807,28 @@ async function commandReview(root: string, args: string[], io: CliIo): Promise<n
     return 0;
   }
 
+  if (subcommand === "throughput") {
+    const items = await listReviewItems(root);
+    const queue = buildReviewAccelerationQueue({
+      reviewItems: items.map((item) => ({
+        id: item.id,
+        path: item.path,
+        review_reason: item.review_reason,
+        source_events: [],
+        staged_claim_ids: []
+      }))
+    });
+    const result = buildReviewThroughputResult(queue);
+
+    if (args.includes("--json")) {
+      io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    printReviewThroughputResult(result, io);
+    return 0;
+  }
+
   if (subcommand === "show") {
     if (!idOrPath) {
       throw new Error("wm review show requires a review id or path.");
@@ -2406,6 +2430,17 @@ function parseBriefOptions(kind: SessionBriefKind, args: string[]): { kind: Sess
   return { kind, targetKind, target };
 }
 
+function printReviewThroughputResult(result: ReturnType<typeof buildReviewThroughputResult>, io: CliIo): void {
+  io.stdout(`Review throughput: ${result.total_items} item(s)\n`);
+  io.stdout(`Ready now: ${result.ready_now_count}\n`);
+  io.stdout(`Needs input: ${result.needs_input_count}\n`);
+  io.stdout(`Risk review: ${result.risk_review_count}\n`);
+  if (result.next_action) {
+    io.stdout(`Next: ${result.next_action.item_id} (${result.next_action.lane_id})\n`);
+    io.stdout(`Preview: ${result.next_action.preview_endpoint}\n`);
+  }
+}
+
 function printImportResult(result: ImportNotesResult, io: CliIo): void {
   io.stdout(`Import units: ${result.units_total}\n`);
   io.stdout(`Imported: ${result.units_imported}\n`);
@@ -2757,6 +2792,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] doctor memory-data [--json]",
       '  wm [--root <path>] friction log --kind <retrieval_miss|bad_answer|review_confusing|capture_wrong> --note "<text>" [--question "<q>"] [--dry-run]',
       '  wm [--root <path>] review list [--all]',
+      '  wm [--root <path>] review throughput [--json]',
       "  wm [--root <path>] review show <id|path>",
       "  wm [--root <path>] review mark <id|path> --state <reviewed|contested|archived> [--note <text>]",
       '  wm [--root <path>] review apply-staged <id|path> --target <id|path> [--context <id|path> | --create-context "<name>"] [--supersede <claim-id>] [--note <text>]',
