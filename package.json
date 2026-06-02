@@ -2,6 +2,7 @@
   "name": "work-memory-assistant",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "description": "Local-first markdown work-memory assistant MVP scaffold.",
   "type": "module",
   "packageManager": "pnpm@9.15.4",
