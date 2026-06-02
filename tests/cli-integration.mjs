@@ -1142,6 +1142,32 @@ summary_generated_from: []
     assert.match(healthCheck.stdout, /pages_missing_source_events\s+1/);
     assert.match(healthCheck.stdout, /Suggested manual actions/);
 
+    const missingTopicStderr = [];
+    const missingTopicExit = await cliModule.main(["--root", healthRoot, "maintenance", "plan", "--mode", "topic"], {
+      stdout: () => {},
+      stderr: (text) => missingTopicStderr.push(text)
+    });
+    assert.equal(missingTopicExit, 1);
+    assert.match(missingTopicStderr.join(""), /requires --topic/);
+
+    const maintenancePlanResult = await runWm(healthRoot, ["maintenance", "plan", "--mode", "changed", "--seed", "cli", "--json"]);
+    const maintenancePlan = JSON.parse(maintenancePlanResult.stdout);
+    assert.equal(maintenancePlan.version, "maintenance-dream-cycle-v1");
+    assert.equal(maintenancePlan.summary.stageable > 0, true);
+    const stageableMaintenance = maintenancePlan.findings.find((finding) => finding.stageable);
+    assert.ok(stageableMaintenance);
+    const maintenanceRunResult = await runWm(healthRoot, ["maintenance", "run", "--mode", "changed", "--seed", "cli", "--json"]);
+    const maintenanceRun = JSON.parse(maintenanceRunResult.stdout);
+    assert.equal(maintenanceRun.run_path.startsWith(".assisto-local/lint-runs/"), true);
+    const maintenanceList = await runWm(healthRoot, ["maintenance", "list", "--json"]);
+    assert.equal(JSON.parse(maintenanceList.stdout).runs.some((run) => run.run_id === maintenanceRun.run_id), true);
+    const maintenanceShow = await runWm(healthRoot, ["maintenance", "show", maintenanceRun.run_id, "--json"]);
+    assert.equal(JSON.parse(maintenanceShow.stdout).run_id, maintenanceRun.run_id);
+    const maintenanceStage = await runWm(healthRoot, ["maintenance", "stage-finding", "--finding", stageableMaintenance.finding_id, "--json"]);
+    const maintenanceStageJson = JSON.parse(maintenanceStage.stdout);
+    assert.equal(maintenanceStageJson.maintenance_finding_id, stageableMaintenance.finding_id);
+    assert.match(await readVaultFile(healthRoot, maintenanceStageJson.transaction_path), /transaction_state: pending/);
+
     const healthStage = await runWm(healthRoot, [
       "health",
       "check",

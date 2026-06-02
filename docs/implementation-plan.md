@@ -71,6 +71,7 @@ Workbench/browser:
 ```bash
 pnpm test:e2e
 pnpm test:browser
+pnpm eval:maintenance
 ```
 
 Full CI parity:

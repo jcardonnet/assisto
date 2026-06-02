@@ -17,6 +17,12 @@ import {
   buildEntityStewardshipCommandCenter,
   buildSymbolicIndex,
   buildImportAssistantResult,
+  buildMaintenancePlan,
+  clearMaintenanceRuns,
+  listMaintenanceRuns,
+  readMaintenanceRun,
+  runMaintenance,
+  stageMaintenanceFinding,
   buildSourceCaptureHub,
   buildReviewAccelerationQueue,
   buildReviewAutopilotResult,
@@ -119,6 +125,7 @@ import {
   type ImportTriagePreviewResult,
   type ImportTriageUnitInput,
   type HealthReviewTransactionResult,
+  type MaintenanceMode,
   type MemoryHealthResult,
   type ParsedTransaction,
   type ReviewAccelerationItem,
@@ -928,6 +935,19 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await checkMemoryHealth(root));
   }
 
+  if (requestUrl.pathname === "/api/maintenance/plan") {
+    return jsonRoute(200, await buildMaintenancePlan(root, maintenanceOptionsFromUrl(requestUrl)));
+  }
+
+  if (requestUrl.pathname === "/api/maintenance/runs") {
+    return jsonRoute(200, { runs: await listMaintenanceRuns(root) });
+  }
+
+  if (requestUrl.pathname === "/api/maintenance/run") {
+    const target = optionalTarget(requestUrl);
+    return target ? jsonRoute(200, await readMaintenanceRun(root, target)) : jsonRoute(400, { error: "Missing required query parameter: id." });
+  }
+
   if (requestUrl.pathname === "/api/brief/targets") {
     const parsedKind = parseBriefTargetKind(requestUrl);
     const kind = parsedKind.kind;
@@ -1188,6 +1208,22 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/health/stage-finding") {
       return jsonRoute(200, await createHealthFindingStagePreview(root, input, true));
+    }
+
+    if (pathname === "/api/maintenance/run") {
+      return jsonRoute(200, await runMaintenance(root, maintenanceOptionsFromInput(input)));
+    }
+
+    if (pathname === "/api/maintenance/clear") {
+      return jsonRoute(200, await clearMaintenanceRuns(root));
+    }
+
+    if (pathname === "/api/maintenance/stage-finding/preview") {
+      return jsonRoute(200, await createMaintenanceFindingStagePreview(root, input, false));
+    }
+
+    if (pathname === "/api/maintenance/stage-finding") {
+      return jsonRoute(200, await createMaintenanceFindingStagePreview(root, input, true));
     }
 
     if (pathname === "/api/transactions/apply/preview") {
@@ -1491,6 +1527,17 @@ function optionalStringRecordInput(value: unknown): Record<string, string> | und
     .filter(([, item]) => item.length > 0);
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function optionalNumberQuery(requestUrl: URL, key: string): number | undefined {
+  const value = requestUrl.searchParams.get(key);
+
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function optionalNumberInput(input: Record<string, unknown>, ...keys: string[]): number | undefined {
@@ -2181,6 +2228,37 @@ async function createContextNotePreview(
   };
 }
 
+function maintenanceOptionsFromUrl(requestUrl: URL) {
+  const mode = requestUrl.searchParams.get("mode") ?? "full";
+  return {
+    mode: isMaintenanceMode(mode) ? mode : "full",
+    seed: requestUrl.searchParams.get("seed") ?? undefined,
+    topic: requestUrl.searchParams.get("topic") ?? undefined,
+    limit: optionalNumberQuery(requestUrl, "limit")
+  };
+}
+
+function maintenanceOptionsFromInput(input: Record<string, unknown>) {
+  const mode = optionalStringInput(input, "mode") ?? "full";
+  return {
+    mode: isMaintenanceMode(mode) ? mode : "full",
+    seed: optionalStringInput(input, "seed") ?? undefined,
+    topic: optionalStringInput(input, "topic") ?? undefined,
+    limit: optionalNumberInput(input, "limit")
+  };
+}
+
+function isMaintenanceMode(value: string): value is MaintenanceMode {
+  return value === "changed" || value === "random" || value === "topic" || value === "full";
+}
+
+async function createMaintenanceFindingStagePreview(root: string, input: Record<string, unknown>, created: boolean) {
+  const findingId = requiredStringInput(input, "findingId", "finding_id", "id");
+  const note = optionalStringInput(input, "note");
+  const createOne = async (targetRoot: string) => stageMaintenanceFinding(targetRoot, findingId, { note });
+  const result = created ? await createOne(root) : await withPreviewRoot(root, (previewRoot) => createOne(previewRoot));
+  return { ...result, created };
+}
 async function createHealthStagePreview(
   root: string,
   input: Record<string, unknown>,
@@ -3956,6 +4034,7 @@ const quickCaptureClose = document.querySelector("#quick-capture-close");
 const quickCaptureForm = document.querySelector("#quick-capture-form");
 let snapshot = null;
 let health = null;
+let maintenancePlan = null;
 let dogfoodHome = null;
 let dogfoodControlRoom = null;
 let dogfoodEvalResult = null;
@@ -8528,10 +8607,14 @@ function memoryPath(file) {
 }
 
 async function renderHealth() {
-  if (!health) {
-    view.innerHTML = '<article class="item"><h2>Loading health</h2><p class="meta">Reading markdown state.</p></article>';
-    const loadedHealth = await fetchJson("/api/health");
+  if (!health || !maintenancePlan) {
+    view.innerHTML = '<article class="item"><h2>Loading health</h2><p class="meta">Reading markdown and maintenance signals.</p></article>';
+    const [loadedHealth, loadedMaintenance] = await Promise.all([
+      fetchJson("/api/health"),
+      fetchJson("/api/maintenance/plan?mode=changed&seed=workbench")
+    ]);
     health = loadedHealth;
+    maintenancePlan = loadedMaintenance;
 
     if (activeTab !== "health") {
       return;
@@ -8563,12 +8646,34 @@ function renderHealthCenter(result) {
       <button type="submit" name="mode" value="apply">Stage</button>
     </form>
   </article>
+  \${maintenancePanelHtml(maintenancePlan)}
   \${countCards}
   <section><h2>Findings</h2>\${findingCards}</section>
   <div id="action-output" class="action-output"></div>\`;
   bindHealthActions();
 }
 
+function maintenancePanelHtml(plan) {
+  if (!plan) {
+    return '<article class="item"><h2>Maintenance Dream Cycle</h2><p class="meta">Loading maintenance plan.</p></article>';
+  }
+  const topFindings = (plan.findings ?? []).slice(0, 6).map((finding) => {
+    const actions = finding.stageable
+      ? '<form class="maintenance-finding-form action-row" data-finding-id="' + escapeHtml(finding.finding_id) + '"><input name="note" placeholder="Maintenance note"><button type="submit" name="mode" value="preview" class="secondary">Preview maintenance finding</button><button type="submit" name="mode" value="apply">Stage maintenance finding</button></form>'
+      : '<p class="meta">Read-only signal in v1.</p>';
+    return '<article class="item"><h3>' + escapeHtml(finding.code) + '</h3><p class="pill">' + escapeHtml(finding.severity) + ' · ' + escapeHtml(finding.finding_id) + '</p><p>' + escapeHtml(finding.message) + '</p>' + actions + '</article>';
+  }).join("");
+  return '<section class="maintenance-panel"><h2>Maintenance Dream Cycle</h2>' +
+    '<article class="item"><h3>Plan summary</h3>' + detailListHtml([
+      ["Mode", plan.mode],
+      ["Findings", String(plan.summary?.total_findings ?? 0)],
+      ["Stageable", String(plan.summary?.stageable ?? 0)],
+      ["Sources", "health " + String(plan.summary?.health ?? 0) + ", lint " + String(plan.summary?.lint ?? 0) + ", review " + String(plan.summary?.review_throughput ?? 0)]
+    ]) + '<form id="maintenance-run-form" class="action-row"><button type="submit" class="secondary">Save local maintenance run</button></form></article>' +
+    '<div class="grid">' + (topFindings || '<article class="item"><h3>No findings</h3><p class="meta">Maintenance plan is clear.</p></article>') + '</div>' +
+    plainListHtml("Warnings", plan.warnings ?? []) +
+  '</section>';
+}
 function healthFindingCardsHtml(findings) {
   if (!findings.length) {
     return '<article class="item"><h2>Empty</h2><p class="meta">No health findings.</p></article>';
@@ -8604,6 +8709,24 @@ function bindHealthActions() {
       note: form.elements.note.value
     });
   });
+
+  document.querySelector("#maintenance-run-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await runAction("/api/maintenance/run", { mode: maintenancePlan?.mode ?? "changed", seed: maintenancePlan?.seed ?? "workbench" });
+    maintenancePlan = null;
+  });
+
+  for (const form of document.querySelectorAll(".maintenance-finding-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitter = event.submitter;
+      const preview = submitter?.value === "preview";
+      await runAction(preview ? "/api/maintenance/stage-finding/preview" : "/api/maintenance/stage-finding", {
+        findingId: form.dataset.findingId,
+        note: form.elements.note.value
+      });
+    });
+  }
 
   for (const form of document.querySelectorAll(".health-finding-form")) {
     form.addEventListener("submit", async (event) => {

@@ -47,7 +47,8 @@
     "agent:pr": "node scripts/agent-pr.mjs",
     "agent:ci-local": "node scripts/agent-ci-local.mjs",
     "agent:map": "node scripts/agent-map.mjs",
-    "agent:workbench": "node scripts/agent-workbench.mjs"
+    "agent:workbench": "node scripts/agent-workbench.mjs",
+    "eval:maintenance": "node tests/scenarios/run-maintenance.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

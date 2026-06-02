@@ -50,6 +50,12 @@ Context rooms show current state, owners, systems, decisions-as-claims, open que
 
 Health surfaces deterministic findings. Staging a finding creates a pending Transaction; it does not directly write ReviewItems.
 
+## Maintenance Dream Cycle
+
+The Maintenance Dream Cycle is a derived inspection loop inside Health. It combines health, lint, and review-throughput signals into a ranked plan, can save local run records under `.assisto-local/**`, and may stage one selected health finding through a pending Transaction.
+
+There is no autonomous background linting, no direct ReviewItem writes, and no canonical memory mutation from maintenance runs.
+
 ## Briefs
 
 Briefs are disposable derived views. Copy/export does not persist memory unless the user separately captures source evidence.

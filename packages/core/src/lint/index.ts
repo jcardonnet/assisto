@@ -68,10 +68,10 @@ interface ContradictionKey {
 
 const defaultNow = "2026-05-21T12:00:00-03:00";
 
-export async function lintVault(root: string, options: LintVaultOptions = {}): Promise<LintResult> {
+export async function collectLintIssues(root: string, options: LintVaultOptions = {}): Promise<LintIssue[]> {
   const now = options.now ?? defaultNow;
   const pages = await loadLintPages(root);
-  const issues = dedupeIssues([
+  return dedupeIssues([
     ...checkDuplicateObjects(pages, "person", "duplicate_people"),
     ...checkDuplicateObjects(pages, "topic", "duplicate_topics"),
     ...checkUnscopedClaims(pages),
@@ -83,6 +83,11 @@ export async function lintVault(root: string, options: LintVaultOptions = {}): P
     ...checkReviewBacklogGrowth(pages, options.reviewBacklogThreshold ?? 10),
     ...checkTopicBloat(pages)
   ]);
+}
+
+export async function lintVault(root: string, options: LintVaultOptions = {}): Promise<LintResult> {
+  const now = options.now ?? defaultNow;
+  const issues = await collectLintIssues(root, options);
   const reviewItems: LintReviewItem[] = [];
 
   for (const issue of issues) {
@@ -109,17 +114,21 @@ async function loadLintPages(root: string): Promise<LintPage[]> {
   const pages: LintPage[] = [];
 
   for (const file of files) {
-    const content = await readMarkdownPage(root, file);
-    const parsed = parseMarkdownFile(content);
-    const frontmatterText = renderFrontmatterForSearch(parsed.frontmatter);
+    try {
+      const content = await readMarkdownPage(root, file);
+      const parsed = parseMarkdownFile(content);
+      const frontmatterText = renderFrontmatterForSearch(parsed.frontmatter);
 
-    pages.push({
-      path: normalizePath(file),
-      frontmatter: parsed.frontmatter,
-      body: parsed.body,
-      claims: parseClaimBlockRecords(parsed.body),
-      wikilinks: parseWikilinks(`${frontmatterText}\n${parsed.body}`)
-    });
+      pages.push({
+        path: normalizePath(file),
+        frontmatter: parsed.frontmatter,
+        body: parsed.body,
+        claims: parseClaimBlockRecords(parsed.body),
+        wikilinks: parseWikilinks(`${frontmatterText}\n${parsed.body}`)
+      });
+    } catch {
+      // Lint and maintenance must not make derived views brittle when one page is malformed.
+    }
   }
 
   return pages;
