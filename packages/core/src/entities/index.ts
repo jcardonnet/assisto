@@ -19,6 +19,8 @@ import {
 import { loadVaultIndex, type VaultIndex, type VaultIndexEntry } from "../vault";
 import { slugify, stripMemoryPrefix } from "../ingest/candidates";
 import { createCaptureNote, type CaptureNoteOptions, type CaptureResult } from "../capture";
+import { buildSymbolicIndex } from "../symbolic";
+import { buildEntityStewardshipV2, type EntityStewardshipV2Result } from "./stewardship-v2";
 
 export type EntityKind = "person" | "topic" | "context";
 
@@ -297,6 +299,36 @@ export interface EntityStewardshipResult {
     conflict_change: number;
     needs_context: number;
     review_backlog: number;
+  };
+  warnings: string[];
+}
+
+export interface EntityStewardshipCommandCenterItem extends EntityStewardshipV2Result {
+  id?: string;
+  path: string;
+  type?: EntityKind;
+  name: string;
+  legacyReviewLane?: EntityReviewLane;
+  source_events: string[];
+  linked_review_items_count: number;
+  linked_followups_count: number;
+}
+
+export interface EntityStewardshipCommandCenterResult {
+  version: "entity-stewardship-command-center-v1";
+  generated_at: string;
+  kind: EntityKind;
+  items: EntityStewardshipCommandCenterItem[];
+  summary: {
+    total: number;
+    safe: number;
+    identity_risk: number;
+    role_change: number;
+    reporting_change: number;
+    ownership_change: number;
+    stale: number;
+    conflict: number;
+    with_symbolic_facts: number;
   };
   warnings: string[];
 }
@@ -636,6 +668,75 @@ export async function buildEntityStewardshipResult(
       "Entity stewardship risk is a derived deterministic view; no canonical memory files were written.",
       "Merge, split, delete, and autonomous identity resolution remain out of scope."
     ]
+  };
+}
+
+
+export async function buildEntityStewardshipCommandCenter(
+  root: string,
+  kind: EntityKind,
+  options: EntityStewardshipOptions = {}
+): Promise<EntityStewardshipCommandCenterResult> {
+  const base = await buildEntityStewardshipResult(root, kind, options);
+  const symbolicIndex = await buildSymbolicIndex({ root });
+  const items: EntityStewardshipCommandCenterItem[] = [];
+
+  for (const item of base.items) {
+    const detail = await getEntityDetail(root, item.id ?? item.path);
+    const claims = entityStewardshipCommandCenterClaims([
+      ...detail.activeClaims,
+      ...detail.stagedClaims,
+      ...detail.supersededClaims,
+      ...detail.staleClaims,
+      ...detail.conflictingClaims
+    ]);
+    const v2 = buildEntityStewardshipV2({
+      entity: {
+        id: detail.id ?? detail.path,
+        kind: detail.type ?? kind,
+        name: detail.name,
+        aliases: detail.aliases
+      },
+      claims,
+      symbolicFacts: symbolicIndex.derived_facts,
+      nearDuplicates: (detail.nearDuplicates ?? []).map((candidate) => candidate.id ?? candidate.path),
+      aliasConflicts: (detail.aliasConflicts ?? []).map((candidate) => candidate.alias)
+    });
+
+    items.push({
+      ...v2,
+      id: detail.id,
+      path: detail.path,
+      type: detail.type,
+      name: detail.name,
+      legacyReviewLane: detail.recommendedReviewLane,
+      source_events: detail.source_events,
+      linked_review_items_count: detail.linkedReviewItems.length,
+      linked_followups_count: detail.linkedFollowUps.length
+    });
+  }
+
+  return {
+    version: "entity-stewardship-command-center-v1",
+    generated_at: base.generated_at,
+    kind,
+    items,
+    summary: {
+      total: items.length,
+      safe: items.filter((item) => item.recommendedReviewLane === "safe").length,
+      identity_risk: items.filter((item) => item.recommendedReviewLane === "identity_risk").length,
+      role_change: items.filter((item) => item.recommendedReviewLane === "role_change").length,
+      reporting_change: items.filter((item) => item.recommendedReviewLane === "reporting_change").length,
+      ownership_change: items.filter((item) => item.recommendedReviewLane === "ownership_change").length,
+      stale: items.filter((item) => item.recommendedReviewLane === "stale").length,
+      conflict: items.filter((item) => item.recommendedReviewLane === "conflict").length,
+      with_symbolic_facts: items.filter((item) => item.symbolicFactIds.length > 0).length
+    },
+    warnings: uniqueStrings([
+      ...base.warnings,
+      "Entity stewardship command center is derived and read-only.",
+      "Symbolic-risk lanes never merge, split, delete, supersede, or edit canonical pages."
+    ])
   };
 }
 
@@ -1237,6 +1338,35 @@ function matchesSystemIntent(statement: string): boolean {
   return /\b(system|systems|service|services|database|db|mysql|postgres|postgresql|redis|solr|search|api|pipeline|platform|tool|tools|queue|warehouse|reporting|dashboard)\b/i.test(
     statement
   );
+}
+
+
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort();
+}
+
+function entityStewardshipCommandCenterClaims(claims: EntityClaimSummary[]) {
+  const seen = new Set<string>();
+  const output = [];
+
+  for (const claim of claims) {
+    if (seen.has(claim.claim_id)) {
+      continue;
+    }
+
+    seen.add(claim.claim_id);
+    output.push({
+      claim_id: claim.claim_id,
+      text: claim.statement,
+      claim_state: claim.claim_state,
+      source_events: claim.evidence,
+      scope_state: claim.scope_state,
+      valid_to: claim.valid_to
+    });
+  }
+
+  return output;
 }
 
 function matchesRoleIntent(statement: string): boolean {

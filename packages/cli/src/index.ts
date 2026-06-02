@@ -15,6 +15,7 @@ import {
   buildContextOperatingRoomV3,
   buildContextTimelineResult,
   buildEntityStewardshipResult,
+  buildEntityStewardshipCommandCenter,
   buildImportAssistantResult,
   buildSourceCaptureHub,
   buildReviewAccelerationQueue,
@@ -1429,7 +1430,7 @@ async function commandEntities(root: string, args: string[], io: CliIo): Promise
   const [subcommand, ...rest] = args;
 
   if (!subcommand || subcommand === "--help" || subcommand === "-h") {
-    io.stdout("Usage: wm entities stewardship [--kind person|topic|context] [--json]\n");
+    io.stdout("Usage: wm entities <stewardship|command-center|repair-v2> [options]\n");
     return 0;
   }
 
@@ -1437,8 +1438,12 @@ async function commandEntities(root: string, args: string[], io: CliIo): Promise
     return commandEntityRepairV2(rest, io);
   }
 
+  if (subcommand === "command-center") {
+    return commandEntityCommandCenter(root, rest, io);
+  }
+
   if (subcommand !== "stewardship") {
-    throw new Error("Usage: wm entities <stewardship|repair-v2> [options]");
+    throw new Error("Usage: wm entities <stewardship|command-center|repair-v2> [options]");
   }
 
   const kind = optionValue(rest, "--kind") ?? "person";
@@ -1467,6 +1472,38 @@ async function commandEntities(root: string, args: string[], io: CliIo): Promise
   for (const item of result.items.slice(0, 10)) {
     io.stdout(
       `- ${item.name} (${item.id ?? item.path}): ${item.identityRisk.level} risk, lane ${item.recommendedReviewLane}\n`
+    );
+  }
+
+  return 0;
+}
+
+async function commandEntityCommandCenter(root: string, args: string[], io: CliIo): Promise<number> {
+  const kind = optionValue(args, "--kind") ?? "person";
+  const json = args.includes("--json");
+  const allowed = new Set(["person", "topic", "context"]);
+  const allowedArgs = new Set(["--kind", kind, "--json"]);
+
+  if (!allowed.has(kind) || args.some((arg) => !allowedArgs.has(arg))) {
+    throw new Error("Usage: wm entities command-center [--kind person|topic|context] [--json]");
+  }
+
+  const result = await buildEntityStewardshipCommandCenter(root, kind as "person" | "topic" | "context", { now: io.now });
+
+  if (json) {
+    io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+
+  io.stdout(`Entity command center: ${result.kind} (${result.generated_at})\n`);
+  io.stdout(`Total: ${result.summary.total}\n`);
+  io.stdout(`Identity risk: ${result.summary.identity_risk}\n`);
+  io.stdout(`Role/reporting/ownership changes: ${result.summary.role_change}/${result.summary.reporting_change}/${result.summary.ownership_change}\n`);
+  io.stdout(`With symbolic facts: ${result.summary.with_symbolic_facts}\n`);
+
+  for (const item of result.items.slice(0, 10)) {
+    io.stdout(
+      `- ${item.name} (${item.id ?? item.path}): ${item.identityRisk} risk, lane ${item.recommendedReviewLane}, symbolic facts ${item.symbolicFactIds.length}\n`
     );
   }
 
@@ -2782,6 +2819,7 @@ function writeHelp(write: (text: string) => void): void {
       "  wm [--root <path>] context operating-room-v3 <id|path> [--json]",
       "  wm [--root <path>] context timeline <id|path> [--json]",
       "  wm [--root <path>] entities stewardship [--kind person|topic|context] [--json]",
+      "  wm [--root <path>] entities command-center [--kind person|topic|context] [--json]",
       "  wm [--root <path>] entities repair-v2 --kind <alias|role|reporting|ownership|identity_review> --id <id|path> [--json]",
       "  wm [--root <path>] activate status [--json]",
       "  wm [--root <path>] use-tomorrow [--json]",

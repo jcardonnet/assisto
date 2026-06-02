@@ -95,6 +95,7 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /context operating-room/);
   assert.match(help.stdout, /context timeline/);
   assert.match(help.stdout, /entities stewardship/);
+  assert.match(help.stdout, /entities command-center/);
   assert.match(help.stdout, /entities repair-v2/);
   assert.match(help.stdout, /doctor memory-data/);
   assert.match(help.stdout, /brief <today\|person\|context\|review\|followups\|recent>/);
@@ -979,6 +980,17 @@ summary_generated_from:
     const entityStewardship = await runWm(todayRoot, ["entities", "stewardship", "--kind", "person"]);
     assert.match(entityStewardship.stdout, /Entity stewardship: person/);
     assert.match(entityStewardship.stdout, /Identity ambiguity: 2/);
+
+    const entityCommandCenterResult = await runWm(todayRoot, ["entities", "command-center", "--kind", "person", "--json"]);
+    const entityCommandCenterJson = JSON.parse(entityCommandCenterResult.stdout);
+    assert.equal(entityCommandCenterJson.version, "entity-stewardship-command-center-v1");
+    assert.equal(entityCommandCenterJson.summary.identity_risk >= 1, true);
+    assert.equal(
+      entityCommandCenterJson.items.some(
+        (item) => item.id === "per_jeff" && item.recommendedReviewLane === "identity_risk"
+      ),
+      true
+    );
 
     const entityRepairV2Result = await runWm(todayRoot, [
       "entities",

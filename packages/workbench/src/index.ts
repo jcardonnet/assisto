@@ -14,7 +14,7 @@ import {
   buildDogfoodHomeResult,
   buildDogfoodControlRoomResult,
   buildEntityStewardshipResult,
-  buildEntityStewardshipV2,
+  buildEntityStewardshipCommandCenter,
   buildSymbolicIndex,
   buildImportAssistantResult,
   buildSourceCaptureHub,
@@ -107,7 +107,6 @@ import {
   type EntityRepairActionV2Preview,
   type EntityClaimSummary,
   type EntityStewardshipPreview,
-  type EntityStewardshipV2Result,
   type DogfoodFeedbackCreateResult,
   type DogfoodFeedbackPreviewResult,
   type FrictionLogCreateResult,
@@ -819,14 +818,14 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await buildEntityStewardshipResult(root, kind));
   }
 
-  if (requestUrl.pathname === "/api/entities/stewardship-v2") {
+  if (requestUrl.pathname === "/api/entities/stewardship-v2" || requestUrl.pathname === "/api/entities/command-center") {
     const kind = optionalEntityKind(requestUrl);
 
     if (!kind) {
       return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
     }
 
-    return jsonRoute(200, await buildWorkbenchEntityStewardshipV2(root, kind));
+    return jsonRoute(200, await buildEntityStewardshipCommandCenter(root, kind));
   }
 
   if (requestUrl.pathname === "/api/entities/stewardship/detail") {
@@ -1987,96 +1986,6 @@ function uniqueContextRoomClaims(claims: EntityClaimSummary[]): EntityClaimSumma
 
     seen.add(claim.claim_id);
     output.push(claim);
-  }
-
-  return output;
-}
-
-async function buildWorkbenchEntityStewardshipV2(root: string, kind: EntityKind): Promise<{
-  version: "entity-stewardship-v2";
-  generated_at: string;
-  kind: EntityKind;
-  items: Array<EntityStewardshipV2Result & { id?: string; path: string; type?: string; name: string; legacyReviewLane?: string }>;
-  summary: Record<string, number>;
-  warnings: string[];
-}> {
-  const base = await buildEntityStewardshipResult(root, kind);
-  const symbolicIndex = await buildSymbolicIndex({ root });
-  const items: Array<EntityStewardshipV2Result & { id?: string; path: string; type?: string; name: string; legacyReviewLane?: string }> = [];
-
-  for (const item of base.items) {
-    const detail = await getEntityDetail(root, item.id ?? item.path);
-    const claims = entityStewardshipV2Claims([
-      ...detail.activeClaims,
-      ...detail.stagedClaims,
-      ...detail.supersededClaims,
-      ...detail.staleClaims,
-      ...detail.conflictingClaims
-    ]);
-    const v2 = buildEntityStewardshipV2({
-      entity: {
-        id: detail.id ?? detail.path,
-        kind: detail.type ?? kind,
-        name: detail.name,
-        aliases: detail.aliases
-      },
-      claims,
-      symbolicFacts: symbolicIndex.derived_facts,
-      nearDuplicates: (detail.nearDuplicates ?? []).map((candidate) => candidate.id ?? candidate.path),
-      aliasConflicts: (detail.aliasConflicts ?? []).map((candidate) => candidate.alias)
-    });
-
-    items.push({
-      ...v2,
-      id: detail.id,
-      path: detail.path,
-      type: detail.type,
-      name: detail.name,
-      legacyReviewLane: detail.recommendedReviewLane
-    });
-  }
-
-  return {
-    version: "entity-stewardship-v2",
-    generated_at: base.generated_at,
-    kind,
-    items,
-    summary: {
-      total: items.length,
-      safe: items.filter((item) => item.recommendedReviewLane === "safe").length,
-      identity_risk: items.filter((item) => item.recommendedReviewLane === "identity_risk").length,
-      role_change: items.filter((item) => item.recommendedReviewLane === "role_change").length,
-      reporting_change: items.filter((item) => item.recommendedReviewLane === "reporting_change").length,
-      ownership_change: items.filter((item) => item.recommendedReviewLane === "ownership_change").length,
-      stale: items.filter((item) => item.recommendedReviewLane === "stale").length,
-      conflict: items.filter((item) => item.recommendedReviewLane === "conflict").length
-    },
-    warnings: uniqueStrings([
-      ...base.warnings,
-      "Entity stewardship v2 adds derived ontology and symbolic-risk lanes only.",
-      "No merge, split, delete, supersession, or canonical edit occurs from this endpoint."
-    ])
-  };
-}
-
-function entityStewardshipV2Claims(claims: EntityClaimSummary[]) {
-  const seen = new Set<string>();
-  const output = [];
-
-  for (const claim of claims) {
-    if (seen.has(claim.claim_id)) {
-      continue;
-    }
-
-    seen.add(claim.claim_id);
-    output.push({
-      claim_id: claim.claim_id,
-      text: claim.statement,
-      claim_state: claim.claim_state,
-      source_events: claim.evidence,
-      scope_state: claim.scope_state,
-      valid_to: claim.valid_to
-    });
   }
 
   return output;
@@ -4069,6 +3978,7 @@ let pendingBriefRequest = null;
 let entityKind = "person";
 let entityReviewLaneFilter = "all";
 let entityList = null;
+let entityCommandCenter = null;
 let entityDetail = null;
 let importTriageUnits = [];
 let captureInbox = null;
@@ -6082,17 +5992,20 @@ function renderImportTriageResult(result) {
 
 async function renderEntities() {
   const requestedKind = entityKind;
-  view.innerHTML = '<article class="item"><h2>Loading stewardship console</h2><p class="meta">Reading risk lanes, evidence, reviews, and follow-ups.</p></article>';
-  const loadedEntities = await fetchJson(\`/api/entities/stewardship?kind=\${encodeURIComponent(requestedKind)}\`);
+  view.innerHTML = '<article class="item"><h2>Loading stewardship console</h2><p class="meta">Reading risk lanes, symbolic facts, evidence, reviews, and follow-ups.</p></article>';
+  const [loadedEntities, loadedCommandCenter] = await Promise.all([
+    fetchJson("/api/entities/stewardship?kind=" + encodeURIComponent(requestedKind)),
+    fetchJson("/api/entities/stewardship-v2?kind=" + encodeURIComponent(requestedKind))
+  ]);
 
   if (activeTab !== "entities" || requestedKind !== entityKind) {
     return;
   }
 
   entityList = loadedEntities;
+  entityCommandCenter = loadedCommandCenter;
   renderEntityExplorer();
 }
-
 async function loadEntityDetailWithRoom(id) {
   const detail = await fetchJson(\`/api/entities/stewardship/detail?id=\${encodeURIComponent(id)}\`);
 
@@ -6139,6 +6052,7 @@ function renderEntityExplorer() {
     <h2>Risk lanes</h2>
     <div class="summary-strip">\${laneFilters}</div>
   </section>
+  \${entityCommandCenterHtml(entityCommandCenter)}
   <section class="transaction-layout">
     <div class="grid">\${cards || '<article class="item"><h2>Empty</h2><p class="meta">No matching entities.</p></article>'}</div>
     <div id="entity-detail" class="detail-panel">\${entityDetail ? entityDetailHtml(entityDetail) : '<article class="item"><h2>Entity detail</h2><p class="meta">Select a Person, Topic, or Context to inspect claims and evidence.</p></article>'}</div>
@@ -6148,6 +6062,36 @@ function renderEntityExplorer() {
   bindBriefLinks();
 }
 
+function entityCommandCenterHtml(commandCenter) {
+  if (!commandCenter) {
+    return '<section><h2>Symbolic stewardship lanes</h2><article class="item"><p class="meta">Loading symbolic-risk lanes.</p></article></section>';
+  }
+
+  const summary = commandCenter.summary ?? {};
+  const laneCards = [
+    ["Safe", summary.safe ?? 0],
+    ["Identity risk", summary.identity_risk ?? 0],
+    ["Role change", summary.role_change ?? 0],
+    ["Reporting change", summary.reporting_change ?? 0],
+    ["Ownership change", summary.ownership_change ?? 0],
+    ["Stale", summary.stale ?? 0],
+    ["Conflict", summary.conflict ?? 0],
+    ["With symbolic facts", summary.with_symbolic_facts ?? 0]
+  ].map(([label, count]) => '<article class="item"><h3>' + escapeHtml(label) + '</h3><p class="metric">' + String(count) + '</p></article>').join("");
+  const riskyItems = (commandCenter.items ?? [])
+    .filter((item) => item.recommendedReviewLane !== "safe" || (item.symbolicFactIds ?? []).length > 0)
+    .slice(0, 8)
+    .map((item) => '<li>' + escapeHtml(item.name) + ' · lane ' + escapeHtml(item.recommendedReviewLane) + ' · risk ' + escapeHtml(item.identityRisk) + ' · symbolic facts ' + String((item.symbolicFactIds ?? []).length) + ' · reviews ' + String(item.linked_review_items_count ?? 0) + '</li>')
+    .join("");
+
+  return '<section class="entity-command-center">' +
+    '<h2>Symbolic stewardship lanes</h2>' +
+    '<p class="meta">Derived v2 risk model over claims, symbolic facts, aliases, reviews, and follow-ups. It is read-only and cannot merge, supersede, or edit memory.</p>' +
+    '<div class="grid compact">' + laneCards + '</div>' +
+    '<article class="item"><h3>Top symbolic risks</h3>' + (riskyItems ? '<ul class="plain-list">' + riskyItems + '</ul>' : '<p class="meta">No symbolic-risk items for this collection.</p>') + '</article>' +
+    plainListHtml("Warnings", commandCenter.warnings ?? []) +
+  '</section>';
+}
 function entityStewardshipCardHtml(item) {
   return \`<article class="item entity-risk-card">
     <h3>\${escapeHtml(item.name)}</h3>
@@ -6519,6 +6463,7 @@ function bindEntityActions() {
       entityKind = button.dataset.entityKind;
       entityReviewLaneFilter = "all";
       entityList = null;
+      entityCommandCenter = null;
       entityDetail = null;
       void renderEntities();
     });
