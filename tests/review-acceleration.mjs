@@ -25,6 +25,14 @@ export async function runReviewAccelerationTests() {
   assert.equal(result.items[0].lane_id, "needs_ontology_review");
   assert.equal(result.items[0].proof_previews[0].proof_id, "proof_1");
   assert.equal(result.items[1].suggested_action, "Compare current and staged claims before any explicit supersession.");
+  const autopilot = reviewAcceleration.buildReviewAutopilotResult(result);
+  assert.equal(autopilot.version, "review-autopilot-v1");
+  assert.equal(autopilot.batchApplyAllowed, false);
+  assert.equal(autopilot.next_item_id, "review_1");
+  assert.equal(autopilot.total_items, 4);
+  assert.equal(autopilot.lanes[0].lane_id, "needs_ontology_review");
+  assert.equal(autopilot.lanes[0].risk_factors.includes("ontology_or_frame_validation"), true);
+  assert.match(autopilot.warnings[0], /preview-only/i);
 }
 
 if (process.argv[1]?.endsWith("review-acceleration.mjs")) {

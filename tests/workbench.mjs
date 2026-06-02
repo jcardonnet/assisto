@@ -939,6 +939,26 @@ export async function runWorkbenchTests() {
       assert.equal(acceleration.nextItem.id, "rev_jeff_role");
       assert.equal(acceleration.lanes.some((lane) => lane.id === "conflict_or_change"), true);
 
+      const autopilot = JSON.parse((await workbench.handleWorkbenchRoute(turboRoot, { method: "GET", url: "/api/review/autopilot" })).body);
+      assert.equal(autopilot.version, "review-autopilot-v1");
+      assert.equal(autopilot.batchApplyAllowed, false);
+      assert.equal(autopilot.next_item_id, "rev_jeff_role");
+      assert.equal(autopilot.lanes.some((lane) => lane.lane_id === "conflict_or_change"), true);
+      assert.equal(autopilot.items.some((item) => item.id === "rev_safe_apply" && item.grouped_intent.includes("rev_safe_apply")), true);
+      const autopilotPreview = JSON.parse(
+        (await workbench.handleWorkbenchRoute(turboRoot, {
+          method: "POST",
+          url: "/api/review/autopilot/preview",
+          body: JSON.stringify({ laneId: "conflict_or_change" })
+        })).body
+      );
+      assert.equal(autopilotPreview.action, "review_autopilot_preview");
+      assert.equal(autopilotPreview.created, false);
+      assert.equal(autopilotPreview.batchApplyAllowed, false);
+      assert.deepEqual(autopilotPreview.selected_item_ids, ["rev_jeff_role"]);
+      assert.equal(autopilotPreview.allowed_next_actions.every((action) => action.item_id === "rev_jeff_role"), true);
+      await assert.rejects(() => readVaultFile(turboRoot, "memory/topics/mysql.md"), /ENOENT/);
+
       const nextReview = JSON.parse((await workbench.handleWorkbenchRoute(turboRoot, { method: "GET", url: "/api/review/next" })).body);
       assert.equal(nextReview.total, 6);
       assert.equal(nextReview.position, 1);

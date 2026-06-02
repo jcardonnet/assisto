@@ -56,6 +56,11 @@ affected_files:
     await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Review summary" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Review lanes" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Review Autopilot" })).toBeVisible();
+    await expect(page.locator(".review-autopilot-console")).toContainText("Preview-only grouping");
+    await page.locator(".review-autopilot-preview").first().click();
+    await expect(page.locator("#action-output")).toContainText("review autopilot preview");
+    await expect(page.locator("#action-output")).toContainText("Preview only");
     await expect(page.locator('[data-review-reason="all"]')).toContainText("2 items");
     await expect(page.locator('[data-review-lane="all"]')).toContainText("2 items");
     await expect(page.locator(".review-queue-navigator")).toContainText("1 / 2");

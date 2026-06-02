@@ -47,6 +47,25 @@ export interface ReviewAccelerationQueue {
   batchApplyAllowed: false;
 }
 
+export interface ReviewAutopilotLaneSummary {
+  lane_id: ReviewAccelerationLaneId;
+  label: string;
+  risk_rank: number;
+  item_ids: string[];
+  item_count: number;
+  risk_factors: string[];
+  suggested_action: string;
+}
+
+export interface ReviewAutopilotResult {
+  version: "review-autopilot-v1";
+  lanes: ReviewAutopilotLaneSummary[];
+  next_item_id: string | null;
+  total_items: number;
+  batchApplyAllowed: false;
+  warnings: string[];
+}
+
 const laneDefinitions: Array<Omit<ReviewAccelerationLane, "items">> = [
   {
     id: "needs_ontology_review",
@@ -114,6 +133,44 @@ export function buildReviewAccelerationQueue(input: ReviewAccelerationInput): Re
     nextItem: items[0] ?? null,
     batchApplyAllowed: false
   };
+}
+
+export function buildReviewAutopilotResult(queue: ReviewAccelerationQueue): ReviewAutopilotResult {
+  return {
+    version: "review-autopilot-v1",
+    lanes: queue.lanes.map((lane) => ({
+      lane_id: lane.id,
+      label: lane.label,
+      risk_rank: reviewPriorityFor(lane.id),
+      item_ids: lane.items.map((item) => item.id),
+      item_count: lane.items.length,
+      risk_factors: riskFactorsForLane(lane.id),
+      suggested_action: lane.suggested_action
+    })),
+    next_item_id: queue.nextItem?.id ?? null,
+    total_items: queue.items.length,
+    batchApplyAllowed: false,
+    warnings: ["Autopilot is preview-only; durable apply, reject, reprocess, and supersede actions remain one item at a time."]
+  };
+}
+
+function riskFactorsForLane(laneId: ReviewAccelerationLaneId): string[] {
+  switch (laneId) {
+    case "needs_ontology_review":
+      return ["ontology_or_frame_validation", "scope_or_domain_range_may_be_unsafe"];
+    case "conflict_or_change":
+      return ["possible_claim_conflict", "explicit_supersession_required"];
+    case "needs_context":
+      return ["unknown_or_partial_scope", "context_selection_required"];
+    case "identity_ambiguity":
+      return ["ambiguous_or_near_match_entity", "false_merge_risk"];
+    case "stale_noop":
+      return ["stale_noop_event", "stage_only_reprocess_required"];
+    case "safe_apply":
+      return ["staged_claim_present", "single_item_validation_required"];
+    case "other":
+      return ["manual_review_required"];
+  }
 }
 
 function accelerationLaneFor(item: ReviewAccelerationInputItem): ReviewAccelerationLaneId {

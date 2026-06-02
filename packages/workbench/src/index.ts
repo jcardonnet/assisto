@@ -17,6 +17,7 @@ import {
   buildSymbolicIndex,
   buildImportAssistantResult,
   buildReviewAccelerationQueue,
+  buildReviewAutopilotResult,
   buildUseAssistoTomorrowResult,
   buildWorkdayModeResult,
   readDailySession,
@@ -117,6 +118,7 @@ import {
   type HealthReviewTransactionResult,
   type MemoryHealthResult,
   type ParsedTransaction,
+  type ReviewAccelerationItem,
   type ReviewAccelerationQueue,
   type ReviewActionState,
   type ReviewStateTransactionResult,
@@ -244,6 +246,57 @@ export interface WorkbenchReviewNext {
   item: WorkbenchReviewTurboItem | null;
   previous_item_id: string | null;
   next_item_id: string | null;
+}
+
+export interface WorkbenchReviewAutopilot {
+  version: "review-autopilot-v1";
+  generated_at: string;
+  total_items: number;
+  batchApplyAllowed: false;
+  next_item_id: string | null;
+  lanes: WorkbenchReviewAutopilotLane[];
+  items: WorkbenchReviewAutopilotItem[];
+  warnings: string[];
+}
+
+export interface WorkbenchReviewAutopilotLane {
+  lane_id: WorkbenchReviewLaneId;
+  label: string;
+  risk_rank: number;
+  item_ids: string[];
+  item_count: number;
+  risk_factors: string[];
+  suggested_action: string;
+}
+
+export interface WorkbenchReviewAutopilotItem {
+  id: string;
+  path: string;
+  lane_id: WorkbenchReviewLaneId;
+  lane_label: string;
+  risk_rank: number;
+  risk_factors: string[];
+  grouped_intent: string;
+  source_events: string[];
+  affected_files: string[];
+  staged_claim_ids: string[];
+  claim_diffs: WorkbenchReviewStagedClaim[];
+  proof_previews: WorkbenchReviewProofPreview[];
+  target_choices: string[];
+  context_choices: string[];
+  allowed_next_actions: WorkbenchReviewPreviewAction[];
+  suggested_action: string;
+}
+
+export interface WorkbenchReviewAutopilotPreview {
+  action: "review_autopilot_preview";
+  created: false;
+  batchApplyAllowed: false;
+  selected_item_ids: string[];
+  grouped_intent: string[];
+  allowed_next_actions: Array<WorkbenchReviewPreviewAction & { item_id: string }>;
+  warnings: string[];
+  items: WorkbenchReviewAutopilotItem[];
 }
 
 export interface WorkbenchReviewLane {
@@ -648,6 +701,10 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await collectReviewAcceleration(root));
   }
 
+  if (requestUrl.pathname === "/api/review/autopilot") {
+    return jsonRoute(200, await collectReviewAutopilot(root));
+  }
+
   if (requestUrl.pathname === "/api/review/next") {
     return jsonRoute(200, await collectReviewNext(root));
   }
@@ -969,6 +1026,10 @@ async function handleWorkbenchPostRoute(
 
     if (pathname === "/api/review/mark") {
       return jsonRoute(200, await createReviewMarkPreview(root, input, true));
+    }
+
+    if (pathname === "/api/review/autopilot/preview") {
+      return jsonRoute(200, await createReviewAutopilotPreview(root, input));
     }
 
     if (pathname === "/api/events/reprocess/preview") {
@@ -2390,6 +2451,132 @@ async function collectReviewAcceleration(root: string): Promise<ReviewAccelerati
   return collectReviewAccelerationForTurbo(root, turbo.items);
 }
 
+async function collectReviewAutopilot(root: string): Promise<WorkbenchReviewAutopilot> {
+  const turbo = await collectReviewTurbo(root);
+  const acceleration = await collectReviewAccelerationForTurbo(root, turbo.items);
+  const core = buildReviewAutopilotResult(acceleration);
+  const turboById = new Map(turbo.items.map((item) => [item.id, item]));
+
+  return {
+    version: core.version,
+    generated_at: turbo.generated_at,
+    total_items: core.total_items,
+    batchApplyAllowed: false,
+    next_item_id: core.next_item_id,
+    lanes: core.lanes,
+    items: acceleration.items.map((accelerated) => reviewAutopilotItem(accelerated, turboById.get(accelerated.id))),
+    warnings: core.warnings
+  };
+}
+
+async function createReviewAutopilotPreview(
+  root: string,
+  input: Record<string, unknown>
+): Promise<WorkbenchReviewAutopilotPreview> {
+  const autopilot = await collectReviewAutopilot(root);
+  const itemIds = optionalStringArrayInput(input, "itemIds", "item_ids", "ids");
+  const laneId = optionalStringInput(input, "laneId", "lane_id");
+  const selected = autopilot.items.filter((item) => {
+    if (itemIds) {
+      return itemIds.includes(item.id);
+    }
+
+    if (laneId) {
+      return item.lane_id === laneId;
+    }
+
+    return item.id === autopilot.next_item_id;
+  });
+
+  return {
+    action: "review_autopilot_preview",
+    created: false,
+    batchApplyAllowed: false,
+    selected_item_ids: selected.map((item) => item.id),
+    grouped_intent: selected.map((item) => item.grouped_intent),
+    allowed_next_actions: selected.flatMap((item) => item.allowed_next_actions.map((action) => ({ ...action, item_id: item.id }))),
+    warnings: [
+      "Preview only: Autopilot does not apply, reject, reprocess, supersede, or batch mutate memory.",
+      ...autopilot.warnings
+    ],
+    items: selected
+  };
+}
+
+function reviewAutopilotItem(
+  accelerated: ReviewAccelerationItem,
+  turboItem: WorkbenchReviewTurboItem | undefined
+): WorkbenchReviewAutopilotItem {
+  const item: WorkbenchReviewTurboItem = turboItem ?? {
+    id: accelerated.id,
+    path: accelerated.path ?? accelerated.id,
+    review_reason: accelerated.review_reason,
+    review_state: "staged",
+    object_state: "active",
+    source_events: accelerated.source_events,
+    affected_files: [],
+    linked_transaction: undefined,
+    staged_claim_ids: accelerated.staged_claim_ids ?? [],
+    suggested_action: accelerated.suggested_action,
+    lane_id: accelerated.lane_id,
+    lane_label: accelerated.lane_id,
+    review_priority: accelerated.review_priority,
+    evidence_summary: accelerated.source_events.map((eventId) => `source Event ${eventId}`),
+    target_suggestions: [],
+    context_suggestions: [],
+    preview_actions: [],
+    staged_claims: [],
+    proof_previews: accelerated.proof_previews.map((proof) => ({
+      proof_id: proof.proof_id,
+      rule: proof.rule,
+      source_claim_ids: proof.source_claim_ids ?? [],
+      source_events: proof.source_events ?? proof.source_event_ids ?? []
+    }))
+  };
+
+  return {
+    id: item.id,
+    path: item.path,
+    lane_id: item.lane_id,
+    lane_label: item.lane_label,
+    risk_rank: accelerated.review_priority,
+    risk_factors: reviewAutopilotRiskFactors(item),
+    grouped_intent: reviewAutopilotIntent(item),
+    source_events: item.source_events,
+    affected_files: item.affected_files,
+    staged_claim_ids: item.staged_claim_ids,
+    claim_diffs: item.staged_claims,
+    proof_previews: item.proof_previews,
+    target_choices: item.target_suggestions,
+    context_choices: item.context_suggestions,
+    allowed_next_actions: item.preview_actions,
+    suggested_action: item.suggested_action
+  };
+}
+
+function reviewAutopilotIntent(item: WorkbenchReviewTurboItem): string {
+  const claims = item.staged_claim_ids.length > 0 ? item.staged_claim_ids.join(", ") : "no staged claim block";
+  return `${item.lane_label}: ${item.id} (${item.review_reason}) -> ${claims}; next action must use preview-first one-item controls.`;
+}
+
+function reviewAutopilotRiskFactors(item: WorkbenchReviewTurboItem): string[] {
+  const factors = [item.review_reason, item.lane_id];
+
+  if (item.staged_claims.some((claim) => claim.scope_state === "unknown")) {
+    factors.push("unknown_scope");
+  }
+
+  if (item.proof_previews.length > 0) {
+    factors.push("proof_backed_source_context");
+  }
+
+  if (item.review_reason.includes("change") || item.review_reason.includes("conflict")) {
+    factors.push("explicit_supersession_required");
+  }
+
+  return Array.from(new Set(factors)).sort();
+}
+
 async function collectReviewAccelerationForTurbo(
   root: string,
   items: WorkbenchReviewTurboItem[]
@@ -3782,6 +3969,7 @@ let reviewReasonFilter = "all";
 let reviewLaneFilter = "all";
 let reviewQueueIndex = 0;
 let reviewTurbo = null;
+let reviewAutopilot = null;
 let transactionStateFilter = "pending";
 let transactionDetail = null;
 let briefTargets = { person: null, context: null };
@@ -3941,6 +4129,7 @@ async function runQuickCapture(path, body) {
       dailyQueueIndex = 0;
       activationStatus = null;
       reviewTurbo = null;
+    reviewAutopilot = null;
       captureInbox = null;
     }
     output.innerHTML = renderActionResult(result);
@@ -4845,6 +5034,7 @@ async function refreshTodayAfterAction() {
   useTomorrow = await fetchJson("/api/use-tomorrow");
   dailyQueueIndex = 0;
   reviewTurbo = null;
+    reviewAutopilot = null;
 
   if (activeTab === "today") {
     renderDogfoodHome(dogfoodHome, dailyQueue, useTomorrow, dailySession);
@@ -6275,6 +6465,7 @@ async function runEntityAction(path, body) {
       useTomorrow = null;
       health = null;
       reviewTurbo = null;
+    reviewAutopilot = null;
     }
     output.innerHTML = renderActionResult(result);
   } catch (error) {
@@ -6452,6 +6643,7 @@ async function runTransactionAction(path, body) {
     dogfoodHome = null;
     useTomorrow = null;
     reviewTurbo = null;
+    reviewAutopilot = null;
     transactionDetail = await fetchJson(\`/api/transactions/detail?id=\${encodeURIComponent(result.transaction_id)}\`).catch(() => null);
     renderTransactions();
     document.querySelector("#transaction-action-output").innerHTML = renderActionResult(result);
@@ -6461,9 +6653,12 @@ async function runTransactionAction(path, body) {
 }
 
 async function renderReview() {
-  if (!reviewTurbo) {
+  if (!reviewTurbo || !reviewAutopilot) {
     view.innerHTML = '<article class="item"><h2>Loading review lanes</h2><p class="meta">Reading staged ReviewItems.</p></article>';
-    reviewTurbo = await fetchJson("/api/review/turbo");
+    [reviewTurbo, reviewAutopilot] = await Promise.all([
+      fetchJson("/api/review/turbo"),
+      fetchJson("/api/review/autopilot")
+    ]);
 
     if (activeTab !== "review") {
       return;
@@ -6480,7 +6675,8 @@ function renderReviewTurbo(turbo) {
     ? items.map((item, index) => reviewCardHtml(item, index)).join("")
     : '<article class="item"><h2>Empty</h2><p class="meta">No matching memory objects.</p></article>';
 
-  view.innerHTML = \`\${reviewLaneSummaryHtml(turbo)}
+  view.innerHTML = \`\${reviewAutopilotHtml(reviewAutopilot)}
+  \${reviewLaneSummaryHtml(turbo)}
   \${reviewSummaryHtml(snapshot.review)}
   \${reviewQueueNavigatorHtml(items)}
   <article class="item">
@@ -6494,6 +6690,7 @@ function renderReviewTurbo(turbo) {
   <div class="grid">\${cards}</div>
   <div id="action-output" class="action-output"></div>\`;
   bindReviewFilters();
+  bindReviewAutopilotActions();
   bindReviewActions();
 }
 
@@ -6523,6 +6720,33 @@ function reviewQueueNavigatorHtml(items) {
       <button type="button" class="secondary review-queue-prev" \${reviewQueueIndex <= 0 ? "disabled" : ""}>Previous</button>
       <button type="button" class="secondary review-queue-next" \${reviewQueueIndex >= items.length - 1 ? "disabled" : ""}>Next</button>
     </div>
+  </section>\`;
+}
+
+function reviewAutopilotHtml(autopilot) {
+  if (!autopilot) {
+    return "";
+  }
+
+  const laneCards = (autopilot.lanes ?? []).map((lane) => \`<button type="button" class="reason-filter review-autopilot-preview" data-autopilot-lane="\${escapeHtml(lane.lane_id)}">
+    <strong>\${escapeHtml(lane.label)}</strong>
+    <span>\${escapeHtml(String(lane.item_count))} item\${lane.item_count === 1 ? "" : "s"}</span>
+    <span>risk \${escapeHtml(String(lane.risk_rank))} · \${escapeHtml((lane.risk_factors ?? []).join(", ") || "manual review")}</span>
+  </button>\`).join("");
+  const next = autopilot.next_item_id ?? "none";
+
+  return \`<section class="review-autopilot-console">
+    <h2>Review Autopilot</h2>
+    <p class="meta">Preview-only grouping for review risk, source/proof context, and one-at-a-time allowed actions.</p>
+    <div class="summary-strip">
+      <button type="button" class="reason-filter review-autopilot-preview" data-autopilot-item="\${escapeHtml(next)}">
+        <strong>Next recommended</strong>
+        <span>\${escapeHtml(next)}</span>
+        <span>No batch apply. Preview grouped intent only.</span>
+      </button>
+      \${laneCards}
+    </div>
+    \${plainListHtml("Autopilot warnings", autopilot.warnings ?? [])}
   </section>\`;
 }
 
@@ -6567,6 +6791,17 @@ function reviewSummaryHtml(review) {
       \${groupButtons}
     </div>
   </section>\`;
+}
+
+function bindReviewAutopilotActions() {
+  for (const button of document.querySelectorAll(".review-autopilot-preview")) {
+    button.addEventListener("click", async () => {
+      const laneId = button.dataset.autopilotLane;
+      const itemId = button.dataset.autopilotItem;
+      const body = laneId ? { laneId } : { itemIds: itemId && itemId !== "none" ? [itemId] : [] };
+      await runAction("/api/review/autopilot/preview", body);
+    });
+  }
 }
 
 function bindReviewFilters() {
@@ -6740,6 +6975,7 @@ async function refreshAfterAction() {
   dogfoodHome = null;
   useTomorrow = null;
   reviewTurbo = null;
+    reviewAutopilot = null;
   captureInbox = null;
 
   if (activeTab === "health") {
@@ -7465,6 +7701,7 @@ function bindAskFrictionLog(result) {
         dogfoodHome = null;
         useTomorrow = null;
         reviewTurbo = null;
+    reviewAutopilot = null;
       }
 
       output.innerHTML = renderActionResult(action);
