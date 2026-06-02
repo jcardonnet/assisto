@@ -100,6 +100,10 @@ Ontology changes invalidate derived indexes and may stage ReviewItems or pending
 
 Graph-shaped views are useful, but a graph database is not canonical memory. Markdown remains source of truth. Graph indexes may be evaluated later as rebuildable derived artifacts.
 
+## Source-To-Reasoning Loop
+
+v10 connects the ontology and reasoning layers to Source Inbox and answer contract v4. Local export units become Event-backed pending Transactions; reviewed claims become symbolic facts; proof trees then support cited answers and missing-source diagnostics. The ontology still authorizes validation and review lanes only, not direct canonical writes.
+
 ## Eval Gates
 
 Future gates should include:

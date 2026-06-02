@@ -25,6 +25,7 @@ export async function runCoreFrictionTests() {
     assert.deepEqual(preview.affected_files, ["events/2026/2026-05/2026-05-27-001.md"]);
     assert.deepEqual(preview.source_events, ["ev_2026_05_27_001"]);
     assert.deepEqual(preview.proposed_file_writes, []);
+    assert.deepEqual(preview.canonical_writes, []);
     assert.equal(preview.source_label, "friction:retrieval_miss");
     assert.equal(preview.validation.passed, true);
     assert.match(preview.event_raw_text, /What is the Neptune deploy key\?/);
@@ -48,6 +49,7 @@ export async function runCoreFrictionTests() {
     assert.equal(created.created, true);
     assert.equal(created.kind, "bad_answer");
     assert.deepEqual(created.operations, ["NOOP"]);
+    assert.deepEqual(created.canonical_writes, []);
     assert.equal(created.validation.passed, true);
     assert.match(await readVaultFile(createRoot, created.event_path), /source_label: friction:bad_answer/);
     assert.match(await readVaultFile(createRoot, created.event_path), /Who owns Neptune\?/);
