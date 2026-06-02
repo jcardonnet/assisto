@@ -40,7 +40,8 @@ Assisto compiles messy work traces into source-backed markdown memory that can b
 
 | Need | Doc |
 |---|---|
-| Architecture | `docs/revised-design.md` |
+| Project architecture and implementation map | `docs/project-architecture.md` |
+| Canonical architecture/spec | `docs/revised-design.md` |
 | Cited answer workflow | `docs/cited-work-memory.md` |
 | First-day usage | `docs/use-assisto-tomorrow.md` |
 | First-week dogfood | `docs/first-week-with-assisto.md` |
