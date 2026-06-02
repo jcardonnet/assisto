@@ -103,10 +103,51 @@ export async function runCliIntegrationTests() {
   assert.match(help.stdout, /capture presets/);
   assert.match(help.stdout, /capture quick/);
   assert.match(help.stdout, /source inbox/);
+  assert.match(help.stdout, /source hub/);
+  assert.match(help.stdout, /source search/);
+  assert.match(help.stdout, /source clip/);
   assert.match(help.stdout, /query-symbolic/);
   assert.match(help.stdout, /dogfood control-room/);
 
 
+
+  const sourceRoot = await makeTempVault();
+
+  try {
+    const clipResult = await runWm(sourceRoot, ["source", "clip", "--kind", "web_clip_text", "--stdin", "--source-label", "browser clip", "--json"], {
+      stdin: async () => "Search API browser clip says Billing owns rollout tokens."
+    });
+    const clip = JSON.parse(clipResult.stdout);
+    assert.equal(clip.adapter_kind, "web_clip_text");
+    assert.equal(clip.source_inbox_session.units[0].metadata.capture_surface, "source_clip");
+    assert.deepEqual(clip.canonical_writes, []);
+    await expectMissing(sourceRoot, "memory/events/2026/2026-05/2026-05-20-001.md");
+
+    const directClipImportStdout = [];
+    const directClipImportStderr = [];
+    const directClipImportExit = await cliModule.main(["--root", sourceRoot, "source", "import", "--kind", "web_clip_text", "--stdin"], {
+      stdout: (text) => directClipImportStdout.push(text),
+      stderr: (text) => directClipImportStderr.push(text),
+      stdin: async () => "Direct clip import should stay blocked."
+    });
+    assert.notEqual(directClipImportExit, 0);
+    assert.match(directClipImportStderr.join(""), /does not create Events directly/);
+    await expectMissing(sourceRoot, "memory/events/2026/2026-05/2026-05-20-002.md");
+
+    const hubResult = await runWm(sourceRoot, ["source", "hub", "--json"]);
+    const hub = JSON.parse(hubResult.stdout);
+    assert.equal(hub.version, "source-capture-hub-v1");
+    assert.equal(hub.totals.sessions, 1);
+    assert.equal(hub.totals.untriaged_units, 1);
+
+    const searchResult = await runWm(sourceRoot, ["source", "search", "--query", "Billing rollout", "--json"]);
+    const search = JSON.parse(searchResult.stdout);
+    assert.equal(search.version, "source-inbox-search-v1");
+    assert.equal(search.match_count, 1);
+    assert.match(search.matches[0].raw_excerpt, /Billing owns rollout tokens/);
+  } finally {
+    await rm(sourceRoot, { recursive: true, force: true });
+  }
 
   const dogfoodRoot = await makeTempVault();
 

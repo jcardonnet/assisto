@@ -16,6 +16,7 @@ import {
   buildContextTimelineResult,
   buildEntityStewardshipResult,
   buildImportAssistantResult,
+  buildSourceCaptureHub,
   buildSymbolicIndex,
   loadSymbolicIndex,
   querySymbolicFacts,
@@ -38,6 +39,7 @@ import {
   createSourceInboxEvents,
   clearSourceInboxSessions,
   listSourceInboxSessions,
+  searchSourceInboxUnits,
   readSourceInboxSession,
   createWorkdayCapture,
   listWorkdayCapturePresets,
@@ -623,6 +625,18 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
     return commandSourceInbox(root, rest, io);
   }
 
+  if (subcommand === "hub") {
+    return commandSourceHub(root, rest, io);
+  }
+
+  if (subcommand === "search") {
+    return commandSourceSearch(root, rest, io);
+  }
+
+  if (subcommand === "clip") {
+    return commandSourceClip(root, rest, io);
+  }
+
   if (subcommand === "preview") {
     return commandSourcePreview(root, rest, io, cwd);
   }
@@ -639,6 +653,10 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
   const fromPath = optionValue(args, "--path");
   const fromStdin = args.includes("--stdin");
   const dryRun = args.includes("--dry-run");
+
+  if (isSourceClipAdapterKind(kind) && !dryRun) {
+    throw new Error("wm source import does not create Events directly for manual clip kinds; use wm source clip or wm source preview, then wm source create-events.");
+  }
 
   if (fromPath && fromStdin) {
     throw new Error("wm source import accepts either --path or --stdin, not both.");
@@ -671,6 +689,78 @@ async function commandSource(root: string, args: string[], io: CliIo, cwd: strin
   }
 
   printSourceAdapterResult(result, io);
+  return 0;
+}
+
+
+async function commandSourceHub(root: string, args: string[], io: CliIo): Promise<number> {
+  const result = await buildSourceCaptureHub(root);
+
+  if (args.includes("--json")) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+
+  printSourceCaptureHub(result, io);
+  return 0;
+}
+
+async function commandSourceSearch(root: string, args: string[], io: CliIo): Promise<number> {
+  const result = await searchSourceInboxUnits(root, {
+    query: optionValue(args, "--query") ?? optionValue(args, "-q") ?? undefined,
+    session_id: optionValue(args, "--session") ?? optionValue(args, "--id") ?? undefined,
+    adapter_kind: optionValue(args, "--kind") ?? undefined,
+    import_status: sourceImportStatusOption(args),
+    triage_state: sourceTriageStateOption(args),
+    duplicate_state: sourceDuplicateStateOption(args),
+    context: optionValue(args, "--context") ?? undefined,
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    limit: parseOptionalPositiveInt(optionValue(args, "--limit"), "--limit")
+  });
+
+  if (args.includes("--json")) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+
+  printSourceInboxSearch(result, io);
+  return 0;
+}
+
+async function commandSourceClip(root: string, args: string[], io: CliIo): Promise<number> {
+  const kind = parseSourceAdapterKind(optionValue(args, "--kind") ?? "local_snippet");
+
+  if (kind !== "web_clip_text" && kind !== "browser_note" && kind !== "local_snippet") {
+    throw new Error("wm source clip requires --kind <web_clip_text|browser_note|local_snippet>.");
+  }
+
+  if (!args.includes("--stdin")) {
+    throw new Error("wm source clip requires --stdin.");
+  }
+
+  const input = {
+    kind,
+    root,
+    rawText: io.stdin ? await io.stdin() : await readProcessStdin(),
+    source_label: optionValue(args, "--source-label") ?? undefined,
+    observed_at: optionValue(args, "--observed-at") ?? undefined,
+    context: optionValue(args, "--context") ?? undefined,
+    limit: parseOptionalPositiveInt(optionValue(args, "--limit"), "--limit"),
+    dryRun: true
+  };
+  const preview = await previewSourceAdapterImport(input);
+  const sourceInboxSession = await createSourceInboxSessionFromPreview(root, preview, {
+    source_label: input.source_label
+  });
+  const result = { ...preview, source_inbox_session: sourceInboxSession };
+
+  if (args.includes("--json")) {
+    io.stdout(JSON.stringify(result, null, 2) + "\n");
+    return 0;
+  }
+
+  io.stdout("Clip saved to Source Inbox session: " + sourceInboxSession.session_id + "\n");
+  printSourceAdapterResult(preview, io);
   return 0;
 }
 
@@ -2118,7 +2208,7 @@ function extractionProviderFromName(
   );
 }
 
-const sourceAdapterKinds: SourceAdapterKind[] = [
+const sourceImportAdapterKinds: SourceAdapterKind[] = [
   "markdown",
   "text",
   "email",
@@ -2134,6 +2224,31 @@ const sourceAdapterKinds: SourceAdapterKind[] = [
   "repo_markdown"
 ];
 
+const sourceClipAdapterKinds: SourceAdapterKind[] = ["web_clip_text", "browser_note", "local_snippet"];
+
+const sourceAdapterKinds: SourceAdapterKind[] = [
+  "markdown",
+  "text",
+  "email",
+  "calendar",
+  "chat",
+  "eml",
+  "mbox",
+  "ics",
+  "slack_json",
+  "teams_json",
+  "github_json",
+  "tracker_csv",
+  "repo_markdown",
+  "web_clip_text",
+  "browser_note",
+  "local_snippet"
+];
+
+function isSourceClipAdapterKind(kind: SourceAdapterKind): boolean {
+  return sourceClipAdapterKinds.includes(kind);
+}
+
 function parseSourceAdapterKind(value: string | null): SourceAdapterKind {
   if (value && sourceAdapterKinds.includes(value as SourceAdapterKind)) {
     return value as SourceAdapterKind;
@@ -2143,9 +2258,31 @@ function parseSourceAdapterKind(value: string | null): SourceAdapterKind {
 }
 
 function sourceCommandUsage(): string {
-  return "Usage: wm source preview|import --kind <" + sourceAdapterKinds.join("|") + "> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json] | wm source create-events --session <id> [--json]";
+  return "Usage: wm source hub [--json] | wm source search [--query <text>] [--kind <kind>] [--json] | wm source clip --stdin --kind <web_clip_text|browser_note|local_snippet> [--json] | wm source preview --kind <" + sourceAdapterKinds.join("|") + "> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--json] | wm source import --kind <" + sourceImportAdapterKinds.join("|") + "> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json] | wm source inbox <list|show|clear> [id|--id <id>] [--json] | wm source create-events --session <id> [--json]";
 }
 
+
+
+function sourceImportStatusOption(args: string[]): "previewed" | "triaged" | "events_created" | undefined {
+  const value = optionValue(args, "--import-status") ?? optionValue(args, "--status");
+  if (!value) return undefined;
+  if (value === "previewed" || value === "triaged" || value === "events_created") return value;
+  throw new Error("Source Inbox import status must be previewed, triaged, or events_created.");
+}
+
+function sourceTriageStateOption(args: string[]): "untriaged" | "keep" | "skip" | "split" | "merge" | undefined {
+  const value = optionValue(args, "--triage-state") ?? optionValue(args, "--triage");
+  if (!value) return undefined;
+  if (value === "untriaged" || value === "keep" || value === "skip" || value === "split" || value === "merge") return value;
+  throw new Error("Source Inbox triage state must be untriaged, keep, skip, split, or merge.");
+}
+
+function sourceDuplicateStateOption(args: string[]): "new" | "duplicate" | undefined {
+  const value = optionValue(args, "--duplicate-state") ?? optionValue(args, "--duplicate");
+  if (!value) return undefined;
+  if (value === "new" || value === "duplicate") return value;
+  throw new Error("Source Inbox duplicate state must be new or duplicate.");
+}
 
 function sourceCreateEventsSessionArg(args: string[]): string {
   const value = optionValue(args, "--session") ?? optionValue(args, "--id") ?? optionalSourceSessionPositional(args);
@@ -2296,6 +2433,30 @@ function printImportResult(result: ImportNotesResult, io: CliIo): void {
   }
 }
 
+
+
+
+function printSourceCaptureHub(result: Awaited<ReturnType<typeof buildSourceCaptureHub>>, io: CliIo): void {
+  io.stdout("Source Capture Hub\n");
+  io.stdout("Sessions: " + result.totals.sessions + "\n");
+  io.stdout("Units: " + result.totals.units + "\n");
+  io.stdout("Untriaged units: " + result.totals.untriaged_units + "\n");
+  io.stdout("Duplicates: " + result.totals.duplicates + "\n");
+  io.stdout("Next action: " + result.next_recommended_action.label + "\n");
+  if (result.next_recommended_action.session_id) {
+    io.stdout("Session: " + result.next_recommended_action.session_id + "\n");
+  }
+}
+
+function printSourceInboxSearch(result: Awaited<ReturnType<typeof searchSourceInboxUnits>>, io: CliIo): void {
+  io.stdout("Source Inbox matches: " + result.match_count + "\n");
+  for (const match of result.matches) {
+    io.stdout("- " + match.session_id + " " + match.unit_id + " " + match.adapter_kind + " triage=" + match.triage_state + " duplicate=" + match.duplicate_state + "\n");
+    if (match.raw_excerpt) {
+      io.stdout("  " + match.raw_excerpt + "\n");
+    }
+  }
+}
 
 function printSourceInboxCreateEventsResult(result: Awaited<ReturnType<typeof createSourceInboxEvents>>, io: CliIo): void {
   io.stdout(`Source Inbox create-events: ${result.session_id}\n`);
@@ -2566,9 +2727,12 @@ function writeHelp(write: (text: string) => void): void {
       '  wm [--root <path>] capture feedback --kind <wrong_person|missing_context|bad_followup|bad_role_reporting|other_extraction_issue> --note "<text>" [--event <id|path>] [--transaction <id|path>] [--dry-run]',
       "  wm [--root <path>] import assistant [--json]",
       '  wm [--root <path>] import notes (--path <file-or-dir> | --stdin) [--glob "*.md,*.txt"] [--provider rule|openai] [--limit <n>] [--dry-run]',
-      '  wm [--root <path>] source preview --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--json]',
+      '  wm [--root <path>] source preview --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown|web_clip_text|browser_note|local_snippet> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--json]',
       '  wm [--root <path>] source import --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--limit <n>] [--dry-run] [--json]',
       '  wm [--root <path>] source inbox <list|show|clear> [id|--id <id>] [--json]',
+      '  wm [--root <path>] source hub [--json]',
+      '  wm [--root <path>] source search [--query <text>] [--kind <kind>] [--triage-state <state>] [--duplicate-state <state>] [--json]',
+      '  wm [--root <path>] source clip --stdin --kind <web_clip_text|browser_note|local_snippet> [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--json]',
       '  wm [--root <path>] source create-events --session <id> [--json]',
       "  wm [--root <path>] indexes rebuild-symbolic [--json]",
       '  wm [--root <path>] indexes query-symbolic "<query>" [--json]',

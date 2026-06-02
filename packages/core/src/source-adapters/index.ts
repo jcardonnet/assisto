@@ -7,7 +7,7 @@ import { parseMarkdownFile, type FrontmatterValue } from "../markdown";
 import { collectCalendarSourceUnits } from "./calendar";
 import { collectChatSourceUnits } from "./chat";
 import { collectEmailSourceUnits } from "./email";
-import { collectMarkdownSourceUnits } from "./markdown";
+import { collectClipSourceUnits, collectMarkdownSourceUnits } from "./markdown";
 import {
   collectGithubJsonSourceUnits,
   collectIcsSourceUnits,
@@ -30,7 +30,10 @@ export type SourceAdapterKind =
   | "teams_json"
   | "github_json"
   | "tracker_csv"
-  | "repo_markdown";
+  | "repo_markdown"
+  | "web_clip_text"
+  | "browser_note"
+  | "local_snippet";
 
 export interface SourceSpan {
   source_path?: string;
@@ -190,6 +193,11 @@ async function collectParsedUnits(input: SourceAdapterInput): Promise<SourceAdap
       break;
     case "tracker_csv":
       units = collectTrackerCsvSourceUnits(input);
+      break;
+    case "web_clip_text":
+    case "browser_note":
+    case "local_snippet":
+      units = collectClipSourceUnits(input);
       break;
     case "repo_markdown":
     case "markdown":

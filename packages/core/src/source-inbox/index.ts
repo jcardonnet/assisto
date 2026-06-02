@@ -103,6 +103,73 @@ export interface SourceInboxListResult {
   sessions: SourceInboxSessionSummary[];
 }
 
+
+export interface SourceCaptureHubResult {
+  version: "source-capture-hub-v1";
+  inbox_root: string;
+  session_count: number;
+  totals: {
+    sessions: number;
+    units: number;
+    new_units: number;
+    duplicates: number;
+    untriaged_units: number;
+    triaged_units: number;
+    event_created_units: number;
+  };
+  adapter_counts: Record<string, number>;
+  triage_backlog: {
+    sessions: SourceInboxSessionSummary[];
+    untriaged_units: number;
+  };
+  duplicate_groups: Array<{ source_hash: string; unit_count: number; sessions: string[] }>;
+  recent_sessions: SourceInboxSessionSummary[];
+  review_load_forecast: SourceInboxSession["review_load_forecast"];
+  next_recommended_action: {
+    action: "triage_source_session" | "create_source_events" | "preview_source_export";
+    label: string;
+    session_id?: string;
+  };
+  canonical_writes: [];
+}
+
+export interface SourceInboxSearchInput {
+  query?: string;
+  session_id?: string;
+  adapter_kind?: SourceAdapterKind | string;
+  import_status?: SourceInboxImportStatus;
+  triage_state?: SourceInboxTriageState;
+  duplicate_state?: "new" | "duplicate";
+  context?: string;
+  source_label?: string;
+  limit?: number;
+}
+
+export interface SourceInboxSearchMatch {
+  session_id: string;
+  unit_id: string;
+  adapter_kind: SourceAdapterKind | string;
+  import_status: SourceInboxImportStatus;
+  triage_state: SourceInboxTriageState;
+  duplicate_state: "new" | "duplicate";
+  source_label: string;
+  observed_at: string | null;
+  contexts: string[];
+  source_hash: string;
+  raw_excerpt: string;
+  source_spans: SourceSpan[];
+  metadata: Record<string, string>;
+}
+
+export interface SourceInboxSearchResult {
+  version: "source-inbox-search-v1";
+  query?: string;
+  filters: SourceInboxSearchInput;
+  match_count: number;
+  matches: SourceInboxSearchMatch[];
+  canonical_writes: [];
+}
+
 export interface SourceInboxClearResult {
   inbox_root: string;
   cleared_count: number;
@@ -409,6 +476,126 @@ export async function createSourceInboxEvents(
   };
 }
 
+
+export async function buildSourceCaptureHub(root: string): Promise<SourceCaptureHubResult> {
+  const sessions = await readAllSourceInboxSessions(root);
+  const summaries = sessions.map(summarizeSession);
+  const units = sessions.flatMap((session) => session.units.map((unit) => ({ session, unit })));
+  const adapterCounts: Record<string, number> = {};
+
+  for (const session of sessions) {
+    adapterCounts[String(session.adapter_kind)] = (adapterCounts[String(session.adapter_kind)] ?? 0) + 1;
+  }
+
+  const duplicateGroups = [...sourceHashGroups(units)]
+    .filter(([, group]) => group.length > 1 || group.some((item) => item.unit.duplicate_state === "duplicate"))
+    .map(([sourceHash, group]) => ({
+      source_hash: sourceHash,
+      unit_count: group.length,
+      sessions: uniqueSorted(group.map((item) => item.session.session_id))
+    }));
+  const untriagedSessions = summaries.filter((summary) => summary.triage_counts.untriaged > 0);
+  const triagedUnits = units.filter(({ unit }) => unit.triage_state !== "untriaged").length;
+  const eventCreatedUnits = sessions
+    .filter((session) => session.import_status === "events_created")
+    .reduce((sum, session) => sum + session.unit_count, 0);
+  const firstUntriaged = untriagedSessions[0];
+  const firstTriaged = summaries.find((summary) => summary.import_status === "triaged");
+
+  return {
+    version: "source-capture-hub-v1",
+    inbox_root: sourceInboxRoot(root),
+    session_count: sessions.length,
+    totals: {
+      sessions: sessions.length,
+      units: units.length,
+      new_units: units.filter(({ unit }) => unit.duplicate_state === "new").length,
+      duplicates: units.filter(({ unit }) => unit.duplicate_state === "duplicate").length,
+      untriaged_units: units.filter(({ unit }) => unit.triage_state === "untriaged").length,
+      triaged_units: triagedUnits,
+      event_created_units: eventCreatedUnits
+    },
+    adapter_counts: adapterCounts,
+    triage_backlog: {
+      sessions: untriagedSessions,
+      untriaged_units: units.filter(({ unit }) => unit.triage_state === "untriaged").length
+    },
+    duplicate_groups: duplicateGroups,
+    recent_sessions: summaries.slice(0, 10),
+    review_load_forecast: aggregateReviewLoadForecast(sessions),
+    next_recommended_action: firstUntriaged
+      ? { action: "triage_source_session", label: "Triage the next Source Inbox session.", session_id: firstUntriaged.session_id }
+      : firstTriaged
+        ? { action: "create_source_events", label: "Create Events and pending Transactions for a triaged session.", session_id: firstTriaged.session_id }
+        : { action: "preview_source_export", label: "Preview a local source export or manual clip." },
+    canonical_writes: []
+  };
+}
+
+export async function searchSourceInboxUnits(root: string, input: SourceInboxSearchInput = {}): Promise<SourceInboxSearchResult> {
+  const sessions = await readAllSourceInboxSessions(root);
+  const terms = (input.query ?? "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  const limit = normalizeSearchLimit(input.limit);
+  const matches: SourceInboxSearchMatch[] = [];
+
+  for (const session of sessions) {
+    if (input.session_id && session.session_id !== input.session_id) {
+      continue;
+    }
+    if (input.adapter_kind && String(session.adapter_kind) !== String(input.adapter_kind)) {
+      continue;
+    }
+    if (input.import_status && session.import_status !== input.import_status) {
+      continue;
+    }
+
+    for (const unit of session.units) {
+      if (input.triage_state && unit.triage_state !== input.triage_state) {
+        continue;
+      }
+      if (input.duplicate_state && unit.duplicate_state !== input.duplicate_state) {
+        continue;
+      }
+      if (input.context && !unit.contexts.includes(input.context)) {
+        continue;
+      }
+      if (input.source_label && unit.source_label !== input.source_label) {
+        continue;
+      }
+      const haystack = sourceInboxSearchHaystack(session, unit);
+      if (terms.length && !terms.every((term) => haystack.includes(term))) {
+        continue;
+      }
+
+      matches.push({
+        session_id: session.session_id,
+        unit_id: unit.unit_id,
+        adapter_kind: unit.adapter_kind,
+        import_status: session.import_status,
+        triage_state: unit.triage_state,
+        duplicate_state: unit.duplicate_state,
+        source_label: unit.source_label,
+        observed_at: unit.observed_at,
+        contexts: [...unit.contexts],
+        source_hash: unit.source_hash,
+        raw_excerpt: sourceInboxExcerpt(unit.raw_text),
+        source_spans: [...unit.source_spans],
+        metadata: { ...unit.metadata }
+      });
+
+      if (matches.length >= limit) {
+        return sourceInboxSearchResult(input, matches);
+      }
+    }
+  }
+
+  return sourceInboxSearchResult(input, matches);
+}
+
 export function sourceInboxRoot(root: string): string {
   return path.join(root, ".assisto-local", "source-inbox");
 }
@@ -438,6 +625,84 @@ async function readAllSourceInboxSessions(root: string): Promise<SourceInboxSess
   }
 
   return sessions.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+}
+
+
+function sourceHashGroups(
+  units: Array<{ session: SourceInboxSession; unit: SourceInboxUnit }>
+): Map<string, Array<{ session: SourceInboxSession; unit: SourceInboxUnit }>> {
+  const groups = new Map<string, Array<{ session: SourceInboxSession; unit: SourceInboxUnit }>>();
+
+  for (const item of units) {
+    const group = groups.get(item.unit.source_hash) ?? [];
+    group.push(item);
+    groups.set(item.unit.source_hash, group);
+  }
+
+  return groups;
+}
+
+function aggregateReviewLoadForecast(sessions: SourceInboxSession[]): SourceInboxSession["review_load_forecast"] {
+  return sessions.reduce(
+    (total, session) => ({
+      total_units: total.total_units + session.review_load_forecast.total_units,
+      likely_safe: total.likely_safe + session.review_load_forecast.likely_safe,
+      likely_staged: total.likely_staged + session.review_load_forecast.likely_staged,
+      likely_conflict: total.likely_conflict + session.review_load_forecast.likely_conflict,
+      duplicates: total.duplicates + session.review_load_forecast.duplicates
+    }),
+    { total_units: 0, likely_safe: 0, likely_staged: 0, likely_conflict: 0, duplicates: 0 }
+  );
+}
+
+function normalizeSearchLimit(value: number | undefined): number {
+  if (value === undefined) {
+    return 50;
+  }
+
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error("Source Inbox search limit must be a positive integer.");
+  }
+
+  return Math.min(value, 200);
+}
+
+function sourceInboxSearchHaystack(session: SourceInboxSession, unit: SourceInboxUnit): string {
+  return [
+    session.session_id,
+    session.adapter_kind,
+    session.source_label,
+    session.source_path,
+    session.import_status,
+    unit.unit_id,
+    unit.adapter_kind,
+    unit.raw_text,
+    unit.source_label,
+    unit.observed_at,
+    unit.contexts.join(" "),
+    unit.source_hash,
+    unit.triage_state,
+    unit.duplicate_state,
+    Object.entries(unit.metadata).map(([key, value]) => key + " " + value).join(" ")
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function sourceInboxExcerpt(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim().slice(0, 280);
+}
+
+function sourceInboxSearchResult(input: SourceInboxSearchInput, matches: SourceInboxSearchMatch[]): SourceInboxSearchResult {
+  return {
+    version: "source-inbox-search-v1",
+    query: input.query,
+    filters: { ...input },
+    match_count: matches.length,
+    matches,
+    canonical_writes: []
+  };
 }
 
 function sourceInboxSessionsRoot(root: string): string {

@@ -11,9 +11,20 @@ export function collectMarkdownSourceUnits(input: SourceAdapterInput): SourceAda
   return splitDelimitedSourceUnits(input, input.kind === "text" ? "text" : "markdown");
 }
 
+export function collectClipSourceUnits(input: SourceAdapterInput): SourceAdapterParsedUnit[] {
+  return splitDelimitedSourceUnits(input, input.kind).map((unit) => ({
+    ...unit,
+    metadata: {
+      ...unit.metadata,
+      capture_surface: "source_clip",
+      clip_kind: input.kind
+    }
+  }));
+}
+
 export function splitDelimitedSourceUnits(
   input: SourceAdapterInput,
-  kind: Extract<SourceAdapterKind, "markdown" | "text">
+  kind: SourceAdapterKind
 ): SourceAdapterParsedUnit[] {
   const text = input.rawText ?? "";
   const units: SourceAdapterParsedUnit[] = [];
@@ -39,7 +50,7 @@ function pushDelimitedUnit(
   units: SourceAdapterParsedUnit[],
   lines: SourceLineRecord[],
   input: SourceAdapterInput,
-  kind: Extract<SourceAdapterKind, "markdown" | "text">
+  kind: SourceAdapterKind
 ): void {
   const firstContentIndex = lines.findIndex((line) => line.text.trim().length > 0);
 

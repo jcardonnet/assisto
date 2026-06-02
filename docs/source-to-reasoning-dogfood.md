@@ -10,26 +10,30 @@ The loop is local/export-only. There is no live OAuth sync, background connector
 
 ## 1. Collect Local Exports
 
-Use small, curated exports first:
+Use small, curated exports and trusted manual clips first:
 
 - email snippets as EML or MBOX;
 - calendar items as ICS;
 - chat excerpts as Slack or Teams JSON;
 - GitHub issue or comment JSON;
 - tracker CSV rows;
-- repository or project Markdown.
+- repository or project Markdown;
+- browser clips, browser notes, or local snippets pasted through `web_clip_text`, `browser_note`, or `local_snippet`.
 
 Prefer source material that can answer a real work question tomorrow: owner, dependency, blocker, decision, open question, meeting participant, role/reporting change, or commitment.
 
 ## 2. Preview In Source Inbox
 
-Use Workbench Source Inbox or CLI preview before creating memory objects:
+Use Workbench Source Inbox, Source Capture Hub, or CLI preview before creating memory objects:
 
 ```bash
+wm source hub --json
+wm source search --query "Billing rollout" --json
+wm source clip --stdin --kind web_clip_text --source-label "browser clip" --json
 wm source preview --kind repo_markdown --path ./exports/project-notes.md --json
 ```
 
-Preview is read-only. It creates or updates only noncanonical session state under `.assisto-local/source-inbox/**` when run through Workbench. Each unit preserves raw text, source hash, source spans, observed time, source label, participants or context hints, and adapter metadata.
+Preview and Source Capture Hub search are read-only. `wm source clip` creates only noncanonical Source Inbox session state under `.assisto-local/source-inbox/**`; it does not create Events until the explicit create-events step. Each unit preserves raw text, source hash, source spans, observed time, source label, participants or context hints, and adapter metadata.
 
 ## 3. Triage Units
 

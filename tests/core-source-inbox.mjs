@@ -47,6 +47,27 @@ export async function runCoreSourceInboxTests() {
     assert.equal(listed.sessions[0].duplicate_units, 1);
     assert.match(listed.inbox_root, new RegExp("\\.assisto-local[/\\\\]source-inbox$"));
 
+    const hub = await inbox.buildSourceCaptureHub(root);
+    assert.equal(hub.version, "source-capture-hub-v1");
+    assert.equal(hub.canonical_writes.length, 0);
+    assert.equal(hub.totals.sessions, 1);
+    assert.equal(hub.totals.units, 2);
+    assert.equal(hub.totals.duplicates, 1);
+    assert.equal(hub.triage_backlog.untriaged_units, 1);
+    assert.equal(hub.adapter_counts.markdown, 1);
+    assert.equal(hub.next_recommended_action.action, "triage_source_session");
+
+    const searchByQuery = await inbox.searchSourceInboxUnits(root, { query: "Joe Search", limit: 5 });
+    assert.equal(searchByQuery.matches.length, 1);
+    assert.equal(searchByQuery.matches[0].session_id, "srcin_20260601120000_demo");
+    assert.equal(searchByQuery.matches[0].unit_id, "markdown_1");
+    assert.match(searchByQuery.matches[0].raw_excerpt, /Joe owns Search/);
+    assert.deepEqual(searchByQuery.canonical_writes, []);
+
+    const searchByFilter = await inbox.searchSourceInboxUnits(root, { duplicate_state: "duplicate", triage_state: "skip" });
+    assert.equal(searchByFilter.matches.length, 1);
+    assert.equal(searchByFilter.matches[0].unit_id, "markdown_2");
+
     const loaded = await inbox.readSourceInboxSession(root, "srcin_20260601120000_demo");
     assert.equal(loaded.units[0].metadata.title, "Search note");
     assert.deepEqual(loaded.units[0].source_spans[0], {

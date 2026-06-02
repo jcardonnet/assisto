@@ -11,7 +11,7 @@ Adapters may parse Markdown/text batches, pasted notes, email excerpts, calendar
 ## Public Contract
 
 ```ts
-export type SourceAdapterKind = "markdown" | "text" | "email" | "calendar" | "chat" | "eml" | "mbox" | "ics" | "slack_json" | "teams_json" | "github_json" | "tracker_csv" | "repo_markdown";
+export type SourceAdapterKind = "markdown" | "text" | "email" | "calendar" | "chat" | "eml" | "mbox" | "ics" | "slack_json" | "teams_json" | "github_json" | "tracker_csv" | "repo_markdown" | "web_clip_text" | "browser_note" | "local_snippet";
 export interface SourceSpan { source_path?: string; start_line?: number; end_line?: number; start_offset?: number; end_offset?: number; label?: string; }
 export interface SourceAdapterInput { kind: SourceAdapterKind; root: string; path?: string; rawText?: string; source_label?: string; observed_at?: string; context?: string; limit?: number; dryRun?: boolean; }
 export interface SourceAdapterUnit { unit_id: string; adapter_kind: SourceAdapterKind; raw_text: string; source_label: string; source_hash: string; observed_at: string | null; contexts: string[]; source_spans: SourceSpan[]; metadata: Record<string, string>; duplicate_state: "new" | "duplicate"; skip_reason?: string; }
@@ -30,6 +30,7 @@ export interface SourceAdapterCreateResult extends SourceAdapterPreviewResult { 
 - `github_json` parses issue/comment-style JSON arrays or objects with `issues`, `pull_requests`, `comments`, `events`, or `items`.
 - `tracker_csv` converts each CSV row into a labeled source unit with row metadata.
 - `repo_markdown` uses Markdown splitting while preserving its adapter kind for repo documentation imports.
+- `web_clip_text`, `browser_note`, and `local_snippet` are manual clip kinds for trusted local copy/paste capture. They split like Markdown/text, preserve the specific clip kind, and add metadata `capture_surface: source_clip` plus `clip_kind`.
 - Every kept unit preserves raw unit text, `source_label`, optional `observed_at`, contexts, metadata, source spans, and a `sha256:<hex>` `source_hash`.
 - Duplicate detection scans existing Event frontmatter for `source_hash`; duplicate units are skipped and do not create Events.
 
@@ -41,20 +42,26 @@ The Event preserves source metadata. The pending Transaction may propose current
 
 ## Source Inbox Triage
 
-Workbench Source Inbox is the preferred dogfood path for local exports. It stores noncanonical sessions under `.assisto-local/source-inbox/**`, lets the user inspect source units and duplicate state, and requires explicit triage before creating Events plus pending Transactions. Source Inbox sessions are not memory truth and may be deleted.
+Workbench Source Inbox is the preferred dogfood path for local exports and trusted manual clips. It stores noncanonical sessions under `.assisto-local/source-inbox/**`, lets the user inspect source units and duplicate state, provides a read-only Source Capture Hub summary/search surface, and requires explicit triage before creating Events plus pending Transactions. Source Inbox sessions are not memory truth and may be deleted.
 
 ## CLI And Workbench
 
 Minimal CLI support:
 
 ```bash
-wm source preview --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--json]
+wm source hub [--json]
+wm source search [--query <text>] [--kind <kind>] [--triage-state <state>] [--duplicate-state <state>] [--json]
+wm source clip --stdin --kind <web_clip_text|browser_note|local_snippet> [--source-label <text>] [--observed-at <date>] [--context <id|path|name>] [--json]
+# Manual clip kinds are Source Inbox first; use source create-events after explicit triage.
+wm source preview --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown|web_clip_text|browser_note|local_snippet> (--path <file> | --stdin) [--json]
 wm source import --kind <markdown|text|email|calendar|chat|eml|mbox|ics|slack_json|teams_json|github_json|tracker_csv|repo_markdown> (--path <file> | --stdin) [--dry-run] [--json]
 ```
 
 Minimal Workbench JSON endpoints:
 
 ```text
+GET /api/source-inbox/hub
+GET /api/source-inbox/search
 POST /api/source-inbox/preview
 POST /api/source/import/preview
 POST /api/source/import
