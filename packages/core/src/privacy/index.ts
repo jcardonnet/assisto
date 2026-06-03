@@ -165,7 +165,7 @@ function isDynamicSegment(value: string): boolean {
     UUID_PATTERN.test(value) ||
     ID_SEGMENT_PATTERN.test(value) ||
     HASH_PREFIX_PATTERN.test(value) ||
-    /[0-9]{4,}/.test(value) ||
+    /\d{4,}/.test(value) ||
     /^[a-f0-9]{8,}$/i.test(value)
   );
 }

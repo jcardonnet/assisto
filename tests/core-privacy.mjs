@@ -73,7 +73,7 @@ export async function runCorePrivacyTests() {
     "[redacted:absolute_path chars=45 segments=6]"
   );
   assert.equal(
-    privacy.redactAbsolutePath("C:\\Users\\jc\\assisto\\memory\\events\\secret.md"),
+    privacy.redactAbsolutePath(String.raw`C:\Users\jc\assisto\memory\events\secret.md`),
     "[redacted:absolute_path chars=41 segments=6]"
   );
 
