@@ -56,13 +56,34 @@ function normalizeResult(value) {
 }
 
 function normalizeId(value) {
-  return String(value ?? "unknown")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_") || "unknown";
+  let output = "";
+  let pendingSeparator = false;
+
+  for (const char of String(value ?? "unknown").trim().toLowerCase()) {
+    if (isAsciiAlphaNumeric(char) || char === "-") {
+      if (pendingSeparator && output) {
+        output += "_";
+      }
+      output += char;
+      pendingSeparator = false;
+      continue;
+    }
+
+    if (char === "_") {
+      pendingSeparator = output.length > 0;
+      continue;
+    }
+
+    pendingSeparator = output.length > 0;
+  }
+
+  return output || "unknown";
 }
+
+function isAsciiAlphaNumeric(char) {
+  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+}
+
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   console.log(JSON.stringify(createPerfBaselineReport(), null, 2));
