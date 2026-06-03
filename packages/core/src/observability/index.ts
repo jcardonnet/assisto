@@ -13,7 +13,7 @@ import {
 } from "../privacy";
 
 export type AssistoComponent = "core" | "cli" | "workbench" | "pi" | "unknown";
-export type ObservabilityResult = "ok" | "recoverable" | "validation_failed" | "failed" | string;
+export type ObservabilityResult = string;
 
 export interface RunContextOptions {
   run_id?: string;
@@ -80,6 +80,31 @@ export interface InMemoryObservabilitySink extends ObservabilitySink {
   spans: SpanRecord[];
   metrics: MetricRecord[];
 }
+
+const ATTRIBUTE_TEXT_REDACTORS = {
+  raw_note: redactRawNote,
+  event_raw_text: redactEventRawText,
+  imported_source_text: redactImportedSourceText,
+  provider_prompt: redactProviderPrompt,
+  provider_response: redactProviderResponse,
+  proposed_markdown_write: redactProposedMarkdownWrite,
+  user_string: redactUserString
+} as const;
+
+const FORBIDDEN_METRIC_LABELS = new Set([
+  "run_id",
+  "file_path",
+  "path",
+  "query",
+  "query_hash",
+  "event_id",
+  "claim_id",
+  "transaction_id",
+  "tx_id",
+  "person_name",
+  "raw_route",
+  "error_message"
+]);
 
 export function createNoopObservabilitySink(): ObservabilitySink {
   return {
@@ -155,55 +180,32 @@ function sanitizeAttributes(attributes: Record<string, unknown>): Record<string,
   const safe: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(attributes)) {
-    if (key === "route") {
-      safe.route = safeRouteTemplate(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "status" || key === "status_code") {
-      safe.status_class = safeStatusClass(Number(value));
-      continue;
-    }
-
-    if (key === "raw_note") {
-      safe.raw_note = redactRawNote(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "event_raw_text") {
-      safe.event_raw_text = redactEventRawText(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "imported_source_text") {
-      safe.imported_source_text = redactImportedSourceText(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "provider_prompt") {
-      safe.provider_prompt = redactProviderPrompt(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "provider_response") {
-      safe.provider_response = redactProviderResponse(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "proposed_markdown_write") {
-      safe.proposed_markdown_write = redactProposedMarkdownWrite(String(value ?? ""));
-      continue;
-    }
-
-    if (key === "user_string") {
-      safe.user_string = redactUserString(String(value ?? ""));
-      continue;
-    }
-
-    safe[safeCode(key)] = typeof value === "number" ? safeCount(value) : safeCode(String(value ?? ""));
+    const sanitized = sanitizeAttributeEntry(key, value);
+    safe[sanitized.key] = sanitized.value;
   }
 
   return safe;
+}
+
+function sanitizeAttributeEntry(key: string, value: unknown): { key: string; value: unknown } {
+  if (key === "route") {
+    return { key: "route", value: safeRouteTemplate(scalarString(value)) };
+  }
+
+  if (key === "status" || key === "status_code") {
+    return { key: "status_class", value: safeStatusClass(Number(value)) };
+  }
+
+  const redactor = ATTRIBUTE_TEXT_REDACTORS[key as keyof typeof ATTRIBUTE_TEXT_REDACTORS];
+  if (redactor) {
+    return { key, value: redactor(scalarString(value)) };
+  }
+
+  return { key: safeCode(key), value: sanitizeGenericAttributeValue(value) };
+}
+
+function sanitizeGenericAttributeValue(value: unknown): string | number {
+  return typeof value === "number" ? safeCount(value) : safeCode(scalarString(value));
 }
 
 function sanitizeLabels(labels: Record<string, unknown>): Record<string, string> {
@@ -218,7 +220,7 @@ function sanitizeLabels(labels: Record<string, unknown>): Record<string, string>
     }
 
     if (safeKey === "route") {
-      safe.route = safeRouteTemplate(String(value ?? ""));
+      safe.route = safeRouteTemplate(scalarString(value));
       continue;
     }
 
@@ -227,27 +229,26 @@ function sanitizeLabels(labels: Record<string, unknown>): Record<string, string>
       continue;
     }
 
-    safe[safeKey] = safeCode(String(value ?? ""));
+    safe[safeKey] = safeCode(scalarString(value));
   }
 
   return safe;
 }
 
 function isForbiddenMetricLabel(key: string): boolean {
-  return new Set([
-    "run_id",
-    "file_path",
-    "path",
-    "query",
-    "query_hash",
-    "event_id",
-    "claim_id",
-    "transaction_id",
-    "tx_id",
-    "person_name",
-    "raw_route",
-    "error_message"
-  ]).has(key);
+  return FORBIDDEN_METRIC_LABELS.has(key);
+}
+
+function scalarString(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+
+  return "";
 }
 
 function timestamp(now?: () => string): string {
