@@ -101,12 +101,27 @@ function normalizeComponent(value: string): string {
 }
 
 function normalizeToken(value: string): string {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_") || "unknown";
+  let output = "";
+  let pendingSeparator = false;
+
+  for (const char of String(value ?? "").trim().toLowerCase()) {
+    if (isAsciiAlphaNumeric(char)) {
+      if (pendingSeparator && output) {
+        output += "_";
+      }
+      output += char;
+      pendingSeparator = false;
+      continue;
+    }
+
+    pendingSeparator = output.length > 0;
+  }
+
+  return output || "unknown";
+}
+
+function isAsciiAlphaNumeric(char: string): boolean {
+  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
 }
 
 function statusClass(value: number | undefined): string {

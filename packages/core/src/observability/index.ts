@@ -260,10 +260,30 @@ function durationMs(startedAt: string, endedAt: string): number {
 }
 
 function safeMetricName(name: string): string {
-  return String(name ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9.]+/g, ".")
-    .replace(/^\.+|\.+$/g, "")
-    .replace(/\.+/g, ".") || "unknown";
+  let output = "";
+  let pendingSeparator = false;
+
+  for (const char of String(name ?? "").trim().toLowerCase()) {
+    if (isAsciiAlphaNumeric(char)) {
+      if (pendingSeparator && output) {
+        output += ".";
+      }
+      output += char;
+      pendingSeparator = false;
+      continue;
+    }
+
+    if (char === ".") {
+      pendingSeparator = output.length > 0;
+      continue;
+    }
+
+    pendingSeparator = output.length > 0;
+  }
+
+  return output || "unknown";
+}
+
+function isAsciiAlphaNumeric(char: string): boolean {
+  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
 }

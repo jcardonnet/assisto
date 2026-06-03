@@ -128,12 +128,7 @@ function lineCount(value: string): number {
 }
 
 function normalizeBoundedCode(value: string, maxLength: number): string {
-  const normalized = String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_+/g, "_");
+  const normalized = normalizeSeparatedToken(value, "_", isAsciiAlphaNumeric);
 
   if (!normalized) {
     return "unknown";
@@ -176,12 +171,33 @@ function isDynamicSegment(value: string): boolean {
 }
 
 function normalizeRouteSegment(value: string): string {
-  const normalized = String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-+/g, "-");
+  return normalizeSeparatedToken(value, "-", isAsciiAlphaNumeric) || "unknown";
+}
 
-  return normalized || "unknown";
+function normalizeSeparatedToken(
+  value: string,
+  separator: "_" | "-",
+  isAllowed: (char: string) => boolean
+): string {
+  let output = "";
+  let pendingSeparator = false;
+
+  for (const char of String(value ?? "").trim().toLowerCase()) {
+    if (isAllowed(char)) {
+      if (pendingSeparator && output) {
+        output += separator;
+      }
+      output += char;
+      pendingSeparator = false;
+      continue;
+    }
+
+    pendingSeparator = output.length > 0;
+  }
+
+  return output;
+}
+
+function isAsciiAlphaNumeric(char: string): boolean {
+  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
 }
