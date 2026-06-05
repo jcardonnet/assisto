@@ -34,6 +34,7 @@
     "check:memory-data": "node scripts/check-memory-data.mjs",
     "pr:review-wait": "node scripts/wait-for-pr-review.mjs",
     "pr:closeout": "node scripts/agent-pr.mjs closeout",
+    "agent:closeout:no-copilot": "node scripts/agent-pr.mjs closeout",
     "mxbai:upload": "bash scripts/mxbai-upload.sh",
     "mxbai:smoke": "bash scripts/mxbai-smoke.sh",
     "agent:start": "node scripts/agent-control.mjs start",

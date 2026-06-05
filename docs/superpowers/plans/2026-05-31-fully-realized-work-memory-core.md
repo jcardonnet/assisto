@@ -10,6 +10,12 @@
 
 ---
 
+## Status Update - 2026-06-05
+
+This umbrella plan is superseded as an execution checklist by the later v9 plan and by current `main` at `8e830e5`. The repository already implements most first-wave items here: source adapters/source inbox, workday capture, cited answer contracts, ontology/frames/symbolic helpers, context/entity surfaces, review acceleration, maintenance, dogfood evals, and portable context packs.
+
+Use this document as historical architecture context. For new implementation work, prefer the current acceleration control-plane plan and narrow follow-up slices over restarting this plan's PR sequence.
+
 ## Scope And Non-Negotiables
 
 - Canonical mutation invariant remains:
