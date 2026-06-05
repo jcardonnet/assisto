@@ -110,7 +110,6 @@ import {
   type DogfoodHomeResult,
   type PersonalDogfoodEvalResult,
   type ExtractionProvider,
-  type EntityKind,
   type EntityRepairActionV2Kind,
   type EntityRepairActionV2Preview,
   type EntityStewardshipPreview,
@@ -154,6 +153,7 @@ import { jsonRoute, optionalQuery, textRoute } from "./server/route-utils";
 import { createAskRoute } from "./server/routes/ask";
 import { createBriefRoutes } from "./server/routes/briefs";
 import { createContextRoutes } from "./server/routes/contexts";
+import { createEntityRoutes } from "./server/routes/entities";
 import { createHealthRoutes } from "./server/routes/health";
 import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
@@ -780,68 +780,6 @@ export async function handleWorkbenchRoute(
     return jsonRoute(200, await collectFollowups(root));
   }
 
-  if (requestUrl.pathname === "/api/entities") {
-    const kind = optionalEntityKind(requestUrl);
-
-    if (!kind) {
-      return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
-    }
-
-    return jsonRoute(200, { kind, items: await listEntities(root, kind) });
-  }
-
-  if (requestUrl.pathname === "/api/entities/stewardship") {
-    const kind = optionalEntityKind(requestUrl);
-
-    if (!kind) {
-      return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
-    }
-
-    return jsonRoute(200, await buildEntityStewardshipResult(root, kind));
-  }
-
-  if (requestUrl.pathname === "/api/entities/stewardship-v2" || requestUrl.pathname === "/api/entities/command-center") {
-    const kind = optionalEntityKind(requestUrl);
-
-    if (!kind) {
-      return jsonRoute(400, { error: "Missing required query parameter: kind=person|topic|context." });
-    }
-
-    return jsonRoute(200, await buildEntityStewardshipCommandCenter(root, kind));
-  }
-
-  if (requestUrl.pathname === "/api/entities/stewardship/detail") {
-    const target = optionalTarget(requestUrl);
-
-    if (!target) {
-      return jsonRoute(400, { error: "Missing required query parameter: id." });
-    }
-
-    try {
-      return jsonRoute(200, await getEntityDetail(root, target));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const status = /^Entity not found:/.test(message) ? 404 : 400;
-      return jsonRoute(status, { error: message });
-    }
-  }
-
-  if (requestUrl.pathname === "/api/entities/detail") {
-    const target = optionalTarget(requestUrl);
-
-    if (!target) {
-      return jsonRoute(400, { error: "Missing required query parameter: id." });
-    }
-
-    try {
-      return jsonRoute(200, await getEntityDetail(root, target));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const status = /^Entity not found:/.test(message) ? 404 : 400;
-      return jsonRoute(status, { error: message });
-    }
-  }
-
   return jsonRoute(404, { error: "Not found." });
 }
 
@@ -860,6 +798,12 @@ function workbenchRoutes() {
       buildContextOperatingRoomV3,
       buildContextTimelineResult,
       buildSymbolicIndex
+    }),
+    ...createEntityRoutes({
+      buildEntityStewardshipCommandCenter,
+      buildEntityStewardshipResult,
+      getEntityDetail,
+      listEntities
     }),
     ...createHealthRoutes({
       buildMaintenancePlan,
@@ -2999,16 +2943,6 @@ function optionalContextPackKind(requestUrl: URL): ContextPackKind | undefined {
     value === "agent-handoff"
     ? value
     : undefined;
-}
-
-function optionalEntityKind(requestUrl: URL): EntityKind | undefined {
-  const kind = requestUrl.searchParams.get("kind")?.trim();
-
-  if (kind === "person" || kind === "topic" || kind === "context") {
-    return kind;
-  }
-
-  return undefined;
 }
 
 function parseJsonBody(body: string | undefined): Record<string, unknown> {

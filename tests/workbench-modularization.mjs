@@ -10,6 +10,7 @@ export async function runWorkbenchModularizationTests() {
   const ask = await loadTsModule("packages/workbench/src/server/routes/ask.ts");
   const briefs = await loadTsModule("packages/workbench/src/server/routes/briefs.ts");
   const contexts = await loadTsModule("packages/workbench/src/server/routes/contexts.ts");
+  const entities = await loadTsModule("packages/workbench/src/server/routes/entities.ts");
   const health = await loadTsModule("packages/workbench/src/server/routes/health.ts");
 
   assert.equal(typeof workbench.startWorkbenchServer, "function");
@@ -21,6 +22,7 @@ export async function runWorkbenchModularizationTests() {
   assert.equal(typeof ask.createAskRoute, "function");
   assert.equal(typeof briefs.createBriefRoutes, "function");
   assert.equal(typeof contexts.createContextRoutes, "function");
+  assert.equal(typeof entities.createEntityRoutes, "function");
   assert.equal(typeof health.createHealthRoutes, "function");
 
   const route = { method: "GET", pathname: "/api/example", handler: () => ({}) };
@@ -231,6 +233,138 @@ export async function runWorkbenchModularizationTests() {
   assert.equal(contextRoomV3Body.version, "context-operating-room-v3");
   assert.deepEqual(contextRoomV3Body.canonical_writes, []);
   assert.match(contextRoomV3Body.warnings.join("\n"), /No canonical memory files were written/);
+
+  const entityRoutes = entities.createEntityRoutes({
+    buildEntityStewardshipCommandCenter: async (_root, kind) => ({
+      version: "entity-stewardship-command-center-v1",
+      generated_at: "2026-06-05T00:00:00.000Z",
+      kind,
+      summary: {
+        total: 1,
+        identity_risk: 0,
+        relationship_risk: 0,
+        review_risk: 0,
+        with_symbolic_facts: 0,
+        high_priority: 0
+      },
+      lanes: [],
+      items: [],
+      symbolicFacts: [],
+      warnings: [],
+      canonical_writes: []
+    }),
+    buildEntityStewardshipResult: async (_root, kind) => ({
+      generated_at: "2026-06-05T00:00:00.000Z",
+      kind,
+      items: [],
+      summary: {
+        total: 0,
+        high_risk: 0,
+        medium_risk: 0,
+        low_risk: 0,
+        identity_ambiguity: 0,
+        conflict_change: 0,
+        needs_context: 0,
+        review_backlog: 0
+      },
+      warnings: []
+    }),
+    getEntityDetail: async (_root, target) => {
+      if (target === "per_missing") {
+        throw new Error("Entity not found: per_missing");
+      }
+
+      return {
+        id: target,
+        path: "memory/people/jeff.md",
+        type: "person",
+        name: "Jeff",
+        aliases: [],
+        active_claims: 1,
+        staged_claims: 0,
+        superseded_claims: 0,
+        source_events: [],
+        related: [],
+        warnings: [],
+        activeClaims: [],
+        stagedClaims: [],
+        supersededClaims: [],
+        identityRisk: { level: "low", score: 0, reasons: [] },
+        nearDuplicates: [],
+        aliasConflicts: [],
+        roleChanges: [],
+        reportingChanges: [],
+        ownershipChanges: [],
+        staleClaims: [],
+        conflictingClaims: [],
+        recommendedReviewLane: "low_risk",
+        evidenceEvents: [],
+        linkedReviewItems: [],
+        linkedFollowUps: [],
+        relatedPages: []
+      };
+    },
+    listEntities: async (_root, kind) => [
+      {
+        id: kind === "person" ? "per_jeff" : "ctx_inventory_project",
+        path: kind === "person" ? "memory/people/jeff.md" : "memory/contexts/inventory-project.md",
+        type: kind,
+        name: kind === "person" ? "Jeff" : "Inventory Project",
+        aliases: [],
+        active_claims: 1,
+        staged_claims: 0,
+        superseded_claims: 0,
+        source_events: [],
+        related: [],
+        warnings: []
+      }
+    ]
+  });
+  const entityListRoute = registry.findRoute(entityRoutes, "GET", "/api/entities");
+  const entityStewardshipRoute = registry.findRoute(entityRoutes, "GET", "/api/entities/stewardship");
+  const entityCommandCenterRoute = registry.findRoute(entityRoutes, "HEAD", "/api/entities/command-center");
+  const entityDetailRoute = registry.findRoute(entityRoutes, "GET", "/api/entities/detail");
+  const entityStewardshipDetailRoute = registry.findRoute(entityRoutes, "GET", "/api/entities/stewardship/detail");
+  assert.notEqual(entityListRoute, null);
+  assert.notEqual(entityStewardshipRoute, null);
+  assert.notEqual(entityCommandCenterRoute, null);
+  assert.notEqual(entityDetailRoute, null);
+  assert.notEqual(entityStewardshipDetailRoute, null);
+
+  const missingEntityKind = await entityListRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/entities" },
+    requestUrl: new URL("http://127.0.0.1/api/entities")
+  });
+  assert.equal(missingEntityKind.status, 400);
+
+  const entityList = await entityListRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/entities?kind=person" },
+    requestUrl: new URL("http://127.0.0.1/api/entities?kind=person")
+  });
+  assert.equal(JSON.parse(entityList.body).items[0].id, "per_jeff");
+
+  const entityCommandCenter = await entityCommandCenterRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/entities/command-center?kind=person" },
+    requestUrl: new URL("http://127.0.0.1/api/entities/command-center?kind=person")
+  });
+  assert.equal(JSON.parse(entityCommandCenter.body).version, "entity-stewardship-command-center-v1");
+
+  const missingEntityDetailId = await entityDetailRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/entities/detail" },
+    requestUrl: new URL("http://127.0.0.1/api/entities/detail")
+  });
+  assert.equal(missingEntityDetailId.status, 400);
+
+  const missingEntityDetail = await entityStewardshipDetailRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/entities/stewardship/detail?id=per_missing" },
+    requestUrl: new URL("http://127.0.0.1/api/entities/stewardship/detail?id=per_missing")
+  });
+  assert.equal(missingEntityDetail.status, 404);
 
   const healthRoutes = health.createHealthRoutes({
     buildMaintenancePlan: async (_root, options) => ({
