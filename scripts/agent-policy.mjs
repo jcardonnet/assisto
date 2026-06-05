@@ -20,13 +20,104 @@ function unique(values) {
   return [...new Set(values)].sort();
 }
 
+const commandProfiles = {
+  lint: { cost: "low", required: true },
+  typecheck: { cost: "low", required: true },
+  test: { cost: "medium", required: true },
+  "test:e2e": { cost: "high", required: true },
+  "test:browser": { cost: "high", required: true },
+  "eval:mvp": { cost: "medium", required: true },
+  "eval:v2": { cost: "medium", required: true },
+  "eval:v3": { cost: "medium", required: true },
+  "eval:retrieval": { cost: "medium", required: true },
+  "eval:source-adapters": { cost: "medium", required: true },
+  "eval:v4": { cost: "high", required: true },
+  "eval:v5": { cost: "high", required: true },
+  "eval:v6": { cost: "high", required: true },
+  "eval:dogfood-local": { cost: "medium", required: true },
+  "eval:v7": { cost: "high", required: true },
+  "eval:answers": { cost: "medium", required: true },
+  "eval:context-packs": { cost: "medium", required: true },
+  "eval:v8": { cost: "high", required: true },
+  "eval:v9": { cost: "high", required: true },
+  "eval:v10": { cost: "high", required: true },
+  "eval:maintenance": { cost: "medium", required: true },
+  "check:memory-data": { cost: "low", required: true }
+};
+
+const ciEvalChain = [
+  "eval:mvp",
+  "eval:v2",
+  "eval:v3",
+  "eval:retrieval",
+  "eval:v4",
+  "eval:v5",
+  "eval:v6",
+  "eval:dogfood-local",
+  "eval:v7",
+  "eval:answers",
+  "eval:context-packs",
+  "eval:v8",
+  "eval:v9",
+  "eval:v10",
+  "eval:maintenance"
+];
+
+const fullEvalChain = [
+  "eval:mvp",
+  "eval:v2",
+  "eval:v3",
+  "eval:retrieval",
+  "eval:source-adapters",
+  "eval:v4",
+  "eval:v5",
+  "eval:v6",
+  "eval:dogfood-local",
+  "eval:v7",
+  "eval:answers",
+  "eval:context-packs",
+  "eval:v8",
+  "eval:v9",
+  "eval:v10",
+  "eval:maintenance"
+];
+
+const recentUiEvalSubset = [
+  "eval:v4",
+  "eval:v5",
+  "eval:v6",
+  "eval:dogfood-local",
+  "eval:v7",
+  "eval:answers",
+  "eval:context-packs",
+  "eval:v8",
+  "eval:v9",
+  "eval:v10"
+];
+
+const ciParityCommandNames = ["test:e2e", "test:browser", ...ciEvalChain, "check:memory-data"];
+const fullCommandNames = ["test:e2e", ...fullEvalChain, "test:browser", "check:memory-data"];
+const evalHarnessCommandNames = [...fullEvalChain, "check:memory-data"];
+const workbenchCommandNames = ["test:e2e", "test:browser", ...recentUiEvalSubset, "check:memory-data"];
+const coreBehaviorCommandNames = [...fullEvalChain, "check:memory-data"];
+
 function command(name, reason) {
+  const profile = commandProfiles[name];
+  if (profile === undefined) {
+    throw new Error(`No validation command profile exists for ${name}.`);
+  }
   return {
     name,
     command: name === "check:memory-data" ? "pnpm check:memory-data" : `pnpm ${name}`,
     env: name.startsWith("test") || name.startsWith("eval") ? { ...tempEnv } : {},
-    reason
+    reason,
+    cost: profile.cost,
+    required: profile.required
   };
+}
+
+function commandList(names, reason) {
+  return names.map((name) => command(name, reason));
 }
 
 function classifyFile(file) {
@@ -84,6 +175,17 @@ function addCommands(commands, additions) {
   }
 }
 
+export function explainChangedFiles(changedFiles) {
+  return unique(changedFiles).map((file) => {
+    const category = classifyFile(file);
+    return {
+      file,
+      category,
+      reason: `Classified as ${category} by deterministic path rules.`
+    };
+  });
+}
+
 export function buildValidationPlan({
   changedFiles,
   full = false,
@@ -104,96 +206,28 @@ export function buildValidationPlan({
 
   if (full || ciParity) {
     mode = full ? "full" : "ci-parity";
-    const fullCommands = ciParity
-      ? [
-          "test:e2e",
-          "test:browser",
-          "eval:mvp",
-          "eval:v2",
-          "eval:v3",
-          "eval:retrieval",
-          "eval:v4",
-          "eval:v5",
-          "eval:v6",
-          "eval:dogfood-local",
-          "eval:v7",
-          "eval:answers",
-          "eval:v8",
-          "check:memory-data"
-        ]
-      : [
-          "test:e2e",
-          "eval:mvp",
-          "eval:v2",
-          "eval:v3",
-          "eval:retrieval",
-          "eval:v4",
-          "eval:v5",
-          "eval:v6",
-          "eval:dogfood-local",
-          "eval:v7",
-          "eval:answers",
-          "eval:v8",
-          "test:browser",
-          "check:memory-data"
-        ];
-    addCommands(commands, fullCommands.map((name) => command(name, "Full validation requested.")));
+    const fullCommands = ciParity ? ciParityCommandNames : fullCommandNames;
+    const reason = ciParity ? "CI parity validation requested." : "Full validation requested.";
+    addCommands(commands, commandList(fullCommands, reason));
   } else if (docsOnly) {
     mode = "docs-process";
   } else if (hasAny(categories, ["eval-test-harness"])) {
     mode = "eval-test-harness";
     addCommands(
       commands,
-      [
-        "eval:mvp",
-        "eval:v2",
-        "eval:v3",
-        "eval:retrieval",
-        "eval:v4",
-        "eval:v5",
-        "eval:v6",
-        "eval:dogfood-local",
-        "eval:v7",
-        "eval:answers",
-        "eval:v8",
-        "check:memory-data"
-      ].map((name) => command(name, "Eval/test harness changes require the full eval chain."))
+      commandList(evalHarnessCommandNames, "Eval/test harness changes require the full eval chain.")
     );
   } else if (hasAny(categories, ["workbench"])) {
     mode = "workbench-browser";
     addCommands(
       commands,
-      [
-        "test:e2e",
-        "test:browser",
-        "eval:v4",
-        "eval:v5",
-        "eval:v6",
-        "eval:dogfood-local",
-        "eval:v7",
-        "eval:answers",
-        "eval:v8",
-        "check:memory-data"
-      ].map((name) => command(name, "Workbench/browser changes require UI and recent eval coverage."))
+      commandList(workbenchCommandNames, "Workbench/browser changes require UI and recent eval coverage.")
     );
   } else if (hasAny(categories, ["core", "cli", "pi"])) {
     mode = "core-behavior";
     addCommands(
       commands,
-      [
-        "eval:mvp",
-        "eval:v2",
-        "eval:v3",
-        "eval:retrieval",
-        "eval:v4",
-        "eval:v5",
-        "eval:v6",
-        "eval:dogfood-local",
-        "eval:v7",
-        "eval:answers",
-        "eval:v8",
-        "check:memory-data"
-      ].map((name) => command(name, "Core/CLI/Pi behavior changes require deterministic eval coverage."))
+      commandList(coreBehaviorCommandNames, "Core/CLI/Pi behavior changes require deterministic eval coverage.")
     );
   } else if (hasAny(categories, ["workflow", "tests", "repo"])) {
     mode = "workflow-scripts";
@@ -201,12 +235,30 @@ export function buildValidationPlan({
   }
 
   const filteredCommands = skipBrowser ? commands.filter((item) => item.name !== "test:browser") : commands;
+  const selectedNames = new Set(filteredCommands.map((item) => item.name));
+  const skipped = Object.keys(commandProfiles)
+    .filter((name) => !selectedNames.has(name))
+    .sort((left, right) => left.localeCompare(right))
+    .map((name) => {
+      const reason =
+        docsOnly ? "Skipped because docs-only validation was requested."
+        : skipBrowser && name === "test:browser" ? "Skipped because browser tests were explicitly disabled via the skipBrowser flag."
+        : `Skipped because mode ${mode} does not require it.`;
+      return {
+        name,
+        reason,
+        cost: commandProfiles[name].cost,
+        required: false
+      };
+    });
 
   return {
     mode,
     categories,
     changed_files: changedFiles,
-    commands: filteredCommands
+    file_reasons: explainChangedFiles(changedFiles),
+    commands: filteredCommands,
+    skipped
   };
 }
 
@@ -287,6 +339,12 @@ function print(value, json) {
     console.log(`Categories: ${value.categories.join(", ") || "none"}`);
     for (const item of value.commands) {
       console.log(`- ${item.command}: ${item.reason}`);
+    }
+    if ((value.skipped ?? []).length > 0) {
+      console.log("Skipped:");
+      for (const item of value.skipped) {
+        console.log(`- ${item.name}: ${item.reason}`);
+      }
     }
     return;
   }
