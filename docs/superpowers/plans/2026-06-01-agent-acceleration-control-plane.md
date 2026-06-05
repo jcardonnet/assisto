@@ -369,6 +369,8 @@ Expected: all pass; memory-data guard may report untracked user-memory files as 
 
 **Purpose:** Reduce wasted validation time by making `pnpm agent:validate --plan` more precise, transparent, and easy to trust.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-validation-planner-v2`. The planner now emits command cost and required metadata, skipped-command reasons, and deterministic changed-file explanations. Targeted policy tests, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
+
 **Files:**
 
 - Modify `scripts/agent-policy.mjs`
@@ -377,7 +379,7 @@ Expected: all pass; memory-data guard may report untracked user-memory files as 
 
 ### Task 2.1: Add command metadata tests
 
-- [ ] **Step 1: Extend `tests/agent-policy.mjs`**
+- [x] **Step 1: Extend `tests/agent-policy.mjs`**
 
 Add:
 
@@ -405,7 +407,7 @@ test("docs-only validation records why evals are skipped", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -417,7 +419,7 @@ Expected: failure because commands do not include `required`, `cost`, or `skippe
 
 ### Task 2.2: Add validation command profiles
 
-- [ ] **Step 1: Replace `command(name, reason)` in `scripts/agent-policy.mjs`**
+- [x] **Step 1: Replace `command(name, reason)` in `scripts/agent-policy.mjs`**
 
 Use:
 
@@ -455,7 +457,7 @@ function command(name, reason) {
 }
 ```
 
-- [ ] **Step 2: Add skipped-command output**
+- [x] **Step 2: Add skipped-command output**
 
 At the end of `buildValidationPlan`, before return:
 
@@ -485,7 +487,7 @@ return {
 };
 ```
 
-- [ ] **Step 3: Run targeted tests**
+- [x] **Step 3: Run targeted tests**
 
 Run:
 
@@ -497,7 +499,7 @@ Expected: pass.
 
 ### Task 2.3: Add changed-file explanation
 
-- [ ] **Step 1: Add `explainChangedFiles` to `scripts/agent-policy.mjs`**
+- [x] **Step 1: Add `explainChangedFiles` to `scripts/agent-policy.mjs`**
 
 ```js
 export function explainChangedFiles(changedFiles) {
@@ -509,7 +511,7 @@ export function explainChangedFiles(changedFiles) {
 }
 ```
 
-- [ ] **Step 2: Include it in `buildValidationPlan`**
+- [x] **Step 2: Include it in `buildValidationPlan`**
 
 Add:
 
@@ -517,7 +519,7 @@ Add:
 file_reasons: explainChangedFiles(changedFiles),
 ```
 
-- [ ] **Step 3: Add JSON test**
+- [x] **Step 3: Add JSON test**
 
 Add to `tests/agent-policy.mjs`:
 
@@ -537,7 +539,7 @@ test("validation plan explains changed file categories", () => {
 });
 ```
 
-- [ ] **Step 4: Validate PR 2**
+- [x] **Step 4: Validate PR 2**
 
 Run:
 
