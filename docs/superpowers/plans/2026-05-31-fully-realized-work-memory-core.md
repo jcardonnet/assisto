@@ -12,7 +12,7 @@
 
 ## Status Update - 2026-06-05
 
-This umbrella plan is superseded as an execution checklist by the later v9 plan and by current `main` at `0258cb8 [codex] Add agent environment diagnostics (#135)`. The repository already implements most first-wave items here: source adapters/source inbox, workday capture, cited answer contracts, ontology/frames/symbolic helpers, context/entity surfaces, review acceleration, maintenance, dogfood evals, portable context packs, Wave 1 contract scaffolds, and capability registry/control-plane surfaces.
+This umbrella plan is superseded as an execution checklist by the later v9 plan and by current `main` at `0a4d63f [codex] Add Mixedbread refresh orchestrator (#137)`. The repository already implements most first-wave items here: source adapters/source inbox, workday capture, cited answer contracts, ontology/frames/symbolic helpers, context/entity surfaces, review acceleration, maintenance, dogfood evals, portable context packs, Wave 1 contract scaffolds, and capability registry/control-plane surfaces.
 
 Use this document as historical architecture context. For new implementation work, prefer the current acceleration control-plane plan and narrow follow-up slices over restarting this plan's PR sequence.
 
