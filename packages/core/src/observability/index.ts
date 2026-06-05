@@ -99,8 +99,10 @@ const OBSERVABILITY_RULES: Record<string, SanitizationRule> = {
   route: (value) => ({ key: "route", value: safeRouteTemplate(scalarString(value)) }),
   status: (value) => ({ key: "status_class", value: safeStatusClass(Number(value)) }),
   status_code: (value) => ({ key: "status_class", value: safeStatusClass(Number(value)) }),
-  status_class: (value) => ({ key: "status_class", value: safeStatusClass(Number(value)) })
+  status_class: (value) => ({ key: "status_class", value: safeStatusClassLabel(value) })
 };
+
+const STATUS_CLASS_LABELS = new Set(["1xx", "2xx", "3xx", "4xx", "5xx", "network", "parse", "unknown"]);
 
 const FORBIDDEN_OBSERVABILITY_KEYS = new Set([
   "run_id",
@@ -233,6 +235,11 @@ function sanitizeLabels(labels: Record<string, unknown>): Record<string, string>
       continue;
     }
 
+    if (isSensitiveMetricLabel(safeKey)) {
+      safe[safeKey] = "redacted";
+      continue;
+    }
+
     const special = OBSERVABILITY_RULES[safeKey];
     if (special) {
       const sanitized = special(value);
@@ -248,6 +255,15 @@ function sanitizeLabels(labels: Record<string, unknown>): Record<string, string>
 
 function isForbiddenObservabilityKey(key: string): boolean {
   return FORBIDDEN_OBSERVABILITY_KEYS.has(key);
+}
+
+function isSensitiveMetricLabel(key: string): boolean {
+  return key in ATTRIBUTE_TEXT_REDACTORS;
+}
+
+function safeStatusClassLabel(value: unknown): string {
+  const label = safeCode(scalarString(value));
+  return STATUS_CLASS_LABELS.has(label) ? label : "unknown";
 }
 
 function timestamp(now?: () => string): string {

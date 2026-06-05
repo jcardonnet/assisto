@@ -73,7 +73,7 @@ export async function runCoreObservabilityTests() {
       operation: "apply",
       result: "validation_failed",
       route: "/api/events/ev_2026_06_03_001",
-      status_class: 500,
+      status_code: 500,
       run_id: "run_w1_contract_001"
     }
   });
@@ -92,6 +92,32 @@ export async function runCoreObservabilityTests() {
       run_id: "redacted"
     }
   });
+
+  observability.recordMetric(run, {
+    name: "assisto.error.count",
+    value: 1,
+    labels: {
+      provider_prompt: "Summarize Priya private note.",
+      raw_note: "Jeff is the DBA.",
+      status_class: "network",
+      user_string: "Priya Patel"
+    }
+  });
+
+  assert.deepEqual(sink.metrics[1], {
+    run_id: "run_w1_contract_001",
+    component: "core",
+    name: "assisto.error.count",
+    value: 1,
+    labels: {
+      provider_prompt: "redacted",
+      raw_note: "redacted",
+      status_class: "network",
+      user_string: "redacted"
+    }
+  });
+  assert.equal(JSON.stringify(sink.metrics[1]).includes("Priya"), false);
+  assert.equal(JSON.stringify(sink.metrics[1]).includes("Jeff"), false);
 
   const noopRun = observability.createRunContext({ component: "cli" });
   observability.startSpan(noopRun, { domain: "cli", operation: "noop" }).end();

@@ -23,7 +23,11 @@ export async function runCoreErrorContractTests() {
     status: 400,
     details: {
       issue_count: 2,
-      raw_note: "Priya is assigned to a secret project."
+      nested: { raw_note: "Priya nested detail." },
+      provider_prompt: "Summarize Priya private note.",
+      raw_note: "Priya is assigned to a secret project.",
+      unsafe_context: "Priya owns the private rollout.",
+      unsafe_items: ["Priya array detail."]
     }
   });
 
@@ -32,8 +36,16 @@ export async function runCoreErrorContractTests() {
   assert.equal(error.component, "core");
   assert.equal(error.operation, "apply_transaction");
   assert.equal(error.status, 400);
+  assert.equal(error.details.issue_count, 2);
+  assert.deepEqual(error.details.nested, { kind: "object", key_count: 1 });
+  assert.match(String(error.details.provider_prompt), /^\[redacted:provider_prompt chars=\d+ lines=1\]$/);
+  assert.match(String(error.details.raw_note), /^\[redacted:raw_note chars=\d+ lines=1\]$/);
+  assert.match(String(error.details.unsafe_context), /^\[redacted:user_string chars=\d+ lines=1\]$/);
+  assert.deepEqual(error.details.unsafe_items, { kind: "array", item_count: 1 });
   assert.equal(errors.isAssistoError(error), true);
   assert.equal(errors.assistoErrorCode(error), "validation_failed");
+  assert.equal(JSON.stringify(error).includes("Priya"), false);
+  assert.equal(JSON.stringify(error).includes("private rollout"), false);
 
   const summary = errors.safeErrorSummary(error);
   assert.deepEqual(summary, {
