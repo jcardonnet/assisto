@@ -14,6 +14,31 @@ export async function runAgentRunnerTests() {
   assert.equal(classifyFailure({ stderr: "listen EPERM: operation not permitted 127.0.0.1" }).code, "localhost_bind_eperm");
   assert.equal(classifyFailure({ stderr: "spawnSync node EPERM" }).code, "sandbox_child_process_eperm");
   assert.equal(classifyFailure({ stderr: "browserType.launch: Target page, context or browser has been closed" }).code, "playwright_chromium_launch");
+  const wslAccessDenied = classifyFailure({
+    stderr: "Wsl/Service/E_ACCESSDENIED",
+    stdout: "",
+    exitCode: 1,
+    command: ["powershell.exe", "Get-ChildItem"]
+  });
+  assert.equal(wslAccessDenied.code, "wsl_access_denied");
+  assert.match(wslAccessDenied.workaround, /wsl\.exe -d Ubuntu --cd/);
+
+  const playwrightSandbox = classifyFailure({
+    stderr: "sandbox_host_linux.cc Operation not permitted",
+    stdout: "",
+    exitCode: 1,
+    command: ["pnpm", "test:browser"]
+  });
+  assert.equal(playwrightSandbox.code, "playwright_sandbox_host_eperm");
+  assert.deepEqual(playwrightSandbox.rerun_command, ["pnpm", "test:browser"]);
+
+  const mixedbreadNoResults = classifyFailure({
+    stderr: "",
+    stdout: "mxbai smoke failed: query returned no hits",
+    exitCode: 1,
+    command: ["pnpm", "mxbai:smoke"]
+  });
+  assert.equal(mixedbreadNoResults.code, "mixedbread_smoke_no_results");
   assert.equal(classifyFailure({ stderr: "gh: HTTP 401: Bad credentials" }).code, "github_auth_or_network");
   assert.equal(classifyFailure({ stderr: "MXBAI_API_KEY is not set" }).code, "mixedbread_auth_or_network");
   assert.equal(classifyFailure({ stdout: "unresolved=2", stderr: "" }).code, "unresolved_review_threads");
