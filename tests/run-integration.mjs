@@ -22,6 +22,7 @@ import { runCheckMemoryDataTests } from "./check-memory-data.mjs";
 import { runAgentControlTests } from "./agent-control.mjs";
 import { runAgentPolicyTests } from "./agent-policy.mjs";
 import { runAgentRunnerTests } from "./agent-runner.mjs";
+import { runAgentStageTests } from "./agent-stage.mjs";
 import { runAgentNoCopilotPrTests } from "./agent-no-copilot-pr.mjs";
 import { runAgentPrTests } from "./agent-pr.mjs";
 import { runAgentCiLocalTests } from "./agent-ci-local.mjs";
@@ -55,6 +56,7 @@ export async function runIntegrationTests() {
   await runAgentControlTests();
   await runAgentPolicyTests();
   await runAgentRunnerTests();
+  await runAgentStageTests();
   await runAgentNoCopilotPrTests();
   await runAgentPrTests();
   await runAgentCiLocalTests();

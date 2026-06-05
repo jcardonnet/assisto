@@ -49,3 +49,19 @@ pnpm agent:validate --plan --json --docs-only
 Use `--docs-only` only for branches whose intentional changes are docs/process files; it is an explicit override.
 
 Use `--full` or `--ci-parity` when the branch has cross-cutting risk or when local evidence must mirror CI.
+
+## Safe Staging
+
+Use:
+
+```bash
+pnpm agent:stage docs/agent-acceleration.md scripts/agent-stage.mjs tests/agent-stage.mjs
+```
+
+The helper refuses `memory/events/**`, `memory/transactions/**`, parent directories that include them, and Git pathspec magic by default. Intentional memory-data staging requires explicit repo-relative paths:
+
+```bash
+pnpm agent:stage --allow-memory-data --yes memory/events/example.md
+```
+
+Product PRs should not use that override.
