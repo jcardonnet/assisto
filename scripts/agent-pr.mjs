@@ -291,6 +291,13 @@ function inherit(command, args) {
   }
 }
 
+export function buildMxbaiCloseoutRefreshCommand() {
+  return {
+    command: "pnpm",
+    args: ["agent:mxbai", "refresh"]
+  };
+}
+
 function parsePrNumber(pr) {
   const match = pr.match(/(?:\/pull\/|^)(\d+)(?:$|[/?#])/u);
   if (!match) {
@@ -521,8 +528,8 @@ async function commandCloseout(pr, options) {
   inherit("git", ["pull", "--ff-only", "origin", "main"]);
   await advancePrState({ pr: prNumber, state: "main_synced" });
   if (options.refreshMxbai) {
-    inherit("pnpm", ["mxbai:upload"]);
-    inherit("pnpm", ["mxbai:smoke"]);
+    const refresh = buildMxbaiCloseoutRefreshCommand();
+    inherit(refresh.command, refresh.args);
     await advancePrState({ pr: prNumber, state: "mixedbread_refreshed" });
   }
   await advancePrState({ pr: prNumber, state: "closed_out" });
