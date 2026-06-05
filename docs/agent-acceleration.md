@@ -80,3 +80,18 @@ const vault = await createScenarioVault("manager-chain");
 ## Capability Groups
 
 Core publishes a deterministic capability registry for high-value public surfaces such as capture, cited answer contracts, entity stewardship, and Context operating rooms. `pnpm agent:validate --plan --json` reports a `capability_groups` map that ties those stable capability IDs to focused validation gates. The map is advisory: it helps agents choose extra targeted checks for touched surfaces without changing the planner's required command list.
+
+## Local Review Harness
+
+Before opening a PR, generate deterministic review prompts for subagents:
+
+```bash
+pnpm agent:review --kind invariant --json $(git diff --name-only origin/main...HEAD)
+pnpm agent:review --kind tests --json $(git diff --name-only origin/main...HEAD)
+```
+
+Use the invariant prompt for memory-safety, transaction-flow, and derived-output checks. Use the tests prompt to verify targeted coverage and validation scope. Dispatch separate subagents when the branch touches core memory, transactions, retrieval, Workbench, Pi, or evals, then record the result:
+
+```bash
+pnpm agent:note --kind review --text "Invariant review passed: no direct canonical writes."
+```

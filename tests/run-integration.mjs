@@ -28,6 +28,7 @@ import { runAgentNoCopilotPrTests } from "./agent-no-copilot-pr.mjs";
 import { runAgentPrTests } from "./agent-pr.mjs";
 import { runAgentCiLocalTests } from "./agent-ci-local.mjs";
 import { runAgentMapTests } from "./agent-map.mjs";
+import { runAgentReviewTests } from "./agent-review.mjs";
 import { runAgentWorkbenchTests } from "./agent-workbench.mjs";
 import { runFaultHarnessTests } from "./faults/fault-harness.mjs";
 import { runBaselineRunnerTests } from "./baselines/baseline-runner.mjs";
@@ -63,6 +64,7 @@ export async function runIntegrationTests() {
   await runAgentPrTests();
   await runAgentCiLocalTests();
   await runAgentMapTests();
+  await runAgentReviewTests();
   await runAgentWorkbenchTests();
   await runFaultHarnessTests();
   await runBaselineRunnerTests();

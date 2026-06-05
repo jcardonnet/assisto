@@ -29,6 +29,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["agent:pr"], "node scripts/agent-pr.mjs");
   assert.equal(packageJson.scripts["agent:ci-local"], "node scripts/agent-ci-local.mjs");
   assert.equal(packageJson.scripts["agent:map"], "node scripts/agent-map.mjs");
+  assert.equal(packageJson.scripts["agent:review"], "node scripts/agent-review.mjs");
   assert.equal(packageJson.scripts["agent:workbench"], "node scripts/agent-workbench.mjs");
 
   assert.match(readFileSync("scripts/validate-local.mjs", "utf8"), /Usage: pnpm validate:local/);
@@ -43,6 +44,7 @@ export async function runScriptHelperTests() {
   assert.match(readFileSync("scripts/agent-stage.mjs", "utf8"), /Usage: pnpm agent:stage/);
   assert.match(readFileSync("scripts/agent-ci-local.mjs", "utf8"), /Usage: pnpm agent:ci-local --plan/);
   assert.match(readFileSync("scripts/agent-map.mjs", "utf8"), /Usage: pnpm agent:map build/);
+  assert.match(readFileSync("scripts/agent-review.mjs", "utf8"), /Usage: pnpm agent:review/);
   assert.match(readFileSync("scripts/agent-workbench.mjs", "utf8"), /Usage: pnpm agent:workbench serve/);
   assert.match(readFileSync(".devcontainer/ci-local.sh", "utf8"), /pnpm validate:ci-parity/);
   assert.match(readFileSync("scripts/mxbai-smoke.sh", "utf8"), /MXBAI_SMOKE_VERBOSE/);
