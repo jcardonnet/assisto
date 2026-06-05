@@ -116,6 +116,19 @@ export const capabilityValidationGroups = {
   "context-operating-room": ["eval:v8", "test:browser"]
 };
 
+function capabilityGroupsForPlan({ skipBrowser = false } = {}) {
+  if (!skipBrowser) {
+    return capabilityValidationGroups;
+  }
+
+  return Object.fromEntries(
+    Object.entries(capabilityValidationGroups).map(([name, commands]) => [
+      name,
+      commands.filter((commandName) => commandName !== "test:browser")
+    ])
+  );
+}
+
 function command(name, reason) {
   const profile = commandProfiles[name];
   if (profile === undefined) {
@@ -315,7 +328,7 @@ export function buildValidationPlan({
     changed_files: changedFiles,
     file_reasons: explainChangedFiles(changedFiles),
     targeted_groups: inferTargetedGroups(categories, changedFiles),
-    capability_groups: capabilityValidationGroups,
+    capability_groups: capabilityGroupsForPlan({ skipBrowser }),
     commands: filteredCommands,
     skipped
   };

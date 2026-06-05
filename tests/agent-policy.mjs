@@ -113,6 +113,9 @@ export async function runAgentPolicyTests() {
     skipBrowser: true
   });
   assert.equal(commandNames(skipBrowserPlan).includes("test:browser"), false);
+  for (const commands of Object.values(skipBrowserPlan.capability_groups)) {
+    assert.equal(commands.includes("test:browser"), false);
+  }
   assert.match(skipBrowserPlan.skipped.find((item) => item.name === "test:browser").reason, /skipBrowser/);
 
   const forcedFull = buildValidationPlan({ changedFiles: ["README.md"], full: true });

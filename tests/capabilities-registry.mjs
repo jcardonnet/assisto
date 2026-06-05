@@ -18,6 +18,15 @@ export async function runCapabilityRegistryTests() {
   assert.equal(core.capabilityRegistry, capabilities.capabilityRegistry);
   assert.equal(core.validateCapabilityRegistry, capabilities.validateCapabilityRegistry);
 
+  const answerContract = capabilities.capabilityRegistry.find((item) => item.id === "ask-answer-contract");
+  assert.equal(answerContract.cliCommands.includes("wm ask --contract-v3"), true);
+  assert.equal(answerContract.cliCommands.includes("wm ask --contract-v4"), true);
+
+  const entityStewardship = capabilities.capabilityRegistry.find((item) => item.id === "entity-stewardship");
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/stewardship/detail"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/identity-review/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/repair-v2/preview"), true);
+
   assert.deepEqual(
     capabilities.validateCapabilityRegistry([
       capabilities.capabilityRegistry[0],

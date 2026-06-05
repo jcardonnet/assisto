@@ -24,7 +24,13 @@ export const capabilityRegistry = [
     id: "ask-answer-contract",
     title: "Cited answer contract",
     mutationKind: "read_only",
-    cliCommands: ["wm ask --answer-contract", "wm ask --answer-contract-v3", "wm ask --answer-contract-v4"],
+    cliCommands: [
+      "wm ask --answer-contract",
+      "wm ask --contract-v3",
+      "wm ask --answer-contract-v3",
+      "wm ask --contract-v4",
+      "wm ask --answer-contract-v4"
+    ],
     workbenchRoutes: [
       "/api/ask/answer-contract",
       "/api/ask/contract-v3",
@@ -44,9 +50,12 @@ export const capabilityRegistry = [
     cliCommands: ["wm entities stewardship", "wm entities command-center", "wm entities repair-v2"],
     workbenchRoutes: [
       "/api/entities/stewardship",
+      "/api/entities/stewardship/detail",
       "/api/entities/stewardship-v2",
       "/api/entities/command-center",
+      "/api/entities/identity-review/preview",
       "/api/entities/identity-review/stage",
+      "/api/entities/repair-v2/preview",
       "/api/entities/repair-v2/stage"
     ],
     piTools: [],
