@@ -105,6 +105,30 @@ export function classifyFailure({ stdout = "", stderr = "", exitCode = 1, comman
       rerun_command: command
     };
   }
+  if (haystack.includes("wsl/service/e_accessdenied")) {
+    return {
+      code: "wsl_access_denied",
+      summary: "Windows-to-WSL filesystem access was denied.",
+      workaround: "Use wsl.exe -d Ubuntu --cd /home/jc/assisto -- <cmd> or run the command inside the WSL shell.",
+      rerun_command: command
+    };
+  }
+  if (haystack.includes("sandbox_host_linux.cc") && haystack.includes("operation not permitted")) {
+    return {
+      code: "playwright_sandbox_host_eperm",
+      summary: "Chromium sandbox launch was blocked by the execution sandbox.",
+      workaround: "Rerun TMPDIR=/tmp pnpm test:browser outside the sandbox or in the local CI capsule.",
+      rerun_command: command
+    };
+  }
+  if (haystack.includes("mxbai smoke failed") && haystack.includes("no hits")) {
+    return {
+      code: "mixedbread_smoke_no_results",
+      summary: "Mixedbread smoke ran but did not find expected indexed documents.",
+      workaround: "Run pnpm mxbai:upload, then pnpm mxbai:smoke. Check .mxbai/upload-manifest.yaml if it still fails.",
+      rerun_command: ["pnpm", "mxbai:upload"]
+    };
+  }
   if (haystack.includes("playwright") || haystack.includes("browsertype.launch") || haystack.includes("chromium")) {
     return {
       code: "playwright_chromium_launch",

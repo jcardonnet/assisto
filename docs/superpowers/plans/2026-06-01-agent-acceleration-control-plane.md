@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-`main` is synced at `e8afb12 [codex] Complete capability surface registry (#128)`.
+`main` is synced at `8c54595 [codex] Harden agent review harness focus areas (#132)`.
 
-PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas.
 
-Current implementation slice: PR 7, Local Subagent Review Harness, on branch `codex/agent-local-review-harness`.
+Current implementation slice: PR 8, Environment Diagnostics v2, on branch `codex/agent-diagnostics-v2`.
 
 ## Operating Rules
 
@@ -1611,6 +1611,8 @@ Expected: pass.
 
 **Purpose:** Reduce debugging loops by classifying recurring environment failures and giving exact rerun commands.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-diagnostics-v2`. `agent:run` now distinguishes WSL access-denied failures, Playwright Chromium sandbox-host EPERM, and Mixedbread smoke no-result failures before the generic Playwright/Mixedbread classifiers. `docs/agent-acceleration.md` includes the common environment failures table. Targeted runner tests, `pnpm lint`, `pnpm typecheck`, `pnpm test` outside the sandbox after the known nested-git EPERM, and `pnpm check:memory-data` passed.
+
 **Files:**
 
 - Modify `scripts/agent-run.mjs`
@@ -1619,7 +1621,7 @@ Expected: pass.
 
 ### Task 8.1: Add failure fixture tests
 
-- [ ] **Step 1: Extend `tests/agent-runner.mjs`**
+- [x] **Step 1: Extend `tests/agent-runner.mjs`**
 
 Add:
 
@@ -1660,19 +1662,19 @@ test("classifyFailure detects Mixedbread smoke no-results", () => {
 });
 ```
 
-- [ ] **Step 2: Run targeted tests to verify failure**
+- [x] **Step 2: Run targeted tests to verify failure**
 
 Run:
 
 ```bash
-node --test tests/agent-runner.mjs
+node --input-type=module -e 'import("./tests/agent-runner.mjs").then(({ runAgentRunnerTests }) => runAgentRunnerTests())'
 ```
 
 Expected: failure until new classifiers are added.
 
 ### Task 8.2: Add classifiers
 
-- [ ] **Step 1: Update `classifyFailure` in `scripts/agent-run.mjs`**
+- [x] **Step 1: Update `classifyFailure` in `scripts/agent-run.mjs`**
 
 Add these cases before generic Playwright/Mixedbread checks:
 
@@ -1703,19 +1705,19 @@ if (haystack.includes("mxbai smoke failed") && haystack.includes("no hits")) {
 }
 ```
 
-- [ ] **Step 2: Run targeted tests**
+- [x] **Step 2: Run targeted tests**
 
 Run:
 
 ```bash
-node --test tests/agent-runner.mjs
+node --input-type=module -e 'import("./tests/agent-runner.mjs").then(({ runAgentRunnerTests }) => runAgentRunnerTests())'
 ```
 
 Expected: pass.
 
 ### Task 8.3: Add diagnostic doc table
 
-- [ ] **Step 1: Add to `docs/agent-acceleration.md`**
+- [x] **Step 1: Add to `docs/agent-acceleration.md`**
 
 ```md
 ## Common Environment Failures
@@ -1731,7 +1733,7 @@ Expected: pass.
 | `mixedbread_smoke_no_results` | Store query did not find expected docs | `pnpm mxbai:upload && pnpm mxbai:smoke` |
 ```
 
-- [ ] **Step 2: Validate PR 8**
+- [x] **Step 2: Validate PR 8**
 
 Run:
 
