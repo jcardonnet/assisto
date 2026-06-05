@@ -42,8 +42,8 @@ async function makeRepo() {
   return root;
 }
 
-function runStage(root, args) {
-  return run(process.execPath, [scriptPath, ...args], { cwd: root });
+function runStage(root, args, options = {}) {
+  return run(process.execPath, [scriptPath, ...args], { cwd: options.cwd ?? root });
 }
 
 export async function runAgentStageTests() {
@@ -137,6 +137,23 @@ export async function runAgentStageTests() {
     assert.equal(runGit(absoluteRoot, ["status", "--short"]), "?? memory/");
   } finally {
     await rm(absoluteRoot, { recursive: true, force: true });
+  }
+
+  const subdirRoot = await makeRepo();
+  try {
+    await writeRepoFile(subdirRoot, "docs/readme.md", "# Docs\n");
+    await writeRepoFile(subdirRoot, "memory/events/2026/example.md", "# Event\n");
+    const result = runStage(
+      subdirRoot,
+      [path.join(subdirRoot, "memory/events/2026/example.md")],
+      { cwd: path.join(subdirRoot, "docs") }
+    );
+
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /refuse guarded memory data: memory\/events\/2026\/example\.md/);
+    assert.equal(runGit(subdirRoot, ["status", "--short"]), "?? docs/\n?? memory/");
+  } finally {
+    await rm(subdirRoot, { recursive: true, force: true });
   }
 
   const memoryRoot = await makeRepo();
