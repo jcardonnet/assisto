@@ -1,7 +1,12 @@
 import type { CapabilityDefinition } from "./schema";
 
 export { validateCapabilityRegistry } from "./schema";
-export type { CapabilityDefinition, CapabilityMutationKind, CapabilityValidationResult } from "./schema";
+export type {
+  CapabilityDefinition,
+  CapabilityMutationKind,
+  CapabilityValidationGroup,
+  CapabilityValidationResult
+} from "./schema";
 
 export const capabilityRegistry = [
   {

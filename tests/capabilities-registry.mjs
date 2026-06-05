@@ -33,7 +33,7 @@ export async function runCapabilityRegistryTests() {
         invariants: ["Durable updates are staged."]
       }
     ]).errors,
-    ["capture-without-transaction is transaction_backed but does not name Transaction invariant"]
+    ["capture-without-transaction is transaction_backed but invariant text does not mention transactions"]
   );
   assert.deepEqual(
     capabilities.validateCapabilityRegistry([

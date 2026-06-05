@@ -1,4 +1,5 @@
 export type CapabilityMutationKind = "read_only" | "transaction_backed" | "local_noncanonical" | "external_sync";
+export type CapabilityValidationGroup = "answers" | "browser" | "core" | "retrieval" | "workbench";
 
 export interface CapabilityDefinition {
   id: string;
@@ -8,7 +9,7 @@ export interface CapabilityDefinition {
   workbenchRoutes: readonly string[];
   piTools: readonly string[];
   docs: readonly string[];
-  validationGroups: readonly string[];
+  validationGroups: readonly CapabilityValidationGroup[];
   invariants: readonly string[];
 }
 
@@ -16,8 +17,13 @@ export interface CapabilityValidationResult {
   errors: string[];
 }
 
-const mutationKinds = new Set<string>(["read_only", "transaction_backed", "local_noncanonical", "external_sync"]);
-const validationGroups = new Set<string>(["answers", "browser", "core", "retrieval", "workbench"]);
+const mutationKinds = new Set<CapabilityMutationKind>([
+  "read_only",
+  "transaction_backed",
+  "local_noncanonical",
+  "external_sync"
+]);
+const validationGroups = new Set<CapabilityValidationGroup>(["answers", "browser", "core", "retrieval", "workbench"]);
 const idPattern = /^[a-z][a-z0-9-]*$/u;
 
 export function validateCapabilityRegistry(
@@ -61,9 +67,9 @@ export function validateCapabilityRegistry(
 
     if (
       item.mutationKind === "transaction_backed" &&
-      !item.invariants.some((value) => value.includes("Transaction"))
+      !item.invariants.some((value) => /\btransactions?\b/iu.test(value))
     ) {
-      errors.push(`${item.id} is transaction_backed but does not name Transaction invariant`);
+      errors.push(`${item.id} is transaction_backed but invariant text does not mention transactions`);
     }
     if (item.mutationKind === "read_only" && item.invariants.some((value) => /\bwrites?\b/iu.test(value))) {
       errors.push(`${item.id} is read_only but invariant text mentions writes`);

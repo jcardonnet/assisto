@@ -109,7 +109,7 @@ const targetedGroups = {
   memory: ["tests/check-memory-data.mjs", "tests/core-v3-memory-hardening.mjs"]
 };
 
-const capabilityValidationGroups = {
+export const capabilityValidationGroups = {
   "ask-answer-contract": ["eval:answers", "eval:v8"],
   capture: ["test:e2e", "test:browser", "eval:v5", "eval:v7"],
   "entity-stewardship": ["eval:v8", "test:browser"],
