@@ -11,17 +11,15 @@ export interface AskRouteDependencies {
   retrieveContextForAnswer: RetrieveContextForAnswer;
 }
 
-export function askRoutes(dependencies: AskRouteDependencies): WorkbenchRoute[] {
-  return [
-    {
-      method: "GET",
-      pathname: "/api/ask",
-      handler: async ({ root, requestUrl }) => {
-        const query = dependencies.optionalQuery(requestUrl);
-        return query
-          ? dependencies.jsonRoute(200, await dependencies.retrieveContextForAnswer(root, query))
-          : dependencies.jsonRoute(400, { error: "Missing required query parameter: q." });
-      }
+export function createAskRoute(dependencies: AskRouteDependencies): WorkbenchRoute {
+  return {
+    method: "GET",
+    pathname: "/api/ask",
+    handler: async ({ root, requestUrl }) => {
+      const query = dependencies.optionalQuery(requestUrl);
+      return query
+        ? dependencies.jsonRoute(200, await dependencies.retrieveContextForAnswer(root, query))
+        : dependencies.jsonRoute(400, { error: "Missing required query parameter: q." });
     }
-  ];
+  };
 }

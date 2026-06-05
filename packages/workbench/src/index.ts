@@ -154,7 +154,7 @@ import {
 } from "@assisto/core";
 import { createWorkbenchHttpServer } from "./server/http";
 import { findRoute } from "./server/route-registry";
-import { askRoutes } from "./server/routes/ask";
+import { createAskRoute } from "./server/routes/ask";
 import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
 export type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
@@ -965,11 +965,13 @@ export async function handleWorkbenchRoute(
 }
 
 function workbenchRoutes() {
-  return askRoutes({
-    jsonRoute,
-    optionalQuery,
-    retrieveContextForAnswer
-  });
+  return [
+    createAskRoute({
+      jsonRoute,
+      optionalQuery,
+      retrieveContextForAnswer
+    })
+  ];
 }
 
 async function handleWorkbenchPostRoute(

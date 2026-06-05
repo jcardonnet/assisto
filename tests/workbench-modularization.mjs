@@ -12,7 +12,7 @@ export async function runWorkbenchModularizationTests() {
   assert.equal(typeof workbench.handleWorkbenchRoute, "function");
   assert.equal(typeof http.createWorkbenchHttpServer, "function");
   assert.equal(typeof registry.findRoute, "function");
-  assert.equal(typeof ask.askRoutes, "function");
+  assert.equal(typeof ask.createAskRoute, "function");
 
   const route = { method: "GET", pathname: "/api/example", handler: () => ({}) };
   assert.equal(registry.findRoute([route], "GET", "/api/example"), route);

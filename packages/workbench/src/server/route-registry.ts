@@ -14,11 +14,12 @@ export interface WorkbenchRoute {
   handler: (context: WorkbenchRouteContext) => Promise<WorkbenchRouteResponse> | WorkbenchRouteResponse;
 }
 
-export function findRoute(routes: WorkbenchRoute[], method: string, pathname: string): WorkbenchRoute | null {
-  return (
-    routes.find(
-      (route) =>
-        route.pathname === pathname && (route.method === method || (method === "HEAD" && route.method === "GET"))
-    ) ?? null
-  );
+export function findRoute(
+  routes: WorkbenchRoute[],
+  method: WorkbenchRouteMethod,
+  pathname: string
+): WorkbenchRoute | null {
+  const normalizedMethod: WorkbenchRouteMethod = method === "HEAD" ? "GET" : method;
+
+  return routes.find((route) => route.pathname === pathname && route.method === normalizedMethod) ?? null;
 }
