@@ -18,14 +18,44 @@ export async function runCapabilityRegistryTests() {
   assert.equal(core.capabilityRegistry, capabilities.capabilityRegistry);
   assert.equal(core.validateCapabilityRegistry, capabilities.validateCapabilityRegistry);
 
-  const answerContract = capabilities.capabilityRegistry.find((item) => item.id === "ask-answer-contract");
-  assert.equal(answerContract.cliCommands.includes("wm ask --contract-v3"), true);
-  assert.equal(answerContract.cliCommands.includes("wm ask --contract-v4"), true);
+  const capture = findCapability(capabilities.capabilityRegistry, "capture");
+  assertIncludesAll(capture.cliCommands, ["wm capture presets", "wm capture feedback"], "capture CLI commands");
+  assertIncludesAll(
+    capture.workbenchRoutes,
+    ["/api/capture/inbox", "/api/capture/presets", "/api/capture/feedback/preview", "/api/capture/feedback"],
+    "capture Workbench routes"
+  );
 
-  const entityStewardship = capabilities.capabilityRegistry.find((item) => item.id === "entity-stewardship");
-  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/stewardship/detail"), true);
-  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/identity-review/preview"), true);
-  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/repair-v2/preview"), true);
+  const answerContract = findCapability(capabilities.capabilityRegistry, "ask-answer-contract");
+  assertIncludesAll(
+    answerContract.cliCommands,
+    ["wm ask --contract-v3", "wm ask --contract-v4"],
+    "answer contract CLI commands"
+  );
+
+  const entityStewardship = findCapability(capabilities.capabilityRegistry, "entity-stewardship");
+  assertIncludesAll(
+    entityStewardship.workbenchRoutes,
+    [
+      "/api/entities/stewardship/detail",
+      "/api/entities/detail",
+      "/api/entities/alias/preview",
+      "/api/entities/alias/stage",
+      "/api/entities/context/preview",
+      "/api/entities/context/stage",
+      "/api/entities/role/preview",
+      "/api/entities/role/stage",
+      "/api/entities/reporting/preview",
+      "/api/entities/reporting/stage",
+      "/api/entities/ownership/preview",
+      "/api/entities/ownership/stage",
+      "/api/entities/identity-review/preview",
+      "/api/entities/context-note/preview",
+      "/api/entities/context-note/stage",
+      "/api/entities/repair-v2/preview"
+    ],
+    "entity stewardship Workbench routes"
+  );
 
   assert.deepEqual(
     capabilities.validateCapabilityRegistry([
@@ -78,4 +108,16 @@ export async function runCapabilityRegistryTests() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   await runCapabilityRegistryTests();
   console.log("capability registry tests passed");
+}
+
+function findCapability(items, id) {
+  const item = items.find((candidate) => candidate.id === id);
+  assert.notEqual(item, undefined, `${id} should be registered`);
+  return item;
+}
+
+function assertIncludesAll(actual, expected, label) {
+  for (const value of expected) {
+    assert.equal(actual.includes(value), true, `${label} should include ${value}`);
+  }
 }
