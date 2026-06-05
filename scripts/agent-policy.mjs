@@ -101,6 +101,14 @@ const evalHarnessCommandNames = [...fullEvalChain, "check:memory-data"];
 const workbenchCommandNames = ["test:e2e", "test:browser", ...recentUiEvalSubset, "check:memory-data"];
 const coreBehaviorCommandNames = [...fullEvalChain, "check:memory-data"];
 
+const targetedGroups = {
+  agent: ["tests/agent-control.mjs", "tests/agent-policy.mjs", "tests/agent-runner.mjs", "tests/agent-pr.mjs"],
+  "scenario-factory": ["tests/scenario-factory.mjs"],
+  workbench: ["tests/workbench.mjs", "tests/browser/workbench-*.spec.mjs"],
+  retrieval: ["tests/scenarios/run-retrieval.mjs", "tests/scenarios/run-answers.mjs"],
+  memory: ["tests/check-memory-data.mjs", "tests/core-v3-memory-hardening.mjs"]
+};
+
 function command(name, reason) {
   const profile = commandProfiles[name];
   if (profile === undefined) {
@@ -120,9 +128,21 @@ function commandList(names, reason) {
   return names.map((name) => command(name, reason));
 }
 
+const canonicalMemoryRoots = [
+  "memory/contexts/",
+  "memory/followups/",
+  "memory/logs/",
+  "memory/people/",
+  "memory/review/",
+  "memory/topics/"
+];
+
 function classifyFile(file) {
   if (file.startsWith("memory/events/") || file.startsWith("memory/transactions/")) {
     return "guarded-memory-data";
+  }
+  if (canonicalMemoryRoots.some((root) => file.startsWith(root))) {
+    return "memory";
   }
   if (file.startsWith(".obsidian/")) {
     return "obsidian";
@@ -163,6 +183,30 @@ function classifyFile(file) {
 
 function hasAny(categories, values) {
   return values.some((value) => categories.includes(value));
+}
+
+function hasChangedFile(changedFiles, paths) {
+  return changedFiles.some((file) => paths.includes(file));
+}
+
+function inferTargetedGroups(categories, changedFiles) {
+  const groups = [];
+  if (hasAny(categories, ["workflow"]) || hasChangedFile(changedFiles, targetedGroups.agent)) {
+    groups.push({ name: "agent", commands: targetedGroups.agent });
+  }
+  if (hasChangedFile(changedFiles, ["tests/scenario-factory.mjs", "tests/helpers/scenario-factory.mjs"])) {
+    groups.push({ name: "scenario-factory", commands: targetedGroups["scenario-factory"] });
+  }
+  if (hasAny(categories, ["workbench"])) {
+    groups.push({ name: "workbench", commands: targetedGroups.workbench });
+  }
+  if (hasAny(categories, ["core", "eval-test-harness"])) {
+    groups.push({ name: "retrieval", commands: targetedGroups.retrieval });
+  }
+  if (hasAny(categories, ["guarded-memory-data", "memory"])) {
+    groups.push({ name: "memory", commands: targetedGroups.memory });
+  }
+  return groups;
 }
 
 function addCommands(commands, additions) {
@@ -233,6 +277,12 @@ export function buildValidationPlan({
     mode = "workflow-scripts";
     addCommands(commands, [command("check:memory-data", "Workflow/test changes should prove guarded memory data was not edited.")]);
   }
+  if (hasAny(categories, ["guarded-memory-data", "memory"])) {
+    if (mode === "docs-process") {
+      mode = "memory-guarded";
+    }
+    addCommands(commands, [command("check:memory-data", "Guarded memory-data changes must be checked explicitly.")]);
+  }
 
   const filteredCommands = skipBrowser ? commands.filter((item) => item.name !== "test:browser") : commands;
   const selectedNames = new Set(filteredCommands.map((item) => item.name));
@@ -257,6 +307,7 @@ export function buildValidationPlan({
     categories,
     changed_files: changedFiles,
     file_reasons: explainChangedFiles(changedFiles),
+    targeted_groups: inferTargetedGroups(categories, changedFiles),
     commands: filteredCommands,
     skipped
   };
@@ -339,6 +390,12 @@ function print(value, json) {
     console.log(`Categories: ${value.categories.join(", ") || "none"}`);
     for (const item of value.commands) {
       console.log(`- ${item.command}: ${item.reason}`);
+    }
+    if ((value.targeted_groups ?? []).length > 0) {
+      console.log("Targeted groups:");
+      for (const group of value.targeted_groups) {
+        console.log(`- ${group.name}: ${group.commands.join(", ")}`);
+      }
     }
     if ((value.skipped ?? []).length > 0) {
       console.log("Skipped:");
