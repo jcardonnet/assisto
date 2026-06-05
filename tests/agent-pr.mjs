@@ -68,6 +68,7 @@ export async function runAgentPrTests() {
   const ready = evaluatePrCloseoutReadiness(readyInputs());
   assert.equal(ready.ready, true);
   assert.deepEqual(ready.blockers, []);
+  assert.equal(ready.review_check, "required");
 
   assert.deepEqual(
     evaluatePrCloseoutReadiness(readyInputs({ reviewSummary: { unresolvedThreadCount: 2 } })).blockers,
@@ -88,6 +89,16 @@ export async function runAgentPrTests() {
   assert.deepEqual(
     evaluatePrCloseoutReadiness(readyInputs({ run: { validation_status: "passed", pr_state: { state: "pr_opened" } } })).blockers,
     ["review_wait_not_elapsed"]
+  );
+  assert.deepEqual(
+    evaluatePrCloseoutReadiness(
+      readyInputs({
+        reviewSummary: null,
+        run: { validation_status: "passed", pr_state: { state: "pr_opened" } },
+        options: { skipReviewCheck: true }
+      })
+    ).blockers,
+    []
   );
 
   const root = await mkdtemp(join(tmpdir(), "assisto-agent-pr-"));

@@ -13,6 +13,7 @@ docs/cited-work-memory.md
 docs/use-assisto-tomorrow.md
 docs/first-week-with-assisto.md
 docs/dogfood-vault-hygiene.md
+docs/agent-acceleration.md
 docs/implementation-plan.md
 docs/decisions.md
 docs/wsl2-handoff.md
@@ -95,6 +96,16 @@ After merge:
 pnpm mxbai:upload
 pnpm mxbai:smoke
 ```
+
+## PR Closeout
+
+Copilot reviews are disabled. Use the no-Copilot closeout path by default:
+
+```bash
+pnpm agent:pr closeout <pr-number> --merge --yes --refresh-mxbai
+```
+
+This path still requires green checks, a mergeable non-draft PR, a passed active-run validation record, and a clean memory-data guard. Use `--with-review-check` only when a human explicitly asks to wait for and inspect review threads.
 
 ## Known Environment Issues
 

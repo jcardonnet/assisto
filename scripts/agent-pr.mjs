@@ -25,7 +25,7 @@ function usage() {
   console.log(`Usage: pnpm agent:pr status <pr> [--json]
        pnpm agent:pr advance <state> <pr>
        pnpm agent:pr comments <pr> [--write]
-       pnpm agent:pr closeout <pr> [--merge --yes --refresh-mxbai]
+       pnpm agent:pr closeout <pr> [--merge --yes --refresh-mxbai] [--with-review-check]
 
 Tracks explicit PR state transitions and refuses unsafe closeout.
 `);
@@ -178,15 +178,17 @@ export function evaluatePrCloseoutReadiness({
   prInfo,
   reviewSummary,
   memoryGuard,
-  run
+  run,
+  options = {}
 }) {
   const blockers = [];
   const checks = checkStatusRollup(prInfo.statusCheckRollup);
+  const skipReviewCheck = options.skipReviewCheck === true;
 
-  if ((reviewSummary?.unresolvedThreadCount ?? 0) > 0) {
+  if (!skipReviewCheck && (reviewSummary?.unresolvedThreadCount ?? 0) > 0) {
     blockers.push("unresolved_review_threads");
   }
-  if (stateRank(run?.pr_state?.state ?? "branch_created") < stateRank("wait_elapsed")) {
+  if (!skipReviewCheck && stateRank(run?.pr_state?.state ?? "branch_created") < stateRank("wait_elapsed")) {
     blockers.push("review_wait_not_elapsed");
   }
   if (prInfo.isDraft) {
@@ -208,7 +210,8 @@ export function evaluatePrCloseoutReadiness({
   return {
     ready: blockers.length === 0,
     blockers,
-    checks
+    checks,
+    review_check: skipReviewCheck ? "skipped_copilot_disabled" : "required"
   };
 }
 
@@ -241,6 +244,10 @@ function parseArgs(argv) {
     }
     if (arg === "--refresh-mxbai") {
       options.refreshMxbai = true;
+      continue;
+    }
+    if (arg === "--with-review-check") {
+      options.withReviewCheck = true;
       continue;
     }
     if (arg === "--skip-wait") {
@@ -481,14 +488,25 @@ async function commandCloseout(pr, options) {
   const repo = resolveRepo(options.repo);
   const prNumber = parsePrNumber(pr);
   const [owner, name] = repo.split("/");
-  await waitForReview(prNumber, repo, options);
-  const reviewSummary = fetchReviewSummary(owner, name, Number.parseInt(prNumber, 10));
-  await storePrReviewSnapshot({ pr: prNumber, summary: reviewSummary });
-  await advancePrState({ pr: prNumber, state: "review_threads_checked" });
+  const shouldCheckReviews = options.withReviewCheck === true;
+  if (shouldCheckReviews) {
+    await waitForReview(prNumber, repo, options);
+  }
+  const reviewSummary = shouldCheckReviews ? fetchReviewSummary(owner, name, Number.parseInt(prNumber, 10)) : null;
+  if (reviewSummary !== null) {
+    await storePrReviewSnapshot({ pr: prNumber, summary: reviewSummary });
+    await advancePrState({ pr: prNumber, state: "review_threads_checked" });
+  }
   const runState = await loadActiveRun(process.cwd());
   const prInfo = fetchPrInfo(prNumber, repo);
   const memoryGuard = runMemoryGuard();
-  const readiness = evaluatePrCloseoutReadiness({ prInfo, reviewSummary, memoryGuard, run: runState });
+  const readiness = evaluatePrCloseoutReadiness({
+    prInfo,
+    reviewSummary,
+    memoryGuard,
+    run: runState,
+    options: { skipReviewCheck: !shouldCheckReviews }
+  });
   if (!readiness.ready) {
     throw new Error(`PR is not merge-ready: ${readiness.blockers.join(", ")}`);
   }

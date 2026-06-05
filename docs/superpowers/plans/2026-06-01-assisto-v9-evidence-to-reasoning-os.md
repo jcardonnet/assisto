@@ -10,6 +10,12 @@
 
 ---
 
+## Status Update - 2026-06-05
+
+Current `main` is ahead of this plan. PR #115 is merged as `8e830e5`, and the repository now contains the v9 foundation this plan describes: source adapters/source inbox, `sources/*`, typed frames, ontology-aware validation, symbolic index/query helpers, cited answer contracts through v4, context/entity stewardship, review acceleration, maintenance, dogfood feedback, context packs, and v9/v10 scenario/browser coverage.
+
+Do not restart PR 1 or PR 2 from this document. Treat the remaining useful work as follow-up hardening and production integration over the implemented modules, especially wiring the Wave 1 errors/privacy/observability scaffolds through source import/inbox and Workbench/CLI flows.
+
 ## Non-Negotiable v9 Invariants
 
 - Do not edit or stage real user dogfood data under `memory/events/**` or `memory/transactions/**`.
