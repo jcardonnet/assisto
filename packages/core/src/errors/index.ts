@@ -1,3 +1,5 @@
+import { normalizeToken, safeStatusClass } from "../utils/normalization";
+
 export const ASSISTO_ERROR_CODES = [
   "validation_failed",
   "vault_path_invalid",
@@ -28,6 +30,8 @@ export interface SafeErrorSummary {
   status_class: string;
 }
 
+const DEFAULT_ASSISTO_ERROR_MESSAGE = "Assisto operation failed.";
+
 export class AssistoError extends Error {
   readonly code: AssistoErrorCode;
   readonly component: string;
@@ -39,7 +43,7 @@ export class AssistoError extends Error {
     super(options.message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "AssistoError";
     this.code = options.code;
-    this.component = normalizeComponent(options.component);
+    this.component = normalizeToken(options.component);
     this.operation = options.operation === undefined ? undefined : normalizeToken(options.operation);
     this.status = Number.isInteger(options.status) ? options.status : undefined;
     this.details = options.details ?? {};
@@ -64,7 +68,7 @@ export function toAssistoError(
 
   return new AssistoError({
     ...defaults,
-    message: defaults.message ?? messageFromUnknown(error),
+    message: defaults.message ?? DEFAULT_ASSISTO_ERROR_MESSAGE,
     cause: error
   });
 }
@@ -84,50 +88,6 @@ export function safeErrorSummary(error: unknown): SafeErrorSummary {
     code: error.code,
     component: error.component,
     ...(error.operation === undefined ? {} : { operation: error.operation }),
-    status_class: statusClass(error.status)
+    status_class: safeStatusClass(error.status)
   };
-}
-
-function messageFromUnknown(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return "Unknown Assisto error.";
-}
-
-function normalizeComponent(value: string): string {
-  return normalizeToken(value) || "unknown";
-}
-
-function normalizeToken(value: string): string {
-  let output = "";
-  let pendingSeparator = false;
-
-  for (const char of String(value ?? "").trim().toLowerCase()) {
-    if (isAsciiAlphaNumeric(char)) {
-      if (pendingSeparator && output) {
-        output += "_";
-      }
-      output += char;
-      pendingSeparator = false;
-      continue;
-    }
-
-    pendingSeparator = output.length > 0;
-  }
-
-  return output || "unknown";
-}
-
-function isAsciiAlphaNumeric(char: string): boolean {
-  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
-}
-
-function statusClass(value: number | undefined): string {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 100 || value > 599) {
-    return "unknown";
-  }
-
-  return String(Math.floor(value / 100)) + "xx";
 }

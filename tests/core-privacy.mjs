@@ -100,6 +100,14 @@ export async function runCorePrivacyTests() {
     privacy.safeRouteTemplate("/workbench/import/sessions/550e8400-e29b-41d4-a716-446655440000"),
     "/workbench/import/sessions/:id"
   );
+  assert.equal(
+    privacy.safeRouteTemplate("/api/claims/clm_joe_role_dba"),
+    "/api/claims/:id"
+  );
+  assert.equal(
+    privacy.safeRouteTemplate("/api/people/person_kuastav"),
+    "/api/people/:id"
+  );
 
   const first = privacy.explicitCorrelationHash("Priya Patel");
   const second = privacy.explicitCorrelationHash("Priya Patel");

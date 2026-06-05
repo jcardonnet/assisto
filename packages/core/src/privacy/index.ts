@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { normalizeToken } from "../utils/normalization";
+
+export { safeStatusClass } from "../utils/normalization";
 
 type RedactionKind =
   | "raw_note"
@@ -15,7 +18,11 @@ const NORMALIZED_HASH_PATTERN = /^sha(?:1|224|256|384|512)_+[a-f0-9]{16,}$/i;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ID_SEGMENT_PATTERN =
-  /^(?:ev|tx|ctx|fu|rev|log|run|sess|session)_[a-z0-9_-]+$/i;
+  /^(?:claim|clm|context|ctx|event|ev|evt|followup|fu|log|person|review|rev|run|sess|session|topic|transaction|tx)_[a-z0-9_-]+$/i;
+const REDACTION_CHAR_OFFSET: Partial<Record<RedactionKind, number>> = {
+  imported_source_text: 1,
+  provider_response: 1
+};
 
 export function redactRawNote(value: string): string {
   return redactText("raw_note", value);
@@ -46,11 +53,13 @@ export function redactUserString(value: string): string {
 }
 
 export function redactApiKey(value: string): string {
-  return `[redacted:api_key chars=${stringLength(value)}]`;
+  const text = String(value ?? "");
+  return `[redacted:api_key chars=${text.length}]`;
 }
 
 export function redactBearerToken(value: string): string {
-  return `[redacted:bearer_token chars=${stringLength(value)}]`;
+  const text = String(value ?? "");
+  return `[redacted:bearer_token chars=${text.length}]`;
 }
 
 export function redactAbsolutePath(value: string): string {
@@ -79,14 +88,6 @@ export function safeKind(value: string): string {
   return safeCode(value, 48);
 }
 
-export function safeStatusClass(value: number): string {
-  if (!Number.isInteger(value) || value < 100 || value > 599) {
-    return "unknown";
-  }
-
-  return `${Math.floor(value / 100)}xx`;
-}
-
 export function safeRouteTemplate(value: string): string {
   const pathname = extractPathname(value);
   const segments = pathname
@@ -107,16 +108,7 @@ function redactText(kind: RedactionKind, value: string): string {
 }
 
 function redactedCharCount(kind: RedactionKind, value: string): number {
-  const baseLength = stringLength(value);
-  if (kind === "imported_source_text" || kind === "provider_response") {
-    return baseLength + 1;
-  }
-
-  return baseLength;
-}
-
-function stringLength(value: string): number {
-  return String(value ?? "").length;
+  return value.length + (REDACTION_CHAR_OFFSET[kind] ?? 0);
 }
 
 function lineCount(value: string): number {
@@ -128,13 +120,7 @@ function lineCount(value: string): number {
 }
 
 function normalizeBoundedCode(value: string, maxLength: number): string {
-  const normalized = normalizeSeparatedToken(value, "_", isAsciiAlphaNumeric);
-
-  if (!normalized) {
-    return "unknown";
-  }
-
-  return normalized.slice(0, maxLength) || "unknown";
+  return normalizeToken(value, { maxLength });
 }
 
 function looksLikeHash(value: string): boolean {
@@ -171,33 +157,5 @@ function isDynamicSegment(value: string): boolean {
 }
 
 function normalizeRouteSegment(value: string): string {
-  return normalizeSeparatedToken(value, "-", isAsciiAlphaNumeric) || "unknown";
-}
-
-function normalizeSeparatedToken(
-  value: string,
-  separator: "_" | "-",
-  isAllowed: (char: string) => boolean
-): string {
-  let output = "";
-  let pendingSeparator = false;
-
-  for (const char of String(value ?? "").trim().toLowerCase()) {
-    if (isAllowed(char)) {
-      if (pendingSeparator && output) {
-        output += separator;
-      }
-      output += char;
-      pendingSeparator = false;
-      continue;
-    }
-
-    pendingSeparator = output.length > 0;
-  }
-
-  return output;
-}
-
-function isAsciiAlphaNumeric(char: string): boolean {
-  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+  return normalizeToken(value, { separator: "-", fallback: "unknown" });
 }

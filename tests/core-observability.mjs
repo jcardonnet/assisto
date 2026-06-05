@@ -19,7 +19,13 @@ export async function runCoreObservabilityTests() {
   const span = observability.startSpan(run, {
     domain: "transaction",
     operation: "apply",
+    now: () => "2026-06-03T00:00:01.000Z",
     attributes: {
+      claim_id: "clm_joe_role_dba",
+      error_message: "Priya raw note should not leak.",
+      event_id: "evt_2026_06_03_001",
+      path: "/home/jc/assisto/memory/events/private.md",
+      query: "Jeff DBA notes",
       route: "/api/transactions/tx_2026_06_03_001/apply?raw=true",
       raw_note: "Jeff is the DBA.",
       status: 404,
@@ -32,7 +38,7 @@ export async function runCoreObservabilityTests() {
     attributes: {
       provider_prompt: "Summarize Priya private note."
     },
-    now: () => "2026-06-03T00:00:01.250Z"
+    now: () => "2026-06-03T00:00:02.250Z"
   });
 
   assert.equal(sink.spans.length, 1);
@@ -42,12 +48,17 @@ export async function runCoreObservabilityTests() {
     domain: "transaction",
     operation: "apply",
     result: "validation_failed",
-    started_at: "2026-06-03T00:00:00.000Z",
-    ended_at: "2026-06-03T00:00:01.250Z",
+    started_at: "2026-06-03T00:00:01.000Z",
+    ended_at: "2026-06-03T00:00:02.250Z",
     duration_ms: 1250,
     attributes: {
       attempted_writes: 2,
+      claim_id: "redacted",
+      error_message: "redacted",
+      event_id: "redacted",
+      path: "redacted",
       provider_prompt: "[redacted:provider_prompt chars=29 lines=1]",
+      query: "redacted",
       raw_note: "[redacted:raw_note chars=16 lines=1]",
       route: "/api/transactions/:id/apply",
       status_class: "4xx"

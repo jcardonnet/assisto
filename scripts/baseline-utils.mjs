@@ -15,7 +15,8 @@ export function normalizeResult(value) {
 }
 
 export function normalizeDuration(value) {
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  const duration = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 0;
 }
 
 export function normalizeId(value) {

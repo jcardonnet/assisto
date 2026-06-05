@@ -8,9 +8,9 @@ import {
   redactUserString,
   safeCode,
   safeCount,
-  safeRouteTemplate,
-  safeStatusClass
+  safeRouteTemplate
 } from "../privacy";
+import { normalizeToken, safeStatusClass, scalarString } from "../utils/normalization";
 
 export type AssistoComponent = "core" | "cli" | "workbench" | "pi" | "unknown";
 export type ObservabilityResult = string;
@@ -33,6 +33,7 @@ export interface SpanInput {
   domain: string;
   operation: string;
   attributes?: Record<string, unknown>;
+  now?: () => string;
 }
 
 export interface SpanEndInput {
@@ -91,7 +92,17 @@ const ATTRIBUTE_TEXT_REDACTORS = {
   user_string: redactUserString
 } as const;
 
-const FORBIDDEN_METRIC_LABELS = new Set([
+type SanitizedEntry = { key: string; value: unknown };
+type SanitizationRule = (value: unknown) => SanitizedEntry;
+
+const OBSERVABILITY_RULES: Record<string, SanitizationRule> = {
+  route: (value) => ({ key: "route", value: safeRouteTemplate(scalarString(value)) }),
+  status: (value) => ({ key: "status_class", value: safeStatusClass(Number(value)) }),
+  status_code: (value) => ({ key: "status_class", value: safeStatusClass(Number(value)) }),
+  status_class: (value) => ({ key: "status_class", value: safeStatusClass(Number(value)) })
+};
+
+const FORBIDDEN_OBSERVABILITY_KEYS = new Set([
   "run_id",
   "file_path",
   "path",
@@ -136,7 +147,7 @@ export function createRunContext(options: RunContextOptions): RunContext {
 }
 
 export function startSpan(context: RunContext, input: SpanInput): SpanHandle {
-  const startedAt = context.started_at;
+  const startedAt = timestamp(input.now);
   const baseAttributes = sanitizeAttributes(input.attributes ?? {});
   let ended = false;
 
@@ -187,21 +198,24 @@ function sanitizeAttributes(attributes: Record<string, unknown>): Record<string,
   return safe;
 }
 
-function sanitizeAttributeEntry(key: string, value: unknown): { key: string; value: unknown } {
-  if (key === "route") {
-    return { key: "route", value: safeRouteTemplate(scalarString(value)) };
+function sanitizeAttributeEntry(key: string, value: unknown): SanitizedEntry {
+  const safeKey = safeCode(key);
+
+  if (isForbiddenObservabilityKey(safeKey)) {
+    return { key: safeKey, value: "redacted" };
   }
 
-  if (key === "status" || key === "status_code") {
-    return { key: "status_class", value: safeStatusClass(Number(value)) };
+  const special = OBSERVABILITY_RULES[safeKey];
+  if (special) {
+    return special(value);
   }
 
-  const redactor = ATTRIBUTE_TEXT_REDACTORS[key as keyof typeof ATTRIBUTE_TEXT_REDACTORS];
+  const redactor = ATTRIBUTE_TEXT_REDACTORS[safeKey as keyof typeof ATTRIBUTE_TEXT_REDACTORS];
   if (redactor) {
-    return { key, value: redactor(scalarString(value)) };
+    return { key: safeKey, value: redactor(scalarString(value)) };
   }
 
-  return { key: safeCode(key), value: sanitizeGenericAttributeValue(value) };
+  return { key: safeKey, value: sanitizeGenericAttributeValue(value) };
 }
 
 function sanitizeGenericAttributeValue(value: unknown): string | number {
@@ -214,18 +228,15 @@ function sanitizeLabels(labels: Record<string, unknown>): Record<string, string>
   for (const [key, value] of Object.entries(labels)) {
     const safeKey = safeCode(key);
 
-    if (isForbiddenMetricLabel(safeKey)) {
+    if (isForbiddenObservabilityKey(safeKey)) {
       safe[safeKey] = "redacted";
       continue;
     }
 
-    if (safeKey === "route") {
-      safe.route = safeRouteTemplate(scalarString(value));
-      continue;
-    }
-
-    if (safeKey === "status" || safeKey === "status_code" || safeKey === "status_class") {
-      safe.status_class = safeStatusClass(Number(value));
+    const special = OBSERVABILITY_RULES[safeKey];
+    if (special) {
+      const sanitized = special(value);
+      safe[sanitized.key] = String(sanitized.value);
       continue;
     }
 
@@ -235,20 +246,8 @@ function sanitizeLabels(labels: Record<string, unknown>): Record<string, string>
   return safe;
 }
 
-function isForbiddenMetricLabel(key: string): boolean {
-  return FORBIDDEN_METRIC_LABELS.has(key);
-}
-
-function scalarString(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
-    return String(value);
-  }
-
-  return "";
+function isForbiddenObservabilityKey(key: string): boolean {
+  return FORBIDDEN_OBSERVABILITY_KEYS.has(key);
 }
 
 function timestamp(now?: () => string): string {
@@ -261,30 +260,5 @@ function durationMs(startedAt: string, endedAt: string): number {
 }
 
 function safeMetricName(name: string): string {
-  let output = "";
-  let pendingSeparator = false;
-
-  for (const char of String(name ?? "").trim().toLowerCase()) {
-    if (isAsciiAlphaNumeric(char)) {
-      if (pendingSeparator && output) {
-        output += ".";
-      }
-      output += char;
-      pendingSeparator = false;
-      continue;
-    }
-
-    if (char === ".") {
-      pendingSeparator = output.length > 0;
-      continue;
-    }
-
-    pendingSeparator = output.length > 0;
-  }
-
-  return output || "unknown";
-}
-
-function isAsciiAlphaNumeric(char: string): boolean {
-  return (char >= "a" && char <= "z") || (char >= "0" && char <= "9");
+  return normalizeToken(name, { separator: "." });
 }
