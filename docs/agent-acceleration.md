@@ -95,3 +95,15 @@ Use the invariant prompt for memory-safety, transaction-flow, and derived-output
 ```bash
 pnpm agent:note --kind review --text "Invariant review passed: no direct canonical writes."
 ```
+
+## Common Environment Failures
+
+| Code | Meaning | First rerun |
+| --- | --- | --- |
+| `windows_temp_readonly` | Command used read-only Windows temp | `TMPDIR=/tmp TEMP=/tmp TMP=/tmp <command>` |
+| `localhost_bind_eperm` | Sandbox blocked local server bind | Rerun the exact server/test command outside sandbox |
+| `playwright_sandbox_host_eperm` | Chromium sandbox launch blocked | `TMPDIR=/tmp pnpm test:browser` outside sandbox or local CI capsule |
+| `sandbox_child_process_eperm` | Nested process blocked | Rerun through `pnpm agent:run` outside sandbox |
+| `wsl_access_denied` | Windows-to-WSL access denied | `wsl.exe -d Ubuntu --cd /home/jc/assisto -- <cmd>` |
+| `mixedbread_auth_or_network` | Mixedbread auth/network unavailable | Check `MXBAI_API_KEY` and rerun trusted Mixedbread command |
+| `mixedbread_smoke_no_results` | Store query did not find expected docs | `pnpm mxbai:upload && pnpm mxbai:smoke` |
