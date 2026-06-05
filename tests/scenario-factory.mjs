@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { readVaultFile } from "./helpers/temp-vault.mjs";
 import {
@@ -48,6 +49,16 @@ export async function runScenarioFactoryTests() {
   }
 
   await assert.rejects(() => createScenarioVault("unknown-scenario"), /Unknown scenario/);
+
+  const explicitRoot = await mkdtemp(path.join(os.tmpdir(), "assisto-explicit-scenario-"));
+  const explicitVault = await createScenarioVault("retrieval-no-match", { root: explicitRoot });
+  try {
+    assert.equal(explicitVault.root, explicitRoot);
+    assert.equal(existsSync(path.join(explicitRoot, "memory/schema")), true);
+    assert.equal(existsSync(path.join(explicitRoot, "memory/events")), true);
+  } finally {
+    await rm(explicitRoot, { recursive: true, force: true });
+  }
 
   const managerRoot = await makeScenarioVault("manager-chain");
   try {

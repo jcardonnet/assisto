@@ -74,4 +74,4 @@ Use named scenario vaults when a test only needs a known fixture shape:
 const vault = await createScenarioVault("manager-chain");
 ```
 
-`pnpm agent:validate --plan --json` also reports `targeted_groups` for workflow, Workbench, retrieval, and memory-sensitive changes so agents can run focused checks before the full required gates.
+`pnpm agent:validate --plan --json` also reports `targeted_groups` for workflow, Workbench, retrieval, and memory-sensitive changes, so agents can run focused checks before the full required gates.

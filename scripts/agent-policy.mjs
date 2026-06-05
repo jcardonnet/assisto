@@ -174,13 +174,13 @@ function hasAny(categories, values) {
 
 function inferTargetedGroups(categories) {
   const groups = [];
-  if (hasAny(categories, ["workflow"])) {
+  if (hasAny(categories, ["workflow", "tests"])) {
     groups.push({ name: "agent", commands: targetedGroups.agent });
   }
   if (hasAny(categories, ["workbench"])) {
     groups.push({ name: "workbench", commands: targetedGroups.workbench });
   }
-  if (hasAny(categories, ["core"])) {
+  if (hasAny(categories, ["core", "eval-test-harness"])) {
     groups.push({ name: "retrieval", commands: targetedGroups.retrieval });
   }
   if (hasAny(categories, ["guarded-memory-data", "memory"])) {
@@ -256,6 +256,12 @@ export function buildValidationPlan({
   } else if (hasAny(categories, ["workflow", "tests", "repo"])) {
     mode = "workflow-scripts";
     addCommands(commands, [command("check:memory-data", "Workflow/test changes should prove guarded memory data was not edited.")]);
+  }
+  if (hasAny(categories, ["guarded-memory-data", "memory"])) {
+    if (mode === "docs-process") {
+      mode = "memory-guarded";
+    }
+    addCommands(commands, [command("check:memory-data", "Guarded memory-data changes must be checked explicitly.")]);
   }
 
   const filteredCommands = skipBrowser ? commands.filter((item) => item.name !== "test:browser") : commands;

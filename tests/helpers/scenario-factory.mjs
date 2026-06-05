@@ -3,17 +3,6 @@ import path from "node:path";
 import { writeWorkbenchFixture } from "../workbench.mjs";
 import { makeTempVault, writeVaultFile } from "./temp-vault.mjs";
 
-export const scenarioNames = [
-  "manager-chain",
-  "review-backlog",
-  "stale-noop",
-  "context-project",
-  "duplicate-import",
-  "conflicting-role-claims",
-  "missing-evidence",
-  "retrieval-no-match"
-];
-
 const scenarioWriters = {
   "manager-chain": writeManagerChainScenario,
   "review-backlog": writeReviewBacklogScenario,
@@ -25,7 +14,12 @@ const scenarioWriters = {
   "retrieval-no-match": writeRetrievalNoMatchScenario
 };
 
+export const scenarioNames = Object.freeze(Object.keys(scenarioWriters));
+
 export async function makeScenarioVault(name, options = {}) {
+  if (options.root !== undefined) {
+    return options.root;
+  }
   return await makeTempVault(options.prefix ?? `assisto-${name}-`);
 }
 

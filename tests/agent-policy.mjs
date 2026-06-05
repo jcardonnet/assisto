@@ -21,6 +21,9 @@ export async function runAgentPolicyTests() {
   assert.deepEqual(workflowPlan.targeted_groups.map((group) => group.name), ["agent"]);
   assert.equal(workflowPlan.targeted_groups[0].commands.includes("tests/agent-policy.mjs"), true);
 
+  const testPlan = buildValidationPlan({ changedFiles: ["tests/agent-policy.mjs"] });
+  assert.deepEqual(testPlan.targeted_groups.map((group) => group.name), ["agent"]);
+
   const corePlan = buildValidationPlan({ changedFiles: ["packages/core/src/retrieval/index.ts"] });
   assert.deepEqual(commandNames(corePlan), [
     "lint",
@@ -75,6 +78,7 @@ export async function runAgentPolicyTests() {
   assert.equal(commandNames(evalPlan).includes("eval:v9"), true);
   assert.equal(commandNames(evalPlan).includes("eval:v10"), true);
   assert.equal(commandNames(evalPlan).includes("eval:maintenance"), true);
+  assert.deepEqual(evalPlan.targeted_groups.map((group) => group.name), ["retrieval"]);
 
   const skipBrowserPlan = buildValidationPlan({
     changedFiles: ["packages/workbench/src/index.ts"],
@@ -112,6 +116,7 @@ export async function runAgentPolicyTests() {
   assert.equal(memoryPolicy.passed, false);
   assert.equal(memoryPolicy.findings.some((finding) => finding.code === "guarded_memory_data_changed"), true);
   assert.deepEqual(memoryPolicy.validation_plan.targeted_groups.map((group) => group.name), ["memory"]);
+  assert.equal(commandNames(memoryPolicy.validation_plan).includes("check:memory-data"), true);
 
   const obsidianPolicy = buildPolicyResult({ changedFiles: [".obsidian/workspace.json"] });
   assert.equal(obsidianPolicy.passed, false);
