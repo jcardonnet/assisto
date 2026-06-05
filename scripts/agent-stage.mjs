@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 
 const guardedRoots = ["memory/events", "memory/transactions"];
+const gitExecutable = "/usr/bin/git";
 
 function usage() {
   console.log(`Usage: pnpm agent:stage [--json] [--allow-memory-data --yes] <path...>
@@ -19,24 +20,47 @@ function normalizePath(input, root) {
 }
 
 function uniqueSorted(paths, root) {
-  return [...new Set(paths.map((item) => normalizePath(item, root)).filter((item) => item !== "."))].sort((left, right) => left.localeCompare(right));
+  return [...new Set(paths.map((item) => normalizePath(item, root)))].sort((left, right) => left.localeCompare(right));
+}
+
+function uniqueRaw(paths) {
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
 }
 
 function isGuardedPath(filePath) {
-  return guardedRoots.some((root) => filePath === root || filePath.startsWith(`${root}/`));
+  return (
+    filePath === "." ||
+    guardedRoots.some(
+      (root) => filePath === root || filePath.startsWith(`${root}/`) || root.startsWith(`${filePath}/`)
+    )
+  );
+}
+
+function isGitPathspecMagic(input) {
+  return input === ":" || input.startsWith(":(") || input.startsWith(":!") || input.startsWith(":^") || input.startsWith(":/");
 }
 
 export function classifyStageRequest({ paths, allowMemoryData = false, root = process.cwd() }) {
-  const normalized = uniqueSorted(paths, root);
+  const pathspec = uniqueRaw(paths.filter(isGitPathspecMagic));
+  const normalized = uniqueSorted(paths.filter((item) => !isGitPathspecMagic(item)), root);
   const guarded = normalized.filter(isGuardedPath);
   const allowed = allowMemoryData ? normalized : normalized.filter((item) => !isGuardedPath(item));
+  const refusedReasons = [];
+
+  if (pathspec.length > 0) {
+    refusedReasons.push("unsafe_git_pathspec_rejected");
+  }
+  if (guarded.length > 0 && !allowMemoryData) {
+    refusedReasons.push("guarded_memory_data_requires_explicit_allow");
+  }
 
   return {
-    allowed: guarded.length === 0 || allowMemoryData,
+    allowed: refusedReasons.length === 0,
     allowed_paths: allowed,
     guarded_paths: allowMemoryData ? [] : guarded,
-    refused_reason:
-      guarded.length > 0 && !allowMemoryData ? "guarded_memory_data_requires_explicit_allow" : null
+    pathspec_paths: pathspec,
+    refused_reason: refusedReasons[0] ?? null,
+    refused_reasons: refusedReasons
   };
 }
 
@@ -101,11 +125,14 @@ function printResult(result, json) {
   for (const filePath of result.guarded_paths) {
     console.log(`refuse guarded memory data: ${filePath}`);
   }
+  for (const filePath of result.pathspec_paths) {
+    console.log(`refuse unsafe git pathspec: ${filePath}`);
+  }
 }
 
 function repoRoot() {
   try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    return execFileSync(gitExecutable, ["rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
@@ -119,7 +146,7 @@ function stage(paths, root) {
     return;
   }
 
-  const result = spawnSync("git", ["add", "--", ...paths], { cwd: root, stdio: "inherit" });
+  const result = spawnSync(gitExecutable, ["add", "--", ...paths], { cwd: root, stdio: "inherit" });
   if (result.error !== undefined) {
     throw result.error;
   }

@@ -1,46 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { classifyStageRequest } from "../scripts/agent-stage.mjs";
+import { makeRepo, run, runGit, writeRepoFile } from "./check-memory-data.mjs";
 
 const scriptPath = path.resolve("scripts/agent-stage.mjs");
-
-function run(command, args, options = {}) {
-  const result = spawnSync(command, args, {
-    cwd: options.cwd,
-    encoding: "utf8",
-    env: options.env ?? process.env
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
-
-  return result;
-}
-
-function runGit(root, args) {
-  const result = run("git", args, { cwd: root });
-
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.trim();
-}
-
-async function writeRepoFile(root, relativePath, content) {
-  const filePath = path.join(root, relativePath);
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, content, "utf8");
-}
-
-async function makeRepo() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "assisto-agent-stage-"));
-  runGit(root, ["init"]);
-  runGit(root, ["branch", "-M", "main"]);
-  return root;
-}
 
 function runStage(root, args, options = {}) {
   return run(process.execPath, [scriptPath, ...args], { cwd: options.cwd ?? root });
@@ -65,6 +31,7 @@ export async function runAgentStageTests() {
   assert.deepEqual(allowed.allowed_paths, ["memory/transactions/pending/example.md"]);
   assert.deepEqual(allowed.guarded_paths, []);
   assert.equal(allowed.allowed, true);
+  assert.deepEqual(allowed.pathspec_paths, []);
 
   const normalized = classifyStageRequest({
     paths: ["./memory/events/example.md", "docs/agent-acceleration.md", "docs/agent-acceleration.md"],
@@ -84,6 +51,21 @@ export async function runAgentStageTests() {
     "memory/events/example.md",
     "memory/transactions/pending/tx.md"
   ]);
+
+  const parentMemory = classifyStageRequest({
+    paths: ["memory"],
+    allowMemoryData: false
+  });
+  assert.equal(parentMemory.allowed, false);
+  assert.deepEqual(parentMemory.guarded_paths, ["memory"]);
+
+  const pathspecMagic = classifyStageRequest({
+    paths: [":", ":(glob)memory/events/**"],
+    allowMemoryData: true
+  });
+  assert.equal(pathspecMagic.allowed, false);
+  assert.deepEqual(pathspecMagic.pathspec_paths, [":", ":(glob)memory/events/**"]);
+  assert.equal(pathspecMagic.refused_reason, "unsafe_git_pathspec_rejected");
 
   const safeRoot = await makeRepo();
   try {
@@ -154,6 +136,30 @@ export async function runAgentStageTests() {
     assert.equal(runGit(subdirRoot, ["status", "--short"]), "?? docs/\n?? memory/");
   } finally {
     await rm(subdirRoot, { recursive: true, force: true });
+  }
+
+  const parentRoot = await makeRepo();
+  try {
+    await writeRepoFile(parentRoot, "memory/events/2026/example.md", "# Event\n");
+    const result = runStage(parentRoot, ["memory"]);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /refuse guarded memory data: memory/);
+    assert.equal(runGit(parentRoot, ["status", "--short"]), "?? memory/");
+  } finally {
+    await rm(parentRoot, { recursive: true, force: true });
+  }
+
+  const pathspecRoot = await makeRepo();
+  try {
+    await writeRepoFile(pathspecRoot, "memory/events/2026/example.md", "# Event\n");
+    const result = runStage(pathspecRoot, [":"]);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /refuse unsafe git pathspec: :/);
+    assert.equal(runGit(pathspecRoot, ["status", "--short"]), "?? memory/");
+  } finally {
+    await rm(pathspecRoot, { recursive: true, force: true });
   }
 
   const memoryRoot = await makeRepo();

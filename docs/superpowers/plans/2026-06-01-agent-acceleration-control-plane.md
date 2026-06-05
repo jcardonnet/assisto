@@ -560,7 +560,7 @@ Expected: pass.
 
 **Purpose:** Prevent accidental staging of dogfood user-memory files and make every staged path intentional.
 
-**Status Update - 2026-06-05:** Implemented on `codex/agent-safe-staging`. The helper refuses guarded memory data by default, requires `--allow-memory-data --yes` for intentional memory-data staging, resolves paths against the Git repo root, and is covered by targeted CLI/classifier tests plus integration script-helper coverage. `pnpm agent:validate --plan --json`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
+**Status Update - 2026-06-05:** Implemented on `codex/agent-safe-staging`. The helper refuses guarded memory data by default, requires `--allow-memory-data --yes` for intentional memory-data staging, resolves paths against the Git repo root, rejects Git pathspec magic, and is covered by targeted CLI/classifier tests plus integration script-helper coverage. `pnpm agent:validate --plan --json`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
 
 **Files:**
 

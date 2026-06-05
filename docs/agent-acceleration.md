@@ -58,7 +58,7 @@ Use:
 pnpm agent:stage docs/agent-acceleration.md scripts/agent-stage.mjs tests/agent-stage.mjs
 ```
 
-The helper refuses `memory/events/**` and `memory/transactions/**` by default. Intentional memory-data staging requires:
+The helper refuses `memory/events/**`, `memory/transactions/**`, parent directories that include them, and Git pathspec magic by default. Intentional memory-data staging requires explicit repo-relative paths:
 
 ```bash
 pnpm agent:stage --allow-memory-data --yes memory/events/example.md
