@@ -2,18 +2,40 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import {
   buildPolicyResult,
-  buildValidationPlan
+  buildValidationPlan,
+  capabilityValidationGroups
 } from "../scripts/agent-policy.mjs";
+import { loadTsModule } from "./ts-module-loader.mjs";
 
 function commandNames(plan) {
   return plan.commands.map((command) => command.name);
 }
 
+function knownCommandNames(plan) {
+  return new Set([...plan.commands, ...plan.skipped].map((command) => command.name));
+}
+
+function alphabetical(left, right) {
+  return left.localeCompare(right);
+}
+
 export async function runAgentPolicyTests() {
+  const capabilities = await loadTsModule("packages/core/src/capabilities/index.ts");
   const docsPlan = buildValidationPlan({ changedFiles: ["README.md"] });
   assert.deepEqual(commandNames(docsPlan), ["lint", "typecheck", "test"]);
   assert.equal(docsPlan.mode, "docs-process");
   assert.deepEqual(docsPlan.targeted_groups, []);
+  assert.deepEqual(docsPlan.capability_groups, capabilityValidationGroups);
+  assert.deepEqual(
+    Object.keys(docsPlan.capability_groups).sort(alphabetical),
+    capabilities.capabilityRegistry.map((item) => item.id).sort(alphabetical)
+  );
+  const docsPlanKnownCommands = knownCommandNames(docsPlan);
+  for (const commands of Object.values(docsPlan.capability_groups)) {
+    for (const command of commands) {
+      assert.equal(docsPlanKnownCommands.has(command), true, `${command} should be a known validation command`);
+    }
+  }
 
   const workflowPlan = buildValidationPlan({ changedFiles: ["scripts/env-doctor.mjs"] });
   assert.deepEqual(commandNames(workflowPlan), ["lint", "typecheck", "test", "check:memory-data"]);
@@ -91,6 +113,9 @@ export async function runAgentPolicyTests() {
     skipBrowser: true
   });
   assert.equal(commandNames(skipBrowserPlan).includes("test:browser"), false);
+  for (const commands of Object.values(skipBrowserPlan.capability_groups)) {
+    assert.equal(commands.includes("test:browser"), false);
+  }
   assert.match(skipBrowserPlan.skipped.find((item) => item.name === "test:browser").reason, /skipBrowser/);
 
   const forcedFull = buildValidationPlan({ changedFiles: ["README.md"], full: true });
@@ -122,6 +147,7 @@ export async function runAgentPolicyTests() {
   assert.equal(memoryPolicy.passed, false);
   assert.equal(memoryPolicy.findings.some((finding) => finding.code === "guarded_memory_data_changed"), true);
   assert.deepEqual(memoryPolicy.validation_plan.targeted_groups.map((group) => group.name), ["memory"]);
+  assert.deepEqual(memoryPolicy.validation_plan.capability_groups, capabilityValidationGroups);
   assert.equal(commandNames(memoryPolicy.validation_plan).includes("check:memory-data"), true);
 
   const canonicalMemoryPlan = buildValidationPlan({ changedFiles: ["memory/people/jeff.md"] });
