@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-`main` is synced at `134ce1e [codex] Align agent policy with memory guard (#141)`.
+`main` is synced at `5544541 [codex] Extract Workbench briefs routes (#144)`.
 
-PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining non-Briefs route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path. PR 10 is merged, so Agent Workbench v2 now exposes validation-plan, staging-guard, Mixedbread-plan, and no-Copilot closeout panels. Policy follow-up PR #141 is merged, so `pnpm agent:policy check` now ignores preserved untracked dogfood Events/Transactions while still blocking staged, modified, or committed guarded memory paths.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main` plus merged Briefs GET route extraction; remaining non-Briefs route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path. PR 10 is merged, so Agent Workbench v2 now exposes validation-plan, staging-guard, Mixedbread-plan, and no-Copilot closeout panels. Policy follow-up PR #141 is merged, so `pnpm agent:policy check` now ignores preserved untracked dogfood Events/Transactions while still blocking staged, modified, or committed guarded memory paths.
 
-Current implementation slice: PR 5 Briefs GET route extraction on `codex/workbench-brief-routes`, moving `/api/brief` and `/api/brief/targets` into the route registry before continuing the remaining Workbench route groups.
+Current implementation slice: PR 5 Health/Maintenance GET route extraction on `codex/workbench-health-routes`, moving `/api/health`, `/api/maintenance/plan`, `/api/maintenance/runs`, and GET `/api/maintenance/run` into the route registry while leaving POST staging/run actions in the existing handler.
 
 ## Operating Rules
 
@@ -999,7 +999,7 @@ Expected: pass.
 
 **Purpose:** Reduce editing risk and review cost by splitting the large Workbench file into focused modules without changing behavior.
 
-**Status Update - 2026-06-05:** Server-first cut implemented on `codex/agent-workbench-modularization`. The public Workbench route contracts now live in `shared/contracts.ts` and remain re-exported from `index.ts`; the Node HTTP bridge moved to `server/http.ts`; route lookup moved to `server/route-registry.ts`; and `/api/ask` now dispatches through `server/routes/ask.ts` with dependency injection to avoid root export cycles. Follow-up slice `codex/workbench-brief-routes` moves `GET /api/brief` and `GET /api/brief/targets` into `packages/workbench/src/server/routes/briefs.ts` without behavior changes; focused Workbench/core/e2e/browser checks, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm validate:local --skip-browser`, full `pnpm test:browser`, planner-requested evals, and `pnpm check:memory-data` passed. Client tab extraction is deferred because the current browser client is a single shared-state script with broad selector-heavy coverage; a later PR should introduce an explicit client state/context seam before moving tabs.
+**Status Update - 2026-06-05:** Server-first cut implemented on `codex/agent-workbench-modularization`. The public Workbench route contracts now live in `shared/contracts.ts` and remain re-exported from `index.ts`; the Node HTTP bridge moved to `server/http.ts`; route lookup moved to `server/route-registry.ts`; and `/api/ask` now dispatches through `server/routes/ask.ts` with dependency injection to avoid root export cycles. Follow-up slice `codex/workbench-brief-routes` moved `GET /api/brief` and `GET /api/brief/targets` into `packages/workbench/src/server/routes/briefs.ts` without behavior changes and merged as PR #144. Current follow-up slice `codex/workbench-health-routes` moves read-only Health/Maintenance GET routes into `packages/workbench/src/server/routes/health.ts`; focused modularization, Workbench, core health, core maintenance, maintenance eval, browser health, lint, and typecheck checks passed locally. Client tab extraction is deferred because the current browser client is a single shared-state script with broad selector-heavy coverage; a later PR should introduce an explicit client state/context seam before moving tabs.
 
 **Files:**
 
@@ -1161,7 +1161,26 @@ pnpm typecheck
 
 Expected: pass; local-server and browser commands may need to run outside the sandbox.
 
-- [ ] **Step 3b: Move remaining Health, Entities, and Contexts routes**
+- [x] **Step 3b: Move Health/Maintenance GET routes**
+
+Create `packages/workbench/src/server/routes/health.ts` with `GET /api/health`, `GET /api/maintenance/plan`, `GET /api/maintenance/runs`, and GET/HEAD `/api/maintenance/run` handlers. Leave POST health/maintenance staging and maintenance run actions in the existing POST handler for a later POST-route extraction.
+
+Run:
+
+```bash
+node tests/workbench-modularization.mjs
+node tests/workbench.mjs
+node tests/core-health.mjs
+node tests/core-maintenance.mjs
+node tests/scenarios/run-maintenance.mjs
+pnpm exec playwright test tests/browser/workbench-health-remediation.spec.mjs --project=chromium
+pnpm lint
+pnpm typecheck
+```
+
+Expected: pass; browser command may need to run outside the sandbox.
+
+- [ ] **Step 3c: Move remaining Entities and Contexts routes**
 
 Create the listed route files and preserve handler behavior exactly.
 

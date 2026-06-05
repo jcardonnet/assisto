@@ -154,6 +154,7 @@ import { findRoute } from "./server/route-registry";
 import { jsonRoute, optionalQuery, textRoute } from "./server/route-utils";
 import { createAskRoute } from "./server/routes/ask";
 import { createBriefRoutes } from "./server/routes/briefs";
+import { createHealthRoutes } from "./server/routes/health";
 import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
 export type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
@@ -905,23 +906,6 @@ export async function handleWorkbenchRoute(
     }
   }
 
-  if (requestUrl.pathname === "/api/health") {
-    return jsonRoute(200, await checkMemoryHealth(root));
-  }
-
-  if (requestUrl.pathname === "/api/maintenance/plan") {
-    return jsonRoute(200, await buildMaintenancePlan(root, maintenanceOptionsFromUrl(requestUrl)));
-  }
-
-  if (requestUrl.pathname === "/api/maintenance/runs") {
-    return jsonRoute(200, { runs: await listMaintenanceRuns(root) });
-  }
-
-  if (requestUrl.pathname === "/api/maintenance/run") {
-    const target = optionalTarget(requestUrl);
-    return target ? jsonRoute(200, await readMaintenanceRun(root, target)) : jsonRoute(400, { error: "Missing required query parameter: id." });
-  }
-
   return jsonRoute(404, { error: "Not found." });
 }
 
@@ -933,6 +917,12 @@ function workbenchRoutes() {
     ...createBriefRoutes({
       buildSessionBrief,
       listSessionBriefTargets
+    }),
+    ...createHealthRoutes({
+      buildMaintenancePlan,
+      checkMemoryHealth,
+      listMaintenanceRuns,
+      readMaintenanceRun
     })
   ];
 }
@@ -1481,17 +1471,6 @@ function optionalStringRecordInput(value: unknown): Record<string, string> | und
     .filter(([, item]) => item.length > 0);
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
-
-function optionalNumberQuery(requestUrl: URL, key: string): number | undefined {
-  const value = requestUrl.searchParams.get(key);
-
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function optionalNumberInput(input: Record<string, unknown>, ...keys: string[]): number | undefined {
@@ -2179,16 +2158,6 @@ async function createContextNotePreview(
   return {
     ...result,
     created
-  };
-}
-
-function maintenanceOptionsFromUrl(requestUrl: URL) {
-  const mode = requestUrl.searchParams.get("mode") ?? "full";
-  return {
-    mode: isMaintenanceMode(mode) ? mode : "full",
-    seed: requestUrl.searchParams.get("seed") ?? undefined,
-    topic: requestUrl.searchParams.get("topic") ?? undefined,
-    limit: optionalNumberQuery(requestUrl, "limit")
   };
 }
 
