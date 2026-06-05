@@ -13,8 +13,15 @@ export const capabilityRegistry = [
     id: "capture",
     title: "Capture note",
     mutationKind: "transaction_backed",
-    cliCommands: ["wm capture", "wm capture quick"],
-    workbenchRoutes: ["/api/capture/preview", "/api/capture", "/api/capture/quick/preview", "/api/capture/quick"],
+    cliCommands: ["wm capture", "wm capture quick", "wm capture feedback"],
+    workbenchRoutes: [
+      "/api/capture/preview",
+      "/api/capture",
+      "/api/capture/quick/preview",
+      "/api/capture/quick",
+      "/api/capture/feedback/preview",
+      "/api/capture/feedback"
+    ],
     piTools: ["wm_capture_note", "wm_capture_quick", "/wm-capture", "/wm-capture-quick"],
     docs: ["docs/use-assisto-tomorrow.md"],
     validationGroups: ["core", "workbench", "browser"],
@@ -51,6 +58,7 @@ export const capabilityRegistry = [
     workbenchRoutes: [
       "/api/entities/stewardship",
       "/api/entities/stewardship/detail",
+      "/api/entities/detail",
       "/api/entities/stewardship-v2",
       "/api/entities/command-center",
       "/api/entities/identity-review/preview",
