@@ -30,6 +30,7 @@ import { runAgentCiLocalTests } from "./agent-ci-local.mjs";
 import { runAgentMapTests } from "./agent-map.mjs";
 import { runAgentReviewTests } from "./agent-review.mjs";
 import { runAgentWorkbenchTests } from "./agent-workbench.mjs";
+import { runAgentMxbaiTests } from "./agent-mxbai.mjs";
 import { runFaultHarnessTests } from "./faults/fault-harness.mjs";
 import { runBaselineRunnerTests } from "./baselines/baseline-runner.mjs";
 
@@ -66,6 +67,7 @@ export async function runIntegrationTests() {
   await runAgentMapTests();
   await runAgentReviewTests();
   await runAgentWorkbenchTests();
+  await runAgentMxbaiTests();
   await runFaultHarnessTests();
   await runBaselineRunnerTests();
 }

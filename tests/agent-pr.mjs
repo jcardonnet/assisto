@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   advancePrState,
+  buildMxbaiCloseoutRefreshCommand,
   evaluatePrCloseoutReadiness,
   prStates,
   storePrReviewSnapshot
@@ -69,6 +70,10 @@ export async function runAgentPrTests() {
   assert.equal(ready.ready, true);
   assert.deepEqual(ready.blockers, []);
   assert.equal(ready.review_check, "required");
+  assert.deepEqual(buildMxbaiCloseoutRefreshCommand(), {
+    command: "pnpm",
+    args: ["agent:mxbai", "refresh"]
+  });
 
   assert.deepEqual(
     evaluatePrCloseoutReadiness(readyInputs({ reviewSummary: { unresolvedThreadCount: 2 } })).blockers,
