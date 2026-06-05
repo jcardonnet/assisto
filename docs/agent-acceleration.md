@@ -67,6 +67,8 @@ pnpm agent:stage --allow-memory-data --yes memory/events/example.md
 
 Product PRs should not use that override.
 
+The memory guard and agent policy distinguish blocking guarded changes from preserved local dogfood data. Untracked files under `memory/events/**` and `memory/transactions/**` are reported so they are not forgotten, but they do not block policy checks unless they are staged, modified from tracked content, or committed on the branch.
+
 ## Scenario Factory And Targeted Groups
 
 Use named scenario vaults when a test only needs a known fixture shape:
