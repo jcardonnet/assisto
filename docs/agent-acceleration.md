@@ -65,3 +65,13 @@ pnpm agent:stage --allow-memory-data --yes memory/events/example.md
 ```
 
 Product PRs should not use that override.
+
+## Scenario Factory And Targeted Groups
+
+Use named scenario vaults when a test only needs a known fixture shape:
+
+```js
+const vault = await createScenarioVault("manager-chain");
+```
+
+`pnpm agent:validate --plan --json` also reports `targeted_groups` for workflow, scenario-factory, Workbench, retrieval, and memory-sensitive changes, so agents can run focused checks before the full required gates.

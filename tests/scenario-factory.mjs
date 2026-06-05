@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
-import { rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { readVaultFile } from "./helpers/temp-vault.mjs";
 import {
+  createScenarioVault,
   makeScenarioVault,
+  scenarioNames,
   writeConflictingRoleScenario,
   writeContextProjectScenario,
   writeDuplicateImportScenario,
@@ -14,6 +19,48 @@ import {
 } from "./helpers/scenario-factory.mjs";
 
 export async function runScenarioFactoryTests() {
+  assert.deepEqual(scenarioNames, [
+    "manager-chain",
+    "review-backlog",
+    "stale-noop",
+    "context-project",
+    "duplicate-import",
+    "conflicting-role-claims",
+    "missing-evidence",
+    "retrieval-no-match"
+  ]);
+
+  const createdManager = await createScenarioVault("manager-chain");
+  try {
+    const personPage = await readVaultFile(createdManager.root, "memory/people/kuastav.md");
+    assert.match(personPage, /claim_id: clm_kuastav_reports_to_jeff/);
+    assert.match(personPage, /source_events:/);
+    assert.match(personPage, /ev_manager_chain_001/);
+  } finally {
+    await rm(createdManager.root, { recursive: true, force: true });
+  }
+
+  const emptyRetrieval = await createScenarioVault("retrieval-no-match");
+  try {
+    assert.equal(existsSync(path.join(emptyRetrieval.root, "memory/schema")), true);
+    assert.equal(existsSync(path.join(emptyRetrieval.root, "memory/events")), true);
+  } finally {
+    await rm(emptyRetrieval.root, { recursive: true, force: true });
+  }
+
+  await assert.rejects(() => createScenarioVault("unknown-scenario"), /Unknown scenario/);
+
+  const explicitRoot = await mkdtemp(path.join(os.tmpdir(), "assisto-explicit-scenario-"));
+  const explicitVault = await createScenarioVault("retrieval-no-match", { root: explicitRoot });
+  try {
+    assert.equal(explicitVault.root, explicitRoot);
+    assert.equal(existsSync(path.join(explicitRoot, "memory/schema")), true);
+    assert.equal(existsSync(path.join(explicitRoot, "memory/events")), true);
+    assert.equal(existsSync(path.join(explicitRoot, "memory/transactions/pending")), true);
+  } finally {
+    await rm(explicitRoot, { recursive: true, force: true });
+  }
+
   const managerRoot = await makeScenarioVault("manager-chain");
   try {
     await writeManagerChainScenario(managerRoot);
@@ -50,7 +97,13 @@ export async function runScenarioFactoryTests() {
     await writeRetrievalNoMatchScenario(edgeRoot);
     assert.match(await readVaultFile(edgeRoot, "memory/review/role-conflict.md"), /role_change/);
     assert.match(await readVaultFile(edgeRoot, "memory/topics/mysql.md"), /ev_missing/);
+    assert.equal(existsSync(path.join(edgeRoot, "memory/schema")), true);
   } finally {
     await rm(edgeRoot, { recursive: true, force: true });
   }
+}
+
+if (process.argv[1]?.endsWith("scenario-factory.mjs")) {
+  await runScenarioFactoryTests();
+  console.log("scenario factory tests passed");
 }
