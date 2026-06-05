@@ -46,6 +46,7 @@
     "agent:run": "node scripts/agent-run.mjs run",
     "agent:diagnose:last": "node scripts/agent-run.mjs diagnose-last",
     "agent:diagnose": "node scripts/agent-run.mjs diagnose",
+    "agent:stage": "node scripts/agent-stage.mjs",
     "agent:pr": "node scripts/agent-pr.mjs",
     "agent:ci-local": "node scripts/agent-ci-local.mjs",
     "agent:map": "node scripts/agent-map.mjs",

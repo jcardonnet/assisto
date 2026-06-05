@@ -560,6 +560,8 @@ Expected: pass.
 
 **Purpose:** Prevent accidental staging of dogfood user-memory files and make every staged path intentional.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-safe-staging`. The helper refuses guarded memory data by default, requires `--allow-memory-data --yes` for intentional memory-data staging, and is covered by targeted CLI/classifier tests plus integration script-helper coverage. `pnpm agent:validate --plan --json`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
+
 **Files:**
 
 - Create `scripts/agent-stage.mjs`
@@ -569,7 +571,7 @@ Expected: pass.
 
 ### Task 3.1: Write staging refusal tests
 
-- [ ] **Step 1: Create `tests/agent-stage.mjs`**
+- [x] **Step 1: Create `tests/agent-stage.mjs`**
 
 ```js
 import assert from "node:assert/strict";
@@ -599,7 +601,7 @@ test("classifyStageRequest requires explicit allow for guarded paths", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -611,7 +613,7 @@ Expected: failure because `scripts/agent-stage.mjs` does not exist.
 
 ### Task 3.2: Implement the staging classifier
 
-- [ ] **Step 1: Create `scripts/agent-stage.mjs`**
+- [x] **Step 1: Create `scripts/agent-stage.mjs`**
 
 ```js
 #!/usr/bin/env node
@@ -717,7 +719,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 ```
 
-- [ ] **Step 2: Add package script**
+- [x] **Step 2: Add package script**
 
 Add to `package.json`:
 
@@ -725,7 +727,7 @@ Add to `package.json`:
 "agent:stage": "node scripts/agent-stage.mjs"
 ```
 
-- [ ] **Step 3: Run targeted tests**
+- [x] **Step 3: Run targeted tests**
 
 Run:
 
@@ -737,7 +739,7 @@ Expected: pass.
 
 ### Task 3.3: Add practical staging docs
 
-- [ ] **Step 1: Append to `docs/agent-acceleration.md`**
+- [x] **Step 1: Append to `docs/agent-acceleration.md`**
 
 ```md
 ## Safe Staging
@@ -757,7 +759,7 @@ pnpm agent:stage --allow-memory-data --yes memory/events/example.md
 Product PRs should not use that override.
 ```
 
-- [ ] **Step 2: Validate PR 3**
+- [x] **Step 2: Validate PR 3**
 
 Run:
 
