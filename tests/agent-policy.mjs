@@ -56,6 +56,8 @@ export async function runAgentPolicyTests() {
   assert.equal(commandNames(workbenchPlan).includes("test:e2e"), true);
   assert.equal(commandNames(workbenchPlan).includes("test:browser"), true);
   assert.deepEqual(workbenchPlan.targeted_groups.map((group) => group.name), ["workbench"]);
+  assert.equal(workbenchPlan.targeted_groups[0].commands.includes("tests/browser/workbench-*.spec.mjs"), true);
+  assert.equal(workbenchPlan.targeted_groups[0].commands.includes("tests/browser/agent-workbench.spec.mjs"), false);
   const browser = workbenchPlan.commands.find((item) => item.name === "test:browser");
   assert.equal(browser.required, true);
   assert.equal(browser.cost, "high");
@@ -121,6 +123,11 @@ export async function runAgentPolicyTests() {
   assert.equal(memoryPolicy.findings.some((finding) => finding.code === "guarded_memory_data_changed"), true);
   assert.deepEqual(memoryPolicy.validation_plan.targeted_groups.map((group) => group.name), ["memory"]);
   assert.equal(commandNames(memoryPolicy.validation_plan).includes("check:memory-data"), true);
+
+  const canonicalMemoryPlan = buildValidationPlan({ changedFiles: ["memory/people/jeff.md"] });
+  assert.equal(canonicalMemoryPlan.categories.includes("memory"), true);
+  assert.deepEqual(canonicalMemoryPlan.targeted_groups.map((group) => group.name), ["memory"]);
+  assert.equal(commandNames(canonicalMemoryPlan).includes("check:memory-data"), true);
 
   const obsidianPolicy = buildPolicyResult({ changedFiles: [".obsidian/workspace.json"] });
   assert.equal(obsidianPolicy.passed, false);

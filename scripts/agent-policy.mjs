@@ -104,7 +104,7 @@ const coreBehaviorCommandNames = [...fullEvalChain, "check:memory-data"];
 const targetedGroups = {
   agent: ["tests/agent-control.mjs", "tests/agent-policy.mjs", "tests/agent-runner.mjs", "tests/agent-pr.mjs"],
   "scenario-factory": ["tests/scenario-factory.mjs"],
-  workbench: ["tests/workbench.mjs", "tests/browser/agent-workbench.spec.mjs"],
+  workbench: ["tests/workbench.mjs", "tests/browser/workbench-*.spec.mjs"],
   retrieval: ["tests/scenarios/run-retrieval.mjs", "tests/scenarios/run-answers.mjs"],
   memory: ["tests/check-memory-data.mjs", "tests/core-v3-memory-hardening.mjs"]
 };
@@ -128,9 +128,21 @@ function commandList(names, reason) {
   return names.map((name) => command(name, reason));
 }
 
+const canonicalMemoryRoots = [
+  "memory/contexts/",
+  "memory/followups/",
+  "memory/logs/",
+  "memory/people/",
+  "memory/review/",
+  "memory/topics/"
+];
+
 function classifyFile(file) {
   if (file.startsWith("memory/events/") || file.startsWith("memory/transactions/")) {
     return "guarded-memory-data";
+  }
+  if (canonicalMemoryRoots.some((root) => file.startsWith(root))) {
+    return "memory";
   }
   if (file.startsWith(".obsidian/")) {
     return "obsidian";
