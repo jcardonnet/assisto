@@ -38,7 +38,8 @@ The plan includes:
 
 - `commands`: required validation commands with reason, cost, and required metadata;
 - `skipped`: known commands that are not required for the current changed-file mode, with skip reasons;
-- `file_reasons`: deterministic path classifications that explain why each changed file selected a validation mode.
+- `file_reasons`: deterministic path classifications that explain why each changed file selected a validation mode;
+- `capability_groups`: stable capability IDs mapped to focused validation gates for public surfaces.
 
 Docs-only work can request the lighter docs process:
 
@@ -75,3 +76,7 @@ const vault = await createScenarioVault("manager-chain");
 ```
 
 `pnpm agent:validate --plan --json` also reports `targeted_groups` for workflow, scenario-factory, Workbench, retrieval, and memory-sensitive changes, so agents can run focused checks before the full required gates.
+
+## Capability Groups
+
+Core publishes a deterministic capability registry for high-value public surfaces such as capture, cited answer contracts, entity stewardship, and Context operating rooms. `pnpm agent:validate --plan --json` reports a `capability_groups` map that ties those stable capability IDs to focused validation gates. The map is advisory: it helps agents choose extra targeted checks for touched surfaces without changing the planner's required command list.

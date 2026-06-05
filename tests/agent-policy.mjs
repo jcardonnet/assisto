@@ -4,16 +4,40 @@ import {
   buildPolicyResult,
   buildValidationPlan
 } from "../scripts/agent-policy.mjs";
+import { loadTsModule } from "./ts-module-loader.mjs";
 
 function commandNames(plan) {
   return plan.commands.map((command) => command.name);
 }
 
+function knownCommandNames(plan) {
+  return new Set([...plan.commands, ...plan.skipped].map((command) => command.name));
+}
+
+const expectedCapabilityGroups = {
+  "ask-answer-contract": ["eval:answers", "eval:v8"],
+  capture: ["test:e2e", "test:browser", "eval:v5", "eval:v7"],
+  "entity-stewardship": ["eval:v8", "test:browser"],
+  "context-operating-room": ["eval:v8", "test:browser"]
+};
+
 export async function runAgentPolicyTests() {
+  const capabilities = await loadTsModule("packages/core/src/capabilities/index.ts");
   const docsPlan = buildValidationPlan({ changedFiles: ["README.md"] });
   assert.deepEqual(commandNames(docsPlan), ["lint", "typecheck", "test"]);
   assert.equal(docsPlan.mode, "docs-process");
   assert.deepEqual(docsPlan.targeted_groups, []);
+  assert.deepEqual(docsPlan.capability_groups, expectedCapabilityGroups);
+  assert.deepEqual(
+    Object.keys(docsPlan.capability_groups).sort(),
+    capabilities.capabilityRegistry.map((item) => item.id).sort()
+  );
+  const docsPlanKnownCommands = knownCommandNames(docsPlan);
+  for (const commands of Object.values(docsPlan.capability_groups)) {
+    for (const command of commands) {
+      assert.equal(docsPlanKnownCommands.has(command), true, `${command} should be a known validation command`);
+    }
+  }
 
   const workflowPlan = buildValidationPlan({ changedFiles: ["scripts/env-doctor.mjs"] });
   assert.deepEqual(commandNames(workflowPlan), ["lint", "typecheck", "test", "check:memory-data"]);
@@ -122,6 +146,7 @@ export async function runAgentPolicyTests() {
   assert.equal(memoryPolicy.passed, false);
   assert.equal(memoryPolicy.findings.some((finding) => finding.code === "guarded_memory_data_changed"), true);
   assert.deepEqual(memoryPolicy.validation_plan.targeted_groups.map((group) => group.name), ["memory"]);
+  assert.deepEqual(memoryPolicy.validation_plan.capability_groups, expectedCapabilityGroups);
   assert.equal(commandNames(memoryPolicy.validation_plan).includes("check:memory-data"), true);
 
   const canonicalMemoryPlan = buildValidationPlan({ changedFiles: ["memory/people/jeff.md"] });
