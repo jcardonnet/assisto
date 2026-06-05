@@ -24,44 +24,62 @@ function unique(values) {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
-function normalizeChangedFiles(changedFiles) {
-  return unique(changedFiles.map((file) => file.trim()).filter(Boolean));
+function normalizeChangedFile(file) {
+  let normalized = file.trim();
+  while (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
+  }
+  return normalized;
 }
 
-function focusAreasForFiles(changedFiles) {
+function normalizeChangedFiles(changedFiles) {
+  return unique(changedFiles.map(normalizeChangedFile).filter(Boolean));
+}
+
+function focusAreasForPlan(validationPlan) {
+  const categories = validationPlan.categories;
   const areas = [];
-  if (changedFiles.some((file) => file.startsWith("packages/core/") || file.startsWith("memory/schema/"))) {
+  if (categories.includes("core")) {
     areas.push("core-memory-semantics");
   }
-  if (changedFiles.some((file) => file.startsWith("packages/workbench/") || file.startsWith("tests/browser/"))) {
+  if (categories.includes("workbench")) {
     areas.push("workbench-ui");
   }
-  if (changedFiles.some((file) => file.startsWith("packages/cli/"))) {
+  if (categories.includes("cli")) {
     areas.push("cli-surface");
   }
-  if (changedFiles.some((file) => file.startsWith("packages/pi-extension/") || file.startsWith(".pi/"))) {
+  if (categories.includes("pi")) {
     areas.push("pi-surface");
   }
-  if (changedFiles.some((file) => file.startsWith("tests/") || file.startsWith("scripts/"))) {
+  if (categories.includes("workflow") || categories.includes("tests")) {
     areas.push("workflow-and-tests");
   }
-  if (changedFiles.some((file) => file.startsWith("memory/events/") || file.startsWith("memory/transactions/"))) {
+  if (categories.includes("eval-test-harness")) {
+    areas.push("eval-test-harness");
+  }
+  if (categories.includes("memory")) {
+    areas.push("canonical-memory-pages");
+  }
+  if (categories.includes("guarded-memory-data")) {
     areas.push("guarded-memory-data");
   }
-  if (changedFiles.some((file) => file.startsWith("docs/") || file === "README.md" || file === "AGENTS.md")) {
+  if (categories.includes("docs")) {
     areas.push("docs-process");
   }
   return unique(areas);
 }
 
-function commandsForFiles(changedFiles) {
-  const plan = buildValidationPlan({ changedFiles });
-  return plan.commands.map((item) => {
-    if (item.env?.TMPDIR === "/tmp") {
-      return `TMPDIR=/tmp ${item.command}`;
-    }
-    return item.command;
-  });
+export function formatValidationCommand(item) {
+  const env = item.env ?? {};
+  const preferredKeys = ["TMPDIR", "TEMP", "TMP"];
+  const envParts = [
+    ...preferredKeys.filter((key) => env[key] !== undefined).map((key) => `${key}=${env[key]}`),
+    ...Object.keys(env)
+      .filter((key) => !preferredKeys.includes(key))
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => `${key}=${env[key]}`)
+  ];
+  return [...envParts, item.command].join(" ");
 }
 
 function checksForPlan(kind, focusAreas) {
@@ -72,8 +90,14 @@ function checksForPlan(kind, focusAreas) {
   if (focusAreas.includes("guarded-memory-data")) {
     checks.push("Check guarded memory data was intentionally approved before any staging.");
   }
+  if (focusAreas.includes("canonical-memory-pages")) {
+    checks.push("Check canonical memory page edits are explicit, reviewed, and transaction-backed.");
+  }
   if (focusAreas.includes("workflow-and-tests")) {
     checks.push("Check workflow helpers do not stage guarded memory data or hide failing validation.");
+  }
+  if (focusAreas.includes("eval-test-harness")) {
+    checks.push("Check eval harness changes preserve scenario, fixture, and golden-threshold expectations.");
   }
   return checks;
 }
@@ -101,14 +125,15 @@ export function buildReviewPlan({ kind = "invariant", changedFiles = [] } = {}) 
     throw new Error(`Unknown review kind: ${kind}. Expected one of: ${[...allowedKinds].join(", ")}.`);
   }
   const normalizedFiles = normalizeChangedFiles(changedFiles);
-  const focusAreas = focusAreasForFiles(normalizedFiles);
+  const validationPlan = buildValidationPlan({ changedFiles: normalizedFiles });
+  const focusAreas = focusAreasForPlan(validationPlan);
   const plan = {
     schema_version: 1,
     kind,
     changed_files: normalizedFiles,
     focus_areas: focusAreas,
     checks: checksForPlan(kind, focusAreas),
-    commands: commandsForFiles(normalizedFiles)
+    commands: validationPlan.commands.map(formatValidationCommand)
   };
   return {
     ...plan,
