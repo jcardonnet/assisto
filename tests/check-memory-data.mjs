@@ -6,7 +6,7 @@ import path from "node:path";
 
 const scriptPath = path.resolve("scripts/check-memory-data.mjs");
 
-function run(command, args, options = {}) {
+export function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
     encoding: "utf8",
@@ -20,7 +20,7 @@ function run(command, args, options = {}) {
   return result;
 }
 
-function runGit(root, args) {
+export function runGit(root, args) {
   const result = run("git", args, { cwd: root });
 
   assert.equal(result.status, 0, result.stderr);
@@ -38,13 +38,13 @@ function parseJson(stdout) {
   return JSON.parse(stdout.slice(stdout.indexOf("{")));
 }
 
-async function writeRepoFile(root, relativePath, content) {
+export async function writeRepoFile(root, relativePath, content) {
   const filePath = path.join(root, relativePath);
   await mkdir(path.dirname(filePath), { recursive: true });
   await writeFile(filePath, content, "utf8");
 }
 
-async function makeRepo() {
+export async function makeRepo() {
   const root = await mkdtemp(path.join(os.tmpdir(), "assisto-memory-guard-"));
   runGit(root, ["init"]);
   runGit(root, ["branch", "-M", "main"]);

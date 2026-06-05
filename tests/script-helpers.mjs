@@ -25,6 +25,7 @@ export async function runScriptHelperTests() {
   assert.equal(packageJson.scripts["agent:run"], "node scripts/agent-run.mjs run");
   assert.equal(packageJson.scripts["agent:diagnose:last"], "node scripts/agent-run.mjs diagnose-last");
   assert.equal(packageJson.scripts["agent:diagnose"], "node scripts/agent-run.mjs diagnose");
+  assert.equal(packageJson.scripts["agent:stage"], "node scripts/agent-stage.mjs");
   assert.equal(packageJson.scripts["agent:pr"], "node scripts/agent-pr.mjs");
   assert.equal(packageJson.scripts["agent:ci-local"], "node scripts/agent-ci-local.mjs");
   assert.equal(packageJson.scripts["agent:map"], "node scripts/agent-map.mjs");
@@ -39,6 +40,7 @@ export async function runScriptHelperTests() {
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /memory\/transactions/);
   assert.match(readFileSync("scripts/check-memory-data.mjs", "utf8"), /untracked_user_memory_paths/);
   assert.match(readFileSync("scripts/agent-pr.mjs", "utf8"), /Usage: pnpm agent:pr status/);
+  assert.match(readFileSync("scripts/agent-stage.mjs", "utf8"), /Usage: pnpm agent:stage/);
   assert.match(readFileSync("scripts/agent-ci-local.mjs", "utf8"), /Usage: pnpm agent:ci-local --plan/);
   assert.match(readFileSync("scripts/agent-map.mjs", "utf8"), /Usage: pnpm agent:map build/);
   assert.match(readFileSync("scripts/agent-workbench.mjs", "utf8"), /Usage: pnpm agent:workbench serve/);
