@@ -113,7 +113,6 @@ import {
   type EntityKind,
   type EntityRepairActionV2Kind,
   type EntityRepairActionV2Preview,
-  type EntityClaimSummary,
   type EntityStewardshipPreview,
   type DogfoodFeedbackCreateResult,
   type DogfoodFeedbackPreviewResult,
@@ -154,6 +153,7 @@ import { findRoute } from "./server/route-registry";
 import { jsonRoute, optionalQuery, textRoute } from "./server/route-utils";
 import { createAskRoute } from "./server/routes/ask";
 import { createBriefRoutes } from "./server/routes/briefs";
+import { createContextRoutes } from "./server/routes/contexts";
 import { createHealthRoutes } from "./server/routes/health";
 import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
@@ -842,70 +842,6 @@ export async function handleWorkbenchRoute(
     }
   }
 
-  if (requestUrl.pathname === "/api/contexts/dashboard") {
-    const target = optionalTarget(requestUrl);
-
-    if (!target) {
-      return jsonRoute(400, { error: "Missing required query parameter: id." });
-    }
-
-    try {
-      return jsonRoute(200, await buildContextDashboardResult(root, target));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const status = /^Entity not found:/.test(message) ? 404 : 400;
-      return jsonRoute(status, { error: message });
-    }
-  }
-
-  if (requestUrl.pathname === "/api/contexts/operating-room") {
-    const target = optionalTarget(requestUrl);
-
-    if (!target) {
-      return jsonRoute(400, { error: "Missing required query parameter: id." });
-    }
-
-    try {
-      return jsonRoute(200, await buildContextOperatingRoomResult(root, target));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const status = /^Entity not found:/.test(message) ? 404 : 400;
-      return jsonRoute(status, { error: message });
-    }
-  }
-
-  if (requestUrl.pathname === "/api/contexts/operating-room-v3") {
-    const target = optionalTarget(requestUrl);
-
-    if (!target) {
-      return jsonRoute(400, { error: "Missing required query parameter: id." });
-    }
-
-    try {
-      return jsonRoute(200, await buildWorkbenchContextOperatingRoomV3(root, target));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const status = /^Entity not found:/.test(message) ? 404 : 400;
-      return jsonRoute(status, { error: message });
-    }
-  }
-
-  if (requestUrl.pathname === "/api/contexts/timeline") {
-    const target = optionalTarget(requestUrl);
-
-    if (!target) {
-      return jsonRoute(400, { error: "Missing required query parameter: id." });
-    }
-
-    try {
-      return jsonRoute(200, await buildContextTimelineResult(root, target));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const status = /^Entity not found:/.test(message) ? 404 : 400;
-      return jsonRoute(status, { error: message });
-    }
-  }
-
   return jsonRoute(404, { error: "Not found." });
 }
 
@@ -917,6 +853,13 @@ function workbenchRoutes() {
     ...createBriefRoutes({
       buildSessionBrief,
       listSessionBriefTargets
+    }),
+    ...createContextRoutes({
+      buildContextDashboardResult,
+      buildContextOperatingRoomResult,
+      buildContextOperatingRoomV3,
+      buildContextTimelineResult,
+      buildSymbolicIndex
     }),
     ...createHealthRoutes({
       buildMaintenancePlan,
@@ -1908,67 +1851,6 @@ async function createDogfoodEvalRun(root: string, input: Record<string, unknown>
   return runPersonalDogfoodEval(root, {
     questionsPath: questionsPath ? path.resolve(root, questionsPath) : undefined
   });
-}
-
-async function buildWorkbenchContextOperatingRoomV3(root: string, target: string) {
-  const room = await buildContextOperatingRoomResult(root, target);
-  const symbolicIndex = await buildSymbolicIndex({ root });
-  const claims = uniqueContextRoomClaims([
-    ...room.currentState,
-    ...room.decisions,
-    ...room.openQuestions,
-    ...room.staleClaims
-  ]);
-  const claimIds = new Set(claims.map((claim) => claim.claim_id));
-  const symbolicFacts = symbolicIndex.derived_facts
-    .filter((fact) => fact.source_claim_ids.some((claimId) => claimIds.has(claimId)) || fact.relation.includes("system"))
-    .map((fact) => ({
-      fact_id: fact.fact_id,
-      relation: fact.relation,
-      source_events: fact.source_events
-    }));
-  const result = buildContextOperatingRoomV3({
-    context: {
-      id: room.context.id ?? room.context.path,
-      name: room.context.name
-    },
-    claims: claims.map((claim) => ({
-      claim_id: claim.claim_id,
-      text: claim.statement,
-      source_events: claim.evidence
-    })),
-    symbolicFacts,
-    reviewItems: room.reviewQueue,
-    followUps: room.followupQueue
-  });
-
-  return {
-    version: "context-operating-room-v3",
-    generated_at: room.generated_at,
-    ...result,
-    citations: room.citations,
-    warnings: uniqueStrings([
-      ...room.warnings,
-      "Context operating room v3 is derived from claims, reviews, follow-ups, and symbolic facts.",
-      "No canonical memory files were written."
-    ])
-  };
-}
-
-function uniqueContextRoomClaims(claims: EntityClaimSummary[]): EntityClaimSummary[] {
-  const seen = new Set<string>();
-  const output: EntityClaimSummary[] = [];
-
-  for (const claim of claims) {
-    if (seen.has(claim.claim_id)) {
-      continue;
-    }
-
-    seen.add(claim.claim_id);
-    output.push(claim);
-  }
-
-  return output;
 }
 
 async function createEntityAliasPreview(
