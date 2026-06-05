@@ -9,6 +9,7 @@ export async function runWorkbenchModularizationTests() {
   const routeUtils = await loadTsModule("packages/workbench/src/server/route-utils.ts");
   const ask = await loadTsModule("packages/workbench/src/server/routes/ask.ts");
   const briefs = await loadTsModule("packages/workbench/src/server/routes/briefs.ts");
+  const contexts = await loadTsModule("packages/workbench/src/server/routes/contexts.ts");
   const health = await loadTsModule("packages/workbench/src/server/routes/health.ts");
 
   assert.equal(typeof workbench.startWorkbenchServer, "function");
@@ -19,6 +20,7 @@ export async function runWorkbenchModularizationTests() {
   assert.equal(typeof routeUtils.optionalQuery, "function");
   assert.equal(typeof ask.createAskRoute, "function");
   assert.equal(typeof briefs.createBriefRoutes, "function");
+  assert.equal(typeof contexts.createContextRoutes, "function");
   assert.equal(typeof health.createHealthRoutes, "function");
 
   const route = { method: "GET", pathname: "/api/example", handler: () => ({}) };
@@ -86,6 +88,149 @@ export async function runWorkbenchModularizationTests() {
     requestUrl: new URL("http://127.0.0.1/api/brief/targets?kind=context")
   });
   assert.equal(JSON.parse(targets.body).kind, "context");
+
+  const contextClaim = {
+    claim_id: "clm_context",
+    statement: "Decision: keep context routes read-only.",
+    evidence: ["ev_context"]
+  };
+  const contextRoutes = contexts.createContextRoutes({
+    buildContextDashboardResult: async (_root, target) => {
+      if (target === "ctx_missing") {
+        throw new Error("Entity not found: ctx_missing");
+      }
+
+      return {
+        generated_at: "2026-06-05T00:00:00.000Z",
+        context: { id: target, path: "memory/contexts/inventory-project.md", name: "Inventory Project" },
+        active_facts: [contextClaim],
+        role_claims: [],
+        decision_claims: [contextClaim],
+        open_question_claims: [],
+        owner_claims: [],
+        recent_changes: [],
+        stale_claims: [],
+        risks: [],
+        followups: [],
+        review_items: [],
+        quick_briefs: [],
+        citations: { page_paths: [], claim_ids: [], event_ids: [], followup_ids: [], review_item_ids: [], transaction_ids: [] },
+        warnings: []
+      };
+    },
+    buildContextOperatingRoomResult: async (_root, target) => {
+      if (target === "ctx_missing") {
+        throw new Error("Entity not found: ctx_missing");
+      }
+
+      return {
+        generated_at: "2026-06-05T00:00:00.000Z",
+        context: { id: target, path: "memory/contexts/inventory-project.md", name: "Inventory Project" },
+        currentState: [contextClaim],
+        owners: [],
+        systems: [],
+        decisions: [contextClaim],
+        openQuestions: [],
+        risks: [],
+        recentChanges: [],
+        staleClaims: [],
+        reviewQueue: [],
+        followupQueue: [],
+        quickActions: [],
+        citations: { page_paths: [], claim_ids: [], event_ids: [], followup_ids: [], review_item_ids: [], transaction_ids: [] },
+        warnings: ["Context operating room is derived."]
+      };
+    },
+    buildContextOperatingRoomV3: (input) => ({
+      context: input.context,
+      currentState: input.claims,
+      owners: [],
+      systems: input.symbolicFacts,
+      decisions: input.claims.filter((claim) => claim.text.startsWith("Decision:")),
+      openQuestions: [],
+      risks: [],
+      symbolicFacts: input.symbolicFacts,
+      reviewQueue: input.reviewItems,
+      followupQueue: input.followUps,
+      missingMemoryPrompts: [],
+      canonical_writes: []
+    }),
+    buildContextTimelineResult: async (_root, target) => ({
+      generated_at: "2026-06-05T00:00:00.000Z",
+      context: { id: target, path: "memory/contexts/inventory-project.md", name: "Inventory Project" },
+      items: [],
+      citations: { page_paths: [], claim_ids: [], event_ids: [], followup_ids: [], review_item_ids: [], transaction_ids: [] },
+      warnings: []
+    }),
+    buildSymbolicIndex: async () => ({
+      derived_facts: [
+        {
+          fact_id: "fact_system",
+          relation: "depends_on_system",
+          subject_id: "ctx_inventory_project",
+          source_claim_ids: ["clm_context"],
+          source_events: ["ev_context"],
+          inference_rule: "canonical_frame"
+        }
+      ],
+      proofs: [],
+      canonical_writes: [],
+      index_paths: []
+    })
+  });
+  const contextDashboardRoute = registry.findRoute(contextRoutes, "GET", "/api/contexts/dashboard");
+  const contextRoomRoute = registry.findRoute(contextRoutes, "GET", "/api/contexts/operating-room");
+  const contextRoomV3Route = registry.findRoute(contextRoutes, "HEAD", "/api/contexts/operating-room-v3");
+  const contextTimelineRoute = registry.findRoute(contextRoutes, "GET", "/api/contexts/timeline");
+  assert.notEqual(contextDashboardRoute, null);
+  assert.notEqual(contextRoomRoute, null);
+  assert.notEqual(contextRoomV3Route, null);
+  assert.notEqual(contextTimelineRoute, null);
+
+  for (const [pathname, route] of [
+    ["/api/contexts/dashboard", contextDashboardRoute],
+    ["/api/contexts/operating-room", contextRoomRoute],
+    ["/api/contexts/operating-room-v3", contextRoomV3Route],
+    ["/api/contexts/timeline", contextTimelineRoute]
+  ]) {
+    const missingContextId = await route.handler({
+      root: routeContextRoot,
+      request: { method: "GET", url: pathname },
+      requestUrl: new URL(`http://127.0.0.1${pathname}`)
+    });
+    assert.equal(missingContextId.status, 400);
+  }
+
+  const missingContext = await contextDashboardRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/contexts/dashboard?id=ctx_missing" },
+    requestUrl: new URL("http://127.0.0.1/api/contexts/dashboard?id=ctx_missing")
+  });
+  assert.equal(missingContext.status, 404);
+
+  const missingContextRoomV3 = await contextRoomV3Route.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/contexts/operating-room-v3?id=ctx_missing" },
+    requestUrl: new URL("http://127.0.0.1/api/contexts/operating-room-v3?id=ctx_missing")
+  });
+  assert.equal(missingContextRoomV3.status, 404);
+
+  const contextDashboard = await contextDashboardRoute.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/contexts/dashboard?id=ctx_inventory_project" },
+    requestUrl: new URL("http://127.0.0.1/api/contexts/dashboard?id=ctx_inventory_project")
+  });
+  assert.equal(JSON.parse(contextDashboard.body).context.id, "ctx_inventory_project");
+
+  const contextRoomV3 = await contextRoomV3Route.handler({
+    root: routeContextRoot,
+    request: { method: "GET", url: "/api/contexts/operating-room-v3?id=ctx_inventory_project" },
+    requestUrl: new URL("http://127.0.0.1/api/contexts/operating-room-v3?id=ctx_inventory_project")
+  });
+  const contextRoomV3Body = JSON.parse(contextRoomV3.body);
+  assert.equal(contextRoomV3Body.version, "context-operating-room-v3");
+  assert.deepEqual(contextRoomV3Body.canonical_writes, []);
+  assert.match(contextRoomV3Body.warnings.join("\n"), /No canonical memory files were written/);
 
   const healthRoutes = health.createHealthRoutes({
     buildMaintenancePlan: async (_root, options) => ({

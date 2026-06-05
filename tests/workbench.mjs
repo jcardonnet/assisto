@@ -2120,6 +2120,12 @@ export async function runWorkbenchTests() {
     assert.equal(contextDashboard.followups.some((followup) => followup.id === "fu_ask_jeff"), true);
     assert.equal(contextDashboard.citations.page_paths.includes("memory/contexts/inventory-project.md"), true);
 
+    const contextDashboardHead = await workbench.handleWorkbenchRoute(root, {
+      method: "HEAD",
+      url: "/api/contexts/dashboard?id=ctx_inventory_project"
+    });
+    assert.equal(contextDashboardHead.status, 200);
+
     const contextOperatingRoom = JSON.parse(
       (
         await workbench.handleWorkbenchRoute(root, {
@@ -2289,6 +2295,18 @@ summary_generated_from:
       url: "/api/contexts/timeline?id=ctx_missing"
     });
     assert.equal(unknownContextTimeline.status, 404);
+
+    const unknownContextOperatingRoomV3 = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/contexts/operating-room-v3?id=ctx_missing"
+    });
+    assert.equal(unknownContextOperatingRoomV3.status, 404);
+
+    const personContextDashboard = await workbench.handleWorkbenchRoute(root, {
+      method: "GET",
+      url: "/api/contexts/dashboard?id=per_jeff"
+    });
+    assert.equal(personContextDashboard.status, 400);
 
     const entityAliasPreview = JSON.parse(
       (
