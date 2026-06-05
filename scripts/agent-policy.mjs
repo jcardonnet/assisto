@@ -109,6 +109,26 @@ const targetedGroups = {
   memory: ["tests/check-memory-data.mjs", "tests/core-v3-memory-hardening.mjs"]
 };
 
+export const capabilityValidationGroups = {
+  "ask-answer-contract": ["eval:answers", "eval:v8"],
+  capture: ["test:e2e", "test:browser", "eval:v5", "eval:v7"],
+  "entity-stewardship": ["eval:v8", "test:browser"],
+  "context-operating-room": ["eval:v8", "test:browser"]
+};
+
+function capabilityGroupsForPlan({ skipBrowser = false } = {}) {
+  if (!skipBrowser) {
+    return capabilityValidationGroups;
+  }
+
+  return Object.fromEntries(
+    Object.entries(capabilityValidationGroups).map(([name, commands]) => [
+      name,
+      commands.filter((commandName) => commandName !== "test:browser")
+    ])
+  );
+}
+
 function command(name, reason) {
   const profile = commandProfiles[name];
   if (profile === undefined) {
@@ -308,6 +328,7 @@ export function buildValidationPlan({
     changed_files: changedFiles,
     file_reasons: explainChangedFiles(changedFiles),
     targeted_groups: inferTargetedGroups(categories, changedFiles),
+    capability_groups: capabilityGroupsForPlan({ skipBrowser }),
     commands: filteredCommands,
     skipped
   };
@@ -395,6 +416,12 @@ function print(value, json) {
       console.log("Targeted groups:");
       for (const group of value.targeted_groups) {
         console.log(`- ${group.name}: ${group.commands.join(", ")}`);
+      }
+    }
+    if (value.capability_groups !== undefined) {
+      console.log("Capability groups:");
+      for (const [name, commands] of Object.entries(value.capability_groups)) {
+        console.log(`- ${name}: ${commands.join(", ")}`);
       }
     }
     if ((value.skipped ?? []).length > 0) {

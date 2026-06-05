@@ -38,6 +38,7 @@ export * from "./contexts";
 export * from "./friction";
 export * from "./symbolic";
 
+export * from "./capabilities";
 export * from "./privacy";
 export * from "./errors";
 export * from "./observability";

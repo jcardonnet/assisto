@@ -1214,6 +1214,8 @@ Expected: pass or produce an environment-classified browser launch failure that 
 
 **Purpose:** Stop duplicating public-interface knowledge across CLI, Workbench, Pi, docs, and evals by adding a deterministic capability registry and consistency tests.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-capability-registry`. Core now exports a deterministic capability registry for capture, cited answer contracts, entity stewardship, and Context operating rooms, with validation for stable IDs, mutation semantics, required docs/groups/invariants, and known validation-group names. The agent validation planner now emits advisory `capability_groups`, with tests that keep planner keys aligned to the core registry and reject unknown command names. Required gates plus full `pnpm validate:local` passed.
+
 **Files:**
 
 - Create `packages/core/src/capabilities/schema.ts`
@@ -1224,7 +1226,7 @@ Expected: pass or produce an environment-classified browser launch failure that 
 
 ### Task 6.1: Add registry schema tests
 
-- [ ] **Step 1: Create `tests/capabilities-registry.mjs`**
+- [x] **Step 1: Create `tests/capabilities-registry.mjs`**
 
 ```js
 import assert from "node:assert/strict";
@@ -1250,7 +1252,7 @@ test("capability registry validates mutation semantics", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -1262,7 +1264,7 @@ Expected: failure because registry files do not exist.
 
 ### Task 6.2: Implement registry schema
 
-- [ ] **Step 1: Create `packages/core/src/capabilities/schema.ts`**
+- [x] **Step 1: Create `packages/core/src/capabilities/schema.ts`**
 
 ```ts
 export type CapabilityMutationKind = "read_only" | "transaction_backed" | "local_noncanonical" | "external_sync";
@@ -1302,7 +1304,7 @@ export function validateCapabilityRegistry(items: CapabilityDefinition[]): Capab
 }
 ```
 
-- [ ] **Step 2: Create `packages/core/src/capabilities/index.ts`**
+- [x] **Step 2: Create `packages/core/src/capabilities/index.ts`**
 
 ```ts
 import type { CapabilityDefinition } from "./schema.js";
@@ -1357,7 +1359,7 @@ export const capabilityRegistry: CapabilityDefinition[] = [
 ];
 ```
 
-- [ ] **Step 3: Export registry from `packages/core/src/index.ts`**
+- [x] **Step 3: Export registry from `packages/core/src/index.ts`**
 
 Add:
 
@@ -1365,7 +1367,7 @@ Add:
 export * from "./capabilities/index.js";
 ```
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run:
 
@@ -1377,7 +1379,7 @@ Expected: pass.
 
 ### Task 6.3: Connect registry to validation planner
 
-- [ ] **Step 1: Add registry-aware group names to `scripts/agent-policy.mjs`**
+- [x] **Step 1: Add registry-aware group names to `scripts/agent-policy.mjs`**
 
 Add a static mapping:
 
@@ -1390,7 +1392,7 @@ const capabilityValidationGroups = {
 };
 ```
 
-- [ ] **Step 2: Include capability group in plan JSON**
+- [x] **Step 2: Include capability group in plan JSON**
 
 Add:
 
@@ -1398,7 +1400,7 @@ Add:
 capability_groups: capabilityValidationGroups
 ```
 
-- [ ] **Step 3: Validate PR 6**
+- [x] **Step 3: Validate PR 6**
 
 Run:
 

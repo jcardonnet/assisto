@@ -40,6 +40,7 @@ import { runCorePrivacyTests } from "./core-privacy.mjs";
 import { runCoreErrorContractTests } from "./core-errors.mjs";
 import { runCoreObservabilityTests } from "./core-observability.mjs";
 import { runCoreContractExportTests } from "./core-contract-exports.mjs";
+import { runCapabilityRegistryTests } from "./capabilities-registry.mjs";
 
 export async function runUnitTests() {
   assertRequiredPaths();
@@ -83,6 +84,7 @@ export async function runUnitTests() {
   await runCoreErrorContractTests();
   await runCoreObservabilityTests();
   await runCoreContractExportTests();
+  await runCapabilityRegistryTests();
 }
 
 export function assertRequiredPaths() {
