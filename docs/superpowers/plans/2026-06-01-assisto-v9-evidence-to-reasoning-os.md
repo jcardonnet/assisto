@@ -12,9 +12,9 @@
 
 ## Status Update - 2026-06-05
 
-Current `main` is ahead of this plan at `0a4d63f [codex] Add Mixedbread refresh orchestrator (#137)`. The repository now contains the v9 foundation this plan describes: source adapters/source inbox, `sources/*`, typed frames, ontology-aware validation, symbolic index/query helpers, cited answer contracts through v4, context/entity stewardship, review acceleration, maintenance, dogfood feedback, context packs, v9/v10 scenario/browser coverage, Wave 1 contract scaffolds, and the capability registry/control-plane surfaces.
+Current `main` is ahead of this plan at `00146f8 [codex] Add Agent Workbench v2 routes (#139)`. The repository now contains the v9 foundation this plan describes: source adapters/source inbox, `sources/*`, typed frames, ontology-aware validation, symbolic index/query helpers, cited answer contracts through v4, context/entity stewardship, review acceleration, maintenance, dogfood feedback, context packs, v9/v10 scenario/browser coverage, Wave 1 contract scaffolds, and the capability registry/control-plane surfaces.
 
-Do not restart PR 1 or PR 2 from this document. Treat the remaining useful work as follow-up hardening and production integration over the implemented modules, especially wiring the Wave 1 errors/privacy/observability scaffolds through source import/inbox and Workbench/CLI flows. The active execution track is the agent acceleration control-plane plan.
+Do not restart PR 1 or PR 2 from this document. The unchecked PR blocks below are now a historical crosswalk for implemented surfaces, not the active task queue. Treat the remaining useful work as follow-up hardening and production integration over the implemented modules, especially wiring the Wave 1 errors/privacy/observability scaffolds through source import/inbox and Workbench/CLI flows. The active execution track is the agent acceleration control-plane plan.
 
 ## Non-Negotiable v9 Invariants
 
