@@ -780,7 +780,7 @@ Expected: pass.
 
 **Purpose:** Cut repeated fixture setup time and make targeted validation more reliable.
 
-**Status Update - 2026-06-05:** Implemented on `codex/agent-scenario-factory-shards`. The scenario factory now exposes named scenario registry helpers, supports explicit scenario roots, `retrieval-no-match` creates an empty usable vault, and validation plans emit targeted test groups for workflow, test, eval, Workbench, retrieval, and memory-sensitive changes. Targeted tests, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
+**Status Update - 2026-06-05:** Implemented on `codex/agent-scenario-factory-shards`. The scenario factory now exposes named scenario registry helpers, supports explicit scenario roots with the normal vault scaffold, `retrieval-no-match` creates an empty usable vault, and validation plans emit targeted test groups for workflow, scenario-factory, eval, Workbench, retrieval, and memory-sensitive changes. Targeted tests, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
 
 **Files:**
 

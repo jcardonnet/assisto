@@ -56,6 +56,7 @@ export async function runScenarioFactoryTests() {
     assert.equal(explicitVault.root, explicitRoot);
     assert.equal(existsSync(path.join(explicitRoot, "memory/schema")), true);
     assert.equal(existsSync(path.join(explicitRoot, "memory/events")), true);
+    assert.equal(existsSync(path.join(explicitRoot, "memory/transactions/pending")), true);
   } finally {
     await rm(explicitRoot, { recursive: true, force: true });
   }

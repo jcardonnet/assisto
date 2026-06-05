@@ -24,6 +24,10 @@ export async function runAgentPolicyTests() {
   const testPlan = buildValidationPlan({ changedFiles: ["tests/agent-policy.mjs"] });
   assert.deepEqual(testPlan.targeted_groups.map((group) => group.name), ["agent"]);
 
+  const scenarioFactoryPlan = buildValidationPlan({ changedFiles: ["tests/helpers/scenario-factory.mjs"] });
+  assert.deepEqual(scenarioFactoryPlan.targeted_groups.map((group) => group.name), ["scenario-factory"]);
+  assert.equal(scenarioFactoryPlan.targeted_groups[0].commands.includes("tests/scenario-factory.mjs"), true);
+
   const corePlan = buildValidationPlan({ changedFiles: ["packages/core/src/retrieval/index.ts"] });
   assert.deepEqual(commandNames(corePlan), [
     "lint",

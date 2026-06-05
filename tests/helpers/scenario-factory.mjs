@@ -17,10 +17,9 @@ const scenarioWriters = {
 export const scenarioNames = Object.freeze(Object.keys(scenarioWriters));
 
 export async function makeScenarioVault(name, options = {}) {
-  if (options.root !== undefined) {
-    return options.root;
-  }
-  return await makeTempVault(options.prefix ?? `assisto-${name}-`);
+  const root = options.root ?? (await makeTempVault(options.prefix ?? `assisto-${name}-`));
+  await mkdir(path.join(root, "memory/transactions/pending"), { recursive: true });
+  return root;
 }
 
 export async function createScenarioVault(name, options = {}) {

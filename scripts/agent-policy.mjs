@@ -103,6 +103,7 @@ const coreBehaviorCommandNames = [...fullEvalChain, "check:memory-data"];
 
 const targetedGroups = {
   agent: ["tests/agent-control.mjs", "tests/agent-policy.mjs", "tests/agent-runner.mjs", "tests/agent-pr.mjs"],
+  "scenario-factory": ["tests/scenario-factory.mjs"],
   workbench: ["tests/workbench.mjs", "tests/browser/agent-workbench.spec.mjs"],
   retrieval: ["tests/scenarios/run-retrieval.mjs", "tests/scenarios/run-answers.mjs"],
   memory: ["tests/check-memory-data.mjs", "tests/core-v3-memory-hardening.mjs"]
@@ -172,10 +173,17 @@ function hasAny(categories, values) {
   return values.some((value) => categories.includes(value));
 }
 
-function inferTargetedGroups(categories) {
+function hasChangedFile(changedFiles, paths) {
+  return changedFiles.some((file) => paths.includes(file));
+}
+
+function inferTargetedGroups(categories, changedFiles) {
   const groups = [];
-  if (hasAny(categories, ["workflow", "tests"])) {
+  if (hasAny(categories, ["workflow"]) || hasChangedFile(changedFiles, targetedGroups.agent)) {
     groups.push({ name: "agent", commands: targetedGroups.agent });
+  }
+  if (hasChangedFile(changedFiles, ["tests/scenario-factory.mjs", "tests/helpers/scenario-factory.mjs"])) {
+    groups.push({ name: "scenario-factory", commands: targetedGroups["scenario-factory"] });
   }
   if (hasAny(categories, ["workbench"])) {
     groups.push({ name: "workbench", commands: targetedGroups.workbench });
@@ -287,7 +295,7 @@ export function buildValidationPlan({
     categories,
     changed_files: changedFiles,
     file_reasons: explainChangedFiles(changedFiles),
-    targeted_groups: inferTargetedGroups(categories),
+    targeted_groups: inferTargetedGroups(categories, changedFiles),
     commands: filteredCommands,
     skipped
   };
