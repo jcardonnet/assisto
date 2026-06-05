@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-`main` is synced at `8c54595 [codex] Harden agent review harness focus areas (#132)`.
+`main` is synced at `0258cb8 [codex] Add agent environment diagnostics (#135)`.
 
-PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures.
 
-Current implementation slice: PR 8, Environment Diagnostics v2, on branch `codex/agent-diagnostics-v2`.
+Current implementation slice: PR 9, Mixedbread Refresh Orchestrator, on branch `codex/agent-mxbai-refresh`.
 
 ## Operating Rules
 
@@ -27,7 +27,7 @@ Current implementation slice: PR 8, Environment Diagnostics v2, on branch `codex
 - Preserve explicit safety gates: CI green, mergeable PR, non-draft PR, memory-data guard pass, recorded validation pass, and explicit `--merge --yes` before merging.
 - Run `pnpm check:memory-data` before staging and before every closeout.
 - Use `TMPDIR=/tmp` for test/eval commands that create temp files.
-- Refresh Mixedbread only after a successful merge and synced `main`, using `pnpm mxbai:upload` then `pnpm mxbai:smoke`.
+- Refresh Mixedbread only after a successful merge and synced `main`, using `pnpm agent:mxbai refresh`.
 
 ## Current Baseline
 
@@ -1754,45 +1754,50 @@ Expected: pass.
 
 **Purpose:** Make post-merge Mixedbread refresh consistent, logged, and diagnostically useful.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-mxbai-refresh`. The new `pnpm agent:mxbai refresh` wrapper builds a deterministic upload-then-smoke plan, runs each underlying command through `agent:run` for `.assisto-agent/logs/**` diagnostics, uses WSL-safe temp variables, and replaces the raw `mxbai:upload`/`mxbai:smoke` closeout calls. The tests follow the repository's exported-runner integration style and are wired into `tests/run-integration.mjs`. Focused tests, `pnpm lint`, `pnpm typecheck`, `pnpm test` outside the sandbox after the known nested-git EPERM, and `pnpm check:memory-data` passed.
+
 **Files:**
 
 - Create `scripts/agent-mxbai.mjs`
 - Modify `package.json`
 - Create `tests/agent-mxbai.mjs`
+- Modify `tests/run-integration.mjs`
+- Modify `tests/script-helpers.mjs`
+- Modify `tests/agent-pr.mjs`
+- Modify `scripts/agent-pr.mjs`
 - Modify `docs/agent-acceleration.md`
 
 ### Task 9.1: Add refresh-plan tests
 
-- [ ] **Step 1: Create `tests/agent-mxbai.mjs`**
+- [x] **Step 1: Create `tests/agent-mxbai.mjs`**
 
 ```js
 import assert from "node:assert/strict";
-import test from "node:test";
 import { buildMxbaiRefreshPlan } from "../scripts/agent-mxbai.mjs";
 
-test("Mixedbread refresh plan runs upload before smoke", () => {
+export async function runAgentMxbaiTests() {
   const plan = buildMxbaiRefreshPlan({ store: "assisto" });
 
   assert.deepEqual(plan.commands, [
     { name: "upload", command: "pnpm mxbai:upload", store: "assisto" },
     { name: "smoke", command: "pnpm mxbai:smoke", store: "assisto" }
   ]);
-});
+}
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run:
 
 ```bash
-node --test tests/agent-mxbai.mjs
+node tests/agent-mxbai.mjs
 ```
 
 Expected: failure because script does not exist.
 
 ### Task 9.2: Implement Mixedbread wrapper
 
-- [ ] **Step 1: Create `scripts/agent-mxbai.mjs`**
+- [x] **Step 1: Create `scripts/agent-mxbai.mjs`**
 
 ```js
 #!/usr/bin/env node
@@ -1808,8 +1813,8 @@ export function buildMxbaiRefreshPlan({ store = process.env.MXBAI_STORE ?? "assi
   };
 }
 
-function runPnpmScript(script) {
-  const result = spawnSync("pnpm", [script], {
+function runLoggedPnpmScript(script) {
+  const result = spawnSync("pnpm", ["agent:run", "--", "pnpm", script], {
     stdio: "inherit",
     env: { ...process.env, TMPDIR: "/tmp", TEMP: "/tmp", TMP: "/tmp" }
   });
@@ -1835,8 +1840,8 @@ function main() {
   if (json) {
     console.log(JSON.stringify(plan, null, 2));
   }
-  runPnpmScript("mxbai:upload");
-  runPnpmScript("mxbai:smoke");
+  runLoggedPnpmScript("mxbai:upload");
+  runLoggedPnpmScript("mxbai:smoke");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -1844,7 +1849,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 ```
 
-- [ ] **Step 2: Add package script**
+- [x] **Step 2: Add package script**
 
 Add:
 
@@ -1852,19 +1857,19 @@ Add:
 "agent:mxbai": "node scripts/agent-mxbai.mjs"
 ```
 
-- [ ] **Step 3: Run targeted tests**
+- [x] **Step 3: Run targeted tests**
 
 Run:
 
 ```bash
-node --test tests/agent-mxbai.mjs
+node tests/agent-mxbai.mjs
 ```
 
 Expected: pass.
 
 ### Task 9.3: Integrate with PR closeout
 
-- [ ] **Step 1: Modify `scripts/agent-pr.mjs`**
+- [x] **Step 1: Modify `scripts/agent-pr.mjs`**
 
 Replace:
 
@@ -1879,7 +1884,7 @@ with:
 inherit("pnpm", ["agent:mxbai", "refresh"]);
 ```
 
-- [ ] **Step 2: Validate PR 9**
+- [x] **Step 2: Validate PR 9**
 
 Run:
 

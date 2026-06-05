@@ -6,7 +6,7 @@ Current branch: `codex/w1-contract-scaffolds`
 
 ## Status Update - 2026-06-05
 
-Superseded by PR #115, merged to `main` as `8e830e5 [codex] Add Wave 1 contract scaffolds to main (#115)`. Current `main` is now `8c54595 [codex] Harden agent review harness focus areas (#132)`.
+Superseded by PR #115, merged to `main` as `8e830e5 [codex] Add Wave 1 contract scaffolds to main (#115)`. Current `main` is now `0258cb8 [codex] Add agent environment diagnostics (#135)`.
 
 The PR #111/#112 stack, local-only `99e7c9b` push step, retargeting steps, and post-merge Mixedbread refresh described below are complete or obsolete. Keep this file only as historical context for the Wave 1 closeout. Current follow-up work should start from synced `main`.
 

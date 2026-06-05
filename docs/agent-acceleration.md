@@ -106,4 +106,14 @@ pnpm agent:note --kind review --text "Invariant review passed: no direct canonic
 | `sandbox_child_process_eperm` | Nested process blocked | Rerun through `pnpm agent:run` outside sandbox |
 | `wsl_access_denied` | Windows-to-WSL access denied | `wsl.exe -d Ubuntu --cd /home/jc/assisto -- <cmd>` |
 | `mixedbread_auth_or_network` | Mixedbread auth/network unavailable | Check `MXBAI_API_KEY` and rerun trusted Mixedbread command |
-| `mixedbread_smoke_no_results` | Store query did not find expected docs | `pnpm mxbai:upload && pnpm mxbai:smoke` |
+| `mixedbread_smoke_no_results` | Store query did not find expected docs | `pnpm agent:mxbai refresh` |
+
+## Mixedbread Refresh
+
+After a PR merges and local `main` is synced, refresh the trusted Mixedbread store through the logged wrapper:
+
+```bash
+pnpm agent:mxbai refresh
+```
+
+The wrapper runs manifest-scoped upload before smoke, sets WSL-safe temp variables, and routes each underlying command through `agent:run` so failures get `.assisto-agent/logs/**` diagnostics.
