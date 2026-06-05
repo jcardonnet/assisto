@@ -157,8 +157,17 @@ const canonicalMemoryRoots = [
   "memory/topics/"
 ];
 
+function isGuardedMemoryPath(file) {
+  return (
+    file === "memory/events" ||
+    file.startsWith("memory/events/") ||
+    file === "memory/transactions" ||
+    file.startsWith("memory/transactions/")
+  );
+}
+
 function classifyFile(file) {
-  if (file.startsWith("memory/events/") || file.startsWith("memory/transactions/")) {
+  if (isGuardedMemoryPath(file)) {
     return "guarded-memory-data";
   }
   if (canonicalMemoryRoots.some((root) => file.startsWith(root))) {
@@ -338,7 +347,7 @@ export function buildPolicyResult({ changedFiles, ...planOptions }) {
   const categories = unique(changedFiles.map(classifyFile));
   const findings = [];
 
-  const guarded = changedFiles.filter((file) => file.startsWith("memory/events/") || file.startsWith("memory/transactions/"));
+  const guarded = changedFiles.filter(isGuardedMemoryPath);
   if (guarded.length > 0) {
     findings.push({
       severity: "error",
@@ -378,10 +387,43 @@ function runGit(args) {
   }
 }
 
+function parseStatusLine(line) {
+  if (line.length >= 3 && line[2] === " ") {
+    return {
+      code: line.slice(0, 2),
+      path: statusPath(line.slice(3))
+    };
+  }
+  if (line.length >= 2 && line[1] === " ") {
+    return {
+      code: ` ${line[0]}`,
+      path: statusPath(line.slice(2))
+    };
+  }
+  return {
+    code: line.slice(0, 2),
+    path: statusPath(line.slice(3))
+  };
+}
+
+function statusPath(raw) {
+  const rawPath = raw.trim();
+  return rawPath.split(" -> ").at(-1) ?? rawPath;
+}
+
+export function changedFilesFromStatusPorcelain(output) {
+  return output
+    .split("\n")
+    .filter(Boolean)
+    .map(parseStatusLine)
+    .filter((item) => !(item.code === "??" && isGuardedMemoryPath(item.path)))
+    .map((item) => item.path);
+}
+
 function changedFilesFromGit() {
   const names = [
     ...runGit(["diff", "--name-only", "origin/main...HEAD"]).split("\n"),
-    ...runGit(["status", "--porcelain"]).split("\n").map((line) => line.replace(/^.{2}\s?/u, "").trim())
+    ...changedFilesFromStatusPorcelain(runGit(["status", "--porcelain"]))
   ];
   return unique(names.filter(Boolean));
 }
