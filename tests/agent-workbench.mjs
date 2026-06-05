@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildAgentWorkbenchSnapshot,
+  createAgentWorkbenchApp,
   previewAgentWorkbenchAction
 } from "../scripts/agent-workbench.mjs";
 
@@ -54,6 +55,38 @@ export async function runAgentWorkbenchTests() {
 
     const mutatingPreview = previewAgentWorkbenchAction("note_next");
     assert.equal(mutatingPreview.mutating, true);
+
+    const app = createAgentWorkbenchApp({
+      root,
+      commandRunner: async () => JSON.stringify({
+        mode: "workflow-scripts",
+        commands: [{ name: "lint", command: "pnpm lint" }],
+        skipped: []
+      })
+    });
+
+    const validationResponse = await app.handle(new globalThis.Request("http://127.0.0.1/api/validation/plan"));
+    const validationBody = await validationResponse.json();
+    assert.equal(validationResponse.status, 200);
+    assert.equal(validationBody.mode, "workflow-scripts");
+    assert.equal(validationBody.commands[0].name, "lint");
+
+    const stageResponse = await app.handle(new globalThis.Request("http://127.0.0.1/api/stage/classify", {
+      method: "POST",
+      body: JSON.stringify({ paths: ["memory/events/example.md"] })
+    }));
+    const stageBody = await stageResponse.json();
+    assert.equal(stageResponse.status, 200);
+    assert.equal(stageBody.allowed, false);
+    assert.deepEqual(stageBody.guarded_paths, ["memory/events/example.md"]);
+
+    const mxbaiResponse = await app.handle(new globalThis.Request("http://127.0.0.1/api/mxbai/plan"));
+    const mxbaiBody = await mxbaiResponse.json();
+    assert.equal(mxbaiResponse.status, 200);
+    assert.deepEqual(
+      mxbaiBody.commands.map((command) => command.name),
+      ["upload", "smoke"]
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

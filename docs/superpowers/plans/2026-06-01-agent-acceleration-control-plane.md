@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-`main` is synced at `0258cb8 [codex] Add agent environment diagnostics (#135)`.
+`main` is synced at `0a4d63f [codex] Add Mixedbread refresh orchestrator (#137)`.
 
-PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path.
 
-Current implementation slice: PR 9, Mixedbread Refresh Orchestrator, on branch `codex/agent-mxbai-refresh`.
+Current implementation slice: PR 10, Agent Workbench v2, on branch `codex/agent-workbench-v2`.
 
 ## Operating Rules
 
@@ -1905,6 +1905,8 @@ Expected: pass.
 
 **Purpose:** Give overnight runs a local cockpit for seeing current state, validation plans, diagnostics, PR readiness, staging safety, repo map, and handoff without reading scattered logs.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-workbench-v2`. The Workbench now has a Fetch-style app surface, read-only `/api/validation/plan`, `/api/stage/classify`, and `/api/mxbai/plan` routes, UI panels for Validation, Staging, and Mixedbread, and PR copy that reinforces the no-Copilot closeout gates. Focused route tests, full Chromium coverage, and planner-selected validation passed.
+
 **Files:**
 
 - Modify `scripts/agent-workbench.mjs`
@@ -1914,32 +1916,31 @@ Expected: pass.
 
 ### Task 10.1: Add API route tests
 
-- [ ] **Step 1: Extend `tests/agent-workbench.mjs`**
+- [x] **Step 1: Extend `tests/agent-workbench.mjs`**
 
 Add:
 
 ```js
-test("agent workbench exposes validation plan endpoint", async () => {
-  const app = createAgentWorkbenchApp({
-    root: fixtureRoot,
-    commandRunner: async () => JSON.stringify({
-      mode: "workflow-scripts",
-      commands: [{ name: "lint", command: "pnpm lint" }],
-      skipped: []
-    })
-  });
+const app = createAgentWorkbenchApp({
+  root,
+  commandRunner: async () => JSON.stringify({
+    mode: "workflow-scripts",
+    commands: [{ name: "lint", command: "pnpm lint" }],
+    skipped: []
+  })
+});
 
-  const response = await app.handle(new Request("http://127.0.0.1/api/validation/plan"));
+{
+  const response = await app.handle(new globalThis.Request("http://127.0.0.1/api/validation/plan"));
   const body = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(body.mode, "workflow-scripts");
   assert.equal(body.commands[0].name, "lint");
-});
+}
 
-test("agent workbench exposes staging classification endpoint", async () => {
-  const app = createAgentWorkbenchApp({ root: fixtureRoot });
-  const response = await app.handle(new Request("http://127.0.0.1/api/stage/classify", {
+{
+  const response = await app.handle(new globalThis.Request("http://127.0.0.1/api/stage/classify", {
     method: "POST",
     body: JSON.stringify({ paths: ["memory/events/example.md"] })
   }));
@@ -1948,75 +1949,93 @@ test("agent workbench exposes staging classification endpoint", async () => {
   assert.equal(response.status, 200);
   assert.equal(body.allowed, false);
   assert.deepEqual(body.guarded_paths, ["memory/events/example.md"]);
-});
+}
+
+{
+  const response = await app.handle(new globalThis.Request("http://127.0.0.1/api/mxbai/plan"));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.commands.map((command) => command.name), ["upload", "smoke"]);
+}
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run the focused route test runner**
 
 Run:
 
 ```bash
-node --test tests/agent-workbench.mjs
+node --input-type=module -e 'import("./tests/agent-workbench.mjs").then(({ runAgentWorkbenchTests }) => runAgentWorkbenchTests())'
 ```
 
-Expected: failure until endpoints exist.
+Expected: pass.
 
 ### Task 10.2: Add endpoints
 
-- [ ] **Step 1: Modify `scripts/agent-workbench.mjs`**
+- [x] **Step 1: Modify `scripts/agent-workbench.mjs`**
 
 Add routes:
 
 ```js
-if (url.pathname === "/api/validation/plan") {
-  return json(await runJsonCommand(["pnpm", "agent:validate", "--", "--plan", "--json"]));
+if (request.method === "GET" && url.pathname === "/api/validation/plan") {
+  return json(await runJsonCommand(["pnpm", "agent:validate", "--", "--plan", "--json"], commandRunner));
 }
 
-if (url.pathname === "/api/stage/classify" && request.method === "POST") {
+if (request.method === "POST" && url.pathname === "/api/stage/classify") {
   const body = await request.json();
   const { classifyStageRequest } = await import("./agent-stage.mjs");
   return json(classifyStageRequest({
     paths: body.paths ?? [],
-    allowMemoryData: body.allowMemoryData === true
+    allowMemoryData: body.allowMemoryData === true,
+    root
   }));
 }
 
-if (url.pathname === "/api/mxbai/plan") {
+if (request.method === "GET" && url.pathname === "/api/mxbai/plan") {
   const { buildMxbaiRefreshPlan } = await import("./agent-mxbai.mjs");
   return json(buildMxbaiRefreshPlan({}));
 }
 ```
 
-- [ ] **Step 2: Run route tests**
+- [x] **Step 2: Run route tests**
 
 Run:
 
 ```bash
-node --test tests/agent-workbench.mjs
+node --input-type=module -e 'import("./tests/agent-workbench.mjs").then(({ runAgentWorkbenchTests }) => runAgentWorkbenchTests())'
 ```
 
 Expected: pass.
 
 ### Task 10.3: Add browser coverage
 
-- [ ] **Step 1: Extend `tests/browser/agent-workbench.spec.mjs`**
+- [x] **Step 1: Extend `tests/browser/agent-workbench.spec.mjs`**
 
 Add:
 
 ```js
-test("Agent Workbench shows validation and staging guard panels", async ({ page }) => {
-  await page.goto(serverUrl);
-  await page.getByRole("tab", { name: "Validation" }).click();
-  await expect(page.getByText("Validation Plan")).toBeVisible();
-  await expect(page.getByText("pnpm lint")).toBeVisible();
+test("agent workbench renders run state and explicit action previews", async ({ page }) => {
+  await page.goto(server.url);
+  await page.getByRole("button", { name: "Validation" }).click();
+  await expect(page.getByRole("heading", { name: "Validation Plan" })).toBeVisible();
+  await page.getByRole("button", { name: "Refresh validation plan" }).click();
+  await expect(page.locator("#validation-output")).toContainText("pnpm lint");
 
-  await page.getByRole("tab", { name: "PR" }).click();
+  await page.getByRole("button", { name: "PR", exact: true }).click();
   await expect(page.getByText("No-Copilot Closeout")).toBeVisible();
-  await expect(page.getByText("memory-data guard")).toBeVisible();
+  await expect(page.locator('[data-panel="PR"]')).toContainText("memory-data guard");
+
+  await page.getByRole("button", { name: "Staging" }).click();
+  await page.getByRole("button", { name: "Check memory-data guard" }).click();
+  await expect(page.locator("#stage-output")).toContainText("guarded_paths");
+
+  await page.getByRole("button", { name: "Mixedbread" }).click();
+  await page.getByRole("button", { name: "Preview refresh plan" }).click();
+  await expect(page.locator("#mxbai-output")).toContainText("mxbai:upload");
 });
 ```
 
-- [ ] **Step 2: Update client markup in `scripts/agent-workbench.mjs`**
+- [x] **Step 2: Update client markup in `scripts/agent-workbench.mjs`**
 
 Add tabs:
 
@@ -2031,23 +2050,24 @@ Add tabs:
 
 Each mutating action button must show a confirmation prompt and call an existing CLI helper.
 
-- [ ] **Step 3: Run browser test**
+- [x] **Step 3: Run focused browser test**
 
 Run:
 
 ```bash
-TMPDIR=/tmp pnpm test:browser
+TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm exec playwright test tests/browser/agent-workbench.spec.mjs --project=chromium
 ```
 
 Expected: pass in Chromium-capable environment.
 
 ### Task 10.4: Validate PR 10
 
-- [ ] **Step 1: Run full process validation**
+- [x] **Step 1: Run full process validation**
 
 Run:
 
 ```bash
+pnpm agent:validate --plan --json
 pnpm lint
 pnpm typecheck
 TMPDIR=/tmp pnpm test

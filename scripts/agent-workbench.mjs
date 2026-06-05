@@ -141,6 +141,86 @@ function runAction(root, action) {
   };
 }
 
+function json(value, status = 200) {
+  return globalThis.Response.json(value, { status });
+}
+
+function jsonError(message, status = 500) {
+  return json({ error: message }, status);
+}
+
+function defaultCommandRunner(root) {
+  return async (command) => {
+    const result = spawnSync(command[0], command.slice(1), {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        TMPDIR: "/tmp",
+        TEMP: "/tmp",
+        TMP: "/tmp"
+      }
+    });
+    if (result.error !== undefined) {
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error((result.stderr ?? "").trim() || `Command failed: ${command.join(" ")}`);
+    }
+    return result.stdout ?? "";
+  };
+}
+
+async function runJsonCommand(command, commandRunner) {
+  return JSON.parse(await commandRunner(command));
+}
+
+export function createAgentWorkbenchApp({ root = process.cwd(), commandRunner = defaultCommandRunner(root) } = {}) {
+  return {
+    async handle(request) {
+      try {
+        const url = new URL(request.url);
+        if (request.method === "GET" && url.pathname === "/") {
+          return new globalThis.Response(pageHtml(), { headers: { "content-type": "text/html; charset=utf-8" } });
+        }
+        if (request.method === "GET" && url.pathname === "/api/snapshot") {
+          return json(await buildAgentWorkbenchSnapshot(root));
+        }
+        if (request.method === "GET" && url.pathname === "/api/validation/plan") {
+          return json(await runJsonCommand(["pnpm", "agent:validate", "--", "--plan", "--json"], commandRunner));
+        }
+        if (request.method === "POST" && url.pathname === "/api/stage/classify") {
+          const body = await request.json();
+          const { classifyStageRequest } = await import("./agent-stage.mjs");
+          return json(classifyStageRequest({
+            paths: body.paths ?? [],
+            allowMemoryData: body.allowMemoryData === true,
+            root
+          }));
+        }
+        if (request.method === "GET" && url.pathname === "/api/mxbai/plan") {
+          const { buildMxbaiRefreshPlan } = await import("./agent-mxbai.mjs");
+          return json(buildMxbaiRefreshPlan({}));
+        }
+        if (request.method === "POST" && url.pathname === "/api/action/preview") {
+          return json(previewAgentWorkbenchAction((await request.json()).kind));
+        }
+        if (request.method === "POST" && url.pathname === "/api/action/run") {
+          const body = await request.json();
+          const action = previewAgentWorkbenchAction(body.kind);
+          if (action.mutating && body.confirmed !== true) {
+            return jsonError("Mutating action requires explicit confirmation.", 400);
+          }
+          return json(runAction(root, action));
+        }
+        return jsonError("Not found", 404);
+      } catch (error) {
+        return jsonError(error.message);
+      }
+    }
+  };
+}
+
 function pageHtml() {
   return `<!doctype html>
 <html lang="en">
@@ -173,12 +253,14 @@ function pageHtml() {
   </header>
   <main>
     <nav aria-label="Agent Workbench tabs">
-      ${["Run", "Validation", "Diagnostics", "PR", "Repo Map", "Handoff"].map((tab, index) => `<button class="${index === 0 ? "active" : ""}" data-tab="${tab}">${tab}</button>`).join("")}
+      ${["Run", "Validation", "Diagnostics", "PR", "Staging", "Mixedbread", "Repo Map", "Handoff"].map((tab, index) => `<button class="${index === 0 ? "active" : ""}" data-tab="${tab}">${tab}</button>`).join("")}
     </nav>
     <section class="active" data-panel="Run"><div class="panel"><h2>Run</h2><div id="run"></div></div></section>
-    <section data-panel="Validation"><div class="panel"><h2>Validation</h2><button data-action="validation_plan">Preview validation plan</button><pre id="validation-output"></pre></div></section>
+    <section data-panel="Validation"><div class="panel"><h2>Validation Plan</h2><button data-load="validation">Refresh validation plan</button><pre id="validation-output"></pre></div></section>
     <section data-panel="Diagnostics"><div class="panel"><h2>Diagnostics</h2><div id="diagnostics"></div></div></section>
-    <section data-panel="PR"><div class="panel"><h2>PR</h2><div id="pr"></div><div class="panel mutating"><h3>Confirmed Action</h3><label><input type="checkbox" id="confirm-note"> Confirm note write</label><button data-action="note_next" id="note-button" disabled>Record next-action note</button><pre id="note-output"></pre></div></div></section>
+    <section data-panel="PR"><div class="panel"><h2>PR</h2><div id="pr"></div><div class="panel"><h3>No-Copilot Closeout</h3><p>Closeout still requires green CI, mergeable non-draft PR, validation evidence, and memory-data guard pass.</p></div><div class="panel mutating"><h3>Confirmed Action</h3><label><input type="checkbox" id="confirm-note"> Confirm note write</label><button data-action="note_next" id="note-button" disabled>Record next-action note</button><pre id="note-output"></pre></div></div></section>
+    <section data-panel="Staging"><div class="panel"><h2>Staging</h2><button data-load="stage">Check memory-data guard</button><pre id="stage-output"></pre></div></section>
+    <section data-panel="Mixedbread"><div class="panel"><h2>Mixedbread</h2><button data-load="mxbai">Preview refresh plan</button><pre id="mxbai-output"></pre></div></section>
     <section data-panel="Repo Map"><div class="panel"><h2>Repo Map</h2><div id="repo-map"></div></div></section>
     <section data-panel="Handoff"><div class="panel"><h2>Handoff</h2><button data-action="handoff">Preview handoff command</button><pre id="handoff-output"></pre></div></section>
   </main>
@@ -199,6 +281,18 @@ function pageHtml() {
       document.querySelector("#pr").innerHTML = "<pre>" + JSON.stringify(state.snapshot.run?.pr_state || { message: "No PR state recorded." }, null, 2) + "</pre>";
       document.querySelector("#repo-map").innerHTML = state.snapshot.repo_map.areas.map((area) => "<article class='panel'><strong>" + area.area + "</strong><br>Tests: " + area.tests.join(", ") + "<br>Commands: " + area.commands.join(", ") + "</article>").join("");
     }
+    async function loadValidationPlan() {
+      const body = await jsonFetch("/api/validation/plan");
+      document.querySelector("#validation-output").textContent = JSON.stringify(body, null, 2);
+    }
+    async function loadStageGuard() {
+      const body = await jsonFetch("/api/stage/classify", { method: "POST", body: JSON.stringify({ paths: ["memory/events/example.md"] }) });
+      document.querySelector("#stage-output").textContent = JSON.stringify(body, null, 2);
+    }
+    async function loadMxbaiPlan() {
+      const body = await jsonFetch("/api/mxbai/plan");
+      document.querySelector("#mxbai-output").textContent = JSON.stringify(body, null, 2);
+    }
     document.querySelectorAll("[data-tab]").forEach((button) => {
       button.addEventListener("click", () => {
         document.querySelectorAll("[data-tab]").forEach((item) => item.classList.toggle("active", item === button));
@@ -207,6 +301,13 @@ function pageHtml() {
     });
     document.querySelector("#confirm-note").addEventListener("change", (event) => {
       document.querySelector("#note-button").disabled = !event.target.checked;
+    });
+    document.querySelectorAll("[data-load]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.dataset.load === "validation") await loadValidationPlan();
+        if (button.dataset.load === "stage") await loadStageGuard();
+        if (button.dataset.load === "mxbai") await loadMxbaiPlan();
+      });
     });
     document.querySelectorAll("[data-action]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -229,50 +330,29 @@ function pageHtml() {
 </html>`;
 }
 
-async function readBody(request) {
+async function requestFromNode(request, host) {
   const chunks = [];
   for await (const chunk of request) {
     chunks.push(chunk);
   }
-  return chunks.length === 0 ? {} : JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+  const url = new URL(request.url ?? "/", `http://${host}`);
+  const init = {
+    method: request.method,
+    headers: request.headers
+  };
+  if (body !== undefined) {
+    init.body = body;
+  }
+  return new globalThis.Request(url, init);
 }
 
-function sendJson(response, status, value) {
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  response.end(`${JSON.stringify(value, null, 2)}\n`);
-}
-
-export async function startAgentWorkbenchServer({ root = process.cwd(), host = "127.0.0.1", port = 3731 } = {}) {
+export async function startAgentWorkbenchServer({ root = process.cwd(), host = "127.0.0.1", port = 3731, commandRunner } = {}) {
+  const app = createAgentWorkbenchApp({ root, commandRunner });
   const server = createServer(async (request, response) => {
-    try {
-      const url = new URL(request.url ?? "/", `http://${host}`);
-      if (request.method === "GET" && url.pathname === "/") {
-        response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        response.end(pageHtml());
-        return;
-      }
-      if (request.method === "GET" && url.pathname === "/api/snapshot") {
-        sendJson(response, 200, await buildAgentWorkbenchSnapshot(root));
-        return;
-      }
-      if (request.method === "POST" && url.pathname === "/api/action/preview") {
-        sendJson(response, 200, previewAgentWorkbenchAction((await readBody(request)).kind));
-        return;
-      }
-      if (request.method === "POST" && url.pathname === "/api/action/run") {
-        const body = await readBody(request);
-        const action = previewAgentWorkbenchAction(body.kind);
-        if (action.mutating && body.confirmed !== true) {
-          sendJson(response, 400, { error: "Mutating action requires explicit confirmation." });
-          return;
-        }
-        sendJson(response, 200, runAction(root, action));
-        return;
-      }
-      sendJson(response, 404, { error: "Not found" });
-    } catch (error) {
-      sendJson(response, 500, { error: error.message });
-    }
+    const fetchResponse = await app.handle(await requestFromNode(request, host));
+    response.writeHead(fetchResponse.status, Object.fromEntries(fetchResponse.headers));
+    response.end(Buffer.from(await fetchResponse.arrayBuffer()));
   });
 
   await new Promise((resolve, reject) => {
