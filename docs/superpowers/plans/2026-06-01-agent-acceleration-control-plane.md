@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-PR #115 is merged to `main` as `8e830e5 [codex] Add Wave 1 contract scaffolds to main (#115)`. That completed the Wave 1 contract scaffolds, not this control-plane plan.
+`main` is synced at `e8afb12 [codex] Complete capability surface registry (#128)`.
 
-Current follow-up branch: `codex/agent-no-copilot-closeout-v2`.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces.
 
-Current implementation slice: PR 1, No-Copilot PR Closeout. The old local branch name `codex/agent-no-copilot-closeout` points behind current `main`, so this follow-up uses the `-v2` branch from synced `main`.
+Current implementation slice: PR 7, Local Subagent Review Harness, on branch `codex/agent-local-review-harness`.
 
 ## Operating Rules
 
@@ -1423,6 +1423,8 @@ Expected: pass.
 
 **Purpose:** Replace disabled Copilot review with deterministic local review prompts/checklists that subagents can run before PR creation.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-local-review-harness`. The review harness adds `pnpm agent:review`, deterministic invariant/test prompts with focus areas and validation commands, focused tests, integration runner wiring, and docs. The original red/green failure step below was collapsed into one implementation patch after local inspection; final targeted tests, lint, typecheck, `pnpm test`, and `pnpm check:memory-data` passed. PR 5 route/client modularization remains deferred; PR 8 is the next control-plane slice after this harness.
+
 **Files:**
 
 - Create `scripts/agent-review.mjs`
@@ -1432,7 +1434,7 @@ Expected: pass.
 
 ### Task 7.1: Add review-plan tests
 
-- [ ] **Step 1: Create `tests/agent-review.mjs`**
+- [x] **Step 1: Create `tests/agent-review.mjs`**
 
 ```js
 import assert from "node:assert/strict";
@@ -1460,7 +1462,7 @@ test("test review plan includes targeted rerun guidance", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run targeted review test**
 
 Run:
 
@@ -1468,11 +1470,11 @@ Run:
 node --test tests/agent-review.mjs
 ```
 
-Expected: failure because script does not exist.
+Expected: pass after the implementation patch.
 
 ### Task 7.2: Implement review plan generator
 
-- [ ] **Step 1: Create `scripts/agent-review.mjs`**
+- [x] **Step 1: Create `scripts/agent-review.mjs`**
 
 ```js
 #!/usr/bin/env node
@@ -1549,7 +1551,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 ```
 
-- [ ] **Step 2: Add package script**
+- [x] **Step 2: Add package script**
 
 Add:
 
@@ -1557,7 +1559,7 @@ Add:
 "agent:review": "node scripts/agent-review.mjs"
 ```
 
-- [ ] **Step 3: Run targeted tests**
+- [x] **Step 3: Run targeted tests**
 
 Run:
 
@@ -1569,7 +1571,7 @@ Expected: pass.
 
 ### Task 7.3: Document subagent review prompts
 
-- [ ] **Step 1: Add to `docs/agent-acceleration.md`**
+- [x] **Step 1: Add to `docs/agent-acceleration.md`**
 
 ```md
 ## Local Review Harness
@@ -1588,7 +1590,7 @@ pnpm agent:note --kind review --text "Invariant review passed: no direct canonic
 ```
 ```
 
-- [ ] **Step 2: Validate PR 7**
+- [x] **Step 2: Validate PR 7**
 
 Run:
 

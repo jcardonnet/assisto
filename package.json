@@ -50,6 +50,7 @@
     "agent:pr": "node scripts/agent-pr.mjs",
     "agent:ci-local": "node scripts/agent-ci-local.mjs",
     "agent:map": "node scripts/agent-map.mjs",
+    "agent:review": "node scripts/agent-review.mjs",
     "agent:workbench": "node scripts/agent-workbench.mjs",
     "eval:maintenance": "node tests/scenarios/run-maintenance.mjs",
     "eval:context-packs": "node tests/scenarios/run-context-packs.mjs"
