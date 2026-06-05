@@ -15,12 +15,15 @@ export const capabilityRegistry = [
     mutationKind: "transaction_backed",
     cliCommands: ["wm capture", "wm capture presets", "wm capture quick", "wm capture feedback"],
     workbenchRoutes: [
+      // Read-only capture support routes.
       "/api/capture/inbox",
       "/api/capture/presets",
+      // Transaction-backed note and quick-capture routes.
       "/api/capture/preview",
       "/api/capture",
       "/api/capture/quick/preview",
       "/api/capture/quick",
+      // Transaction-backed capture feedback routes.
       "/api/capture/feedback/preview",
       "/api/capture/feedback"
     ],
@@ -58,11 +61,13 @@ export const capabilityRegistry = [
     mutationKind: "transaction_backed",
     cliCommands: ["wm entities stewardship", "wm entities command-center", "wm entities repair-v2"],
     workbenchRoutes: [
+      // Read-only stewardship and detail views.
       "/api/entities/stewardship",
       "/api/entities/stewardship/detail",
       "/api/entities/detail",
       "/api/entities/stewardship-v2",
       "/api/entities/command-center",
+      // Transaction-backed repair preview/stage pairs.
       "/api/entities/alias/preview",
       "/api/entities/alias/stage",
       "/api/entities/context/preview",
@@ -75,6 +80,7 @@ export const capabilityRegistry = [
       "/api/entities/ownership/stage",
       "/api/entities/identity-review/preview",
       "/api/entities/identity-review/stage",
+      // Context-note repairs are launched from entity and context stewardship views.
       "/api/entities/context-note/preview",
       "/api/entities/context-note/stage",
       "/api/entities/repair-v2/preview",
