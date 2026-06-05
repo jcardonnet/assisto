@@ -18,13 +18,34 @@ export async function runCapabilityRegistryTests() {
   assert.equal(core.capabilityRegistry, capabilities.capabilityRegistry);
   assert.equal(core.validateCapabilityRegistry, capabilities.validateCapabilityRegistry);
 
+  const capture = capabilities.capabilityRegistry.find((item) => item.id === "capture");
+  assert.equal(capture.cliCommands.includes("wm capture presets"), true);
+  assert.equal(capture.cliCommands.includes("wm capture feedback"), true);
+  assert.equal(capture.workbenchRoutes.includes("/api/capture/inbox"), true);
+  assert.equal(capture.workbenchRoutes.includes("/api/capture/presets"), true);
+  assert.equal(capture.workbenchRoutes.includes("/api/capture/feedback/preview"), true);
+  assert.equal(capture.workbenchRoutes.includes("/api/capture/feedback"), true);
+
   const answerContract = capabilities.capabilityRegistry.find((item) => item.id === "ask-answer-contract");
   assert.equal(answerContract.cliCommands.includes("wm ask --contract-v3"), true);
   assert.equal(answerContract.cliCommands.includes("wm ask --contract-v4"), true);
 
   const entityStewardship = capabilities.capabilityRegistry.find((item) => item.id === "entity-stewardship");
   assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/stewardship/detail"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/detail"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/alias/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/alias/stage"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/context/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/context/stage"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/role/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/role/stage"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/reporting/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/reporting/stage"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/ownership/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/ownership/stage"), true);
   assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/identity-review/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/context-note/preview"), true);
+  assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/context-note/stage"), true);
   assert.equal(entityStewardship.workbenchRoutes.includes("/api/entities/repair-v2/preview"), true);
 
   assert.deepEqual(
