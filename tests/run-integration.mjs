@@ -26,6 +26,8 @@ import { runAgentPrTests } from "./agent-pr.mjs";
 import { runAgentCiLocalTests } from "./agent-ci-local.mjs";
 import { runAgentMapTests } from "./agent-map.mjs";
 import { runAgentWorkbenchTests } from "./agent-workbench.mjs";
+import { runFaultHarnessTests } from "./faults/fault-harness.mjs";
+import { runBaselineRunnerTests } from "./baselines/baseline-runner.mjs";
 
 export async function runIntegrationTests() {
   assertRequiredPaths();
@@ -56,6 +58,8 @@ export async function runIntegrationTests() {
   await runAgentCiLocalTests();
   await runAgentMapTests();
   await runAgentWorkbenchTests();
+  await runFaultHarnessTests();
+  await runBaselineRunnerTests();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
