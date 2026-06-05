@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-`main` is synced at `0a4d63f [codex] Add Mixedbread refresh orchestrator (#137)`.
+`main` is synced at `00146f8 [codex] Add Agent Workbench v2 routes (#139)`.
 
-PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path. PR 10 is merged, so Agent Workbench v2 now exposes validation-plan, staging-guard, Mixedbread-plan, and no-Copilot closeout panels.
 
-Current implementation slice: PR 10, Agent Workbench v2, on branch `codex/agent-workbench-v2`.
+Current implementation slice: policy follow-up on `codex/agent-policy-untracked-memory`, then return to PR 5 Workbench modularization.
 
 ## Operating Rules
 
@@ -1905,7 +1905,7 @@ Expected: pass.
 
 **Purpose:** Give overnight runs a local cockpit for seeing current state, validation plans, diagnostics, PR readiness, staging safety, repo map, and handoff without reading scattered logs.
 
-**Status Update - 2026-06-05:** Implemented on `codex/agent-workbench-v2`. The Workbench now has a Fetch-style app surface, read-only `/api/validation/plan`, `/api/stage/classify`, and `/api/mxbai/plan` routes, UI panels for Validation, Staging, and Mixedbread, and PR copy that reinforces the no-Copilot closeout gates. Focused route tests, full Chromium coverage, and planner-selected validation passed.
+**Status Update - 2026-06-05:** Implemented on `codex/agent-workbench-v2` and merged as PR #139. The Workbench now has a Fetch-style app surface, read-only `/api/validation/plan`, `/api/stage/classify`, and `/api/mxbai/plan` routes, UI panels for Validation, Staging, and Mixedbread, and PR copy that reinforces the no-Copilot closeout gates. Focused route tests, full Chromium coverage, and planner-selected validation passed.
 
 **Files:**
 
@@ -2097,11 +2097,11 @@ pnpm agent:mxbai refresh
 Expected:
 
 - `check:memory-data` reports no blocking guarded changes.
-- `agent:policy check` passes.
+- `agent:policy check` passes. Follow-up `codex/agent-policy-untracked-memory` aligns policy with `check:memory-data` so preserved untracked dogfood Events/Transactions are reported but nonblocking.
 - `agent:validate --plan` prints a coherent changed-file plan.
 - `validate:local` passes or any environment failure is classified by `agent:diagnose:last`.
 - `agent:ci-local --plan` prints the local CI capsule command plan.
-- `agent:mxbai refresh` uploads and smoke-tests the trusted Mixedbread store.
+- `agent:mxbai refresh` uploads and smoke-tests the trusted Mixedbread store when explicit external upload approval is available.
 
 ## Execution Strategy
 
