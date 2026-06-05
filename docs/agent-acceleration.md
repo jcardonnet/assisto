@@ -117,3 +117,19 @@ pnpm agent:mxbai refresh
 ```
 
 The wrapper runs manifest-scoped upload before smoke, sets WSL-safe temp variables, and routes each underlying command through `agent:run` so failures get `.assisto-agent/logs/**` diagnostics.
+
+## Agent Workbench
+
+Start the local-only cockpit with:
+
+```bash
+pnpm agent:workbench serve
+```
+
+The Workbench shows run state, diagnostics, PR state, repo map, and handoff controls. The v2 panels also expose read-only validation, staging, and Mixedbread previews:
+
+- Validation calls `/api/validation/plan` and shows the JSON plan from `pnpm agent:validate --plan --json`.
+- Staging calls `/api/stage/classify` so guarded memory-data paths are visible before staging.
+- Mixedbread calls `/api/mxbai/plan` and previews the upload-then-smoke refresh sequence without running network operations.
+
+Mutating controls remain explicit: the next-action note button is disabled until confirmation is checked.
