@@ -16,6 +16,7 @@ import { runCliIntegrationTests } from "./cli-integration.mjs";
 import { runPiExtensionTests } from "./pi-extension.mjs";
 import { runWorkbenchTests } from "./workbench.mjs";
 import { runWorkbenchAnswerContractV3Tests } from "./workbench-answer-contract-v3.mjs";
+import { runWorkbenchModularizationTests } from "./workbench-modularization.mjs";
 import { runScenarioFactoryTests } from "./scenario-factory.mjs";
 import { runScriptHelperTests } from "./script-helpers.mjs";
 import { runCheckMemoryDataTests } from "./check-memory-data.mjs";
@@ -50,6 +51,7 @@ export async function runIntegrationTests() {
   await runPiExtensionTests();
   await runWorkbenchTests();
   await runWorkbenchAnswerContractV3Tests();
+  await runWorkbenchModularizationTests();
   await runScenarioFactoryTests();
   await runScriptHelperTests();
   await runCheckMemoryDataTests();
