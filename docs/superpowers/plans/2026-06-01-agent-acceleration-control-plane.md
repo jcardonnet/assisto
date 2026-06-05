@@ -999,6 +999,8 @@ Expected: pass.
 
 **Purpose:** Reduce editing risk and review cost by splitting the large Workbench file into focused modules without changing behavior.
 
+**Status Update - 2026-06-05:** Server-first cut implemented on `codex/agent-workbench-modularization`. The public Workbench route contracts now live in `shared/contracts.ts` and remain re-exported from `index.ts`; the Node HTTP bridge moved to `server/http.ts`; route lookup moved to `server/route-registry.ts`; and `/api/ask` now dispatches through `server/routes/ask.ts` with dependency injection to avoid root export cycles. Client tab extraction is deferred because the current browser client is a single shared-state script with broad selector-heavy coverage; a later PR should introduce an explicit client state/context seam before moving tabs.
+
 **Files:**
 
 - Modify `packages/workbench/src/index.ts`
@@ -1023,7 +1025,7 @@ Expected: pass.
 
 ### Task 5.1: Add behavior-preservation smoke test
 
-- [ ] **Step 1: Create `tests/workbench-modularization.mjs`**
+- [x] **Step 1: Create `tests/workbench-modularization.mjs`**
 
 ```js
 import assert from "node:assert/strict";
@@ -1035,7 +1037,7 @@ test("workbench index exports the compatible server factory", () => {
 });
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run:
 
@@ -1047,7 +1049,7 @@ Expected: pass before refactor; this locks the compatibility export.
 
 ### Task 5.2: Extract route registry
 
-- [ ] **Step 1: Create `packages/workbench/src/server/route-registry.ts`**
+- [x] **Step 1: Create `packages/workbench/src/server/route-registry.ts`**
 
 ```ts
 export type WorkbenchRoute = {
@@ -1061,7 +1063,7 @@ export function findRoute(routes: WorkbenchRoute[], method: string, pathname: st
 }
 ```
 
-- [ ] **Step 2: Create `packages/workbench/src/server/http.ts`**
+- [x] **Step 2: Create `packages/workbench/src/server/http.ts`**
 
 ```ts
 import { createServer } from "node:http";
@@ -1083,7 +1085,7 @@ export function createHttpServer(routes: WorkbenchRoute[]) {
 }
 ```
 
-- [ ] **Step 3: Move one route first**
+- [x] **Step 3: Move one route first**
 
 Create `packages/workbench/src/server/routes/ask.ts`:
 
@@ -1103,7 +1105,7 @@ export function askRoutes(): WorkbenchRoute[] {
 
 Then replace the stub with the existing `/api/ask` handler body copied from `packages/workbench/src/index.ts`.
 
-- [ ] **Step 4: Run existing Workbench tests**
+- [x] **Step 4: Run existing Workbench tests**
 
 Run:
 

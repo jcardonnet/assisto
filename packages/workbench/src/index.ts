@@ -1,5 +1,5 @@
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import http, { type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -152,6 +152,12 @@ import {
   type TodayWorkbenchResult,
   type ValidationResult
 } from "@assisto/core";
+import { createWorkbenchHttpServer } from "./server/http";
+import { findRoute } from "./server/route-registry";
+import { askRoutes } from "./server/routes/ask";
+import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
+
+export type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
 export interface WorkbenchSnapshotOptions {
   query?: string;
@@ -459,18 +465,6 @@ export interface WorkbenchServerOptions {
   port?: number;
 }
 
-export interface WorkbenchRouteRequest {
-  method?: string;
-  url: string;
-  body?: string;
-}
-
-export interface WorkbenchRouteResponse {
-  status: number;
-  content_type: string;
-  body: string;
-}
-
 export interface RunningWorkbenchServer {
   server: Server;
   host: string;
@@ -534,9 +528,7 @@ export async function createWorkbenchSnapshot(
 export async function startWorkbenchServer(options: WorkbenchServerOptions): Promise<RunningWorkbenchServer> {
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 3721;
-  const server = http.createServer((request, response) => {
-    void handleRequest(options.root, request, response);
-  });
+  const server = createWorkbenchHttpServer(options.root, handleWorkbenchRoute);
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -568,29 +560,6 @@ export async function startWorkbenchServer(options: WorkbenchServerOptions): Pro
   };
 }
 
-async function handleRequest(root: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
-  try {
-    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await readRequestBody(request);
-    const route = await handleWorkbenchRoute(root, {
-      method: request.method,
-      url: request.url ?? "/",
-      body
-    });
-    response.writeHead(route.status, {
-      "content-type": route.content_type,
-      "cache-control": "no-store"
-    });
-    response.end(request.method === "HEAD" ? "" : route.body);
-  } catch (error) {
-    const route = jsonRoute(500, { error: error instanceof Error ? error.message : String(error) });
-    response.writeHead(route.status, {
-      "content-type": route.content_type,
-      "cache-control": "no-store"
-    });
-    response.end(route.body);
-  }
-}
-
 export async function handleWorkbenchRoute(
   root: string,
   request: WorkbenchRouteRequest
@@ -604,6 +573,11 @@ export async function handleWorkbenchRoute(
 
   if (method !== "GET" && method !== "HEAD") {
     return jsonRoute(405, { error: "Unsupported method." });
+  }
+
+  const registeredRoute = findRoute(workbenchRoutes(), method, requestUrl.pathname);
+  if (registeredRoute !== null) {
+    return registeredRoute.handler({ root, request, requestUrl });
   }
 
   if (requestUrl.pathname === "/") {
@@ -769,13 +743,6 @@ export async function handleWorkbenchRoute(
       const status = /^Transaction not found:/.test(message) ? 404 : 400;
       return jsonRoute(status, { error: message });
     }
-  }
-
-  if (requestUrl.pathname === "/api/ask") {
-    const query = optionalQuery(requestUrl);
-    return query
-      ? jsonRoute(200, await retrieveContextForAnswer(root, query))
-      : jsonRoute(400, { error: "Missing required query parameter: q." });
   }
 
   if (requestUrl.pathname === "/api/ask/answer-contract") {
@@ -995,6 +962,14 @@ export async function handleWorkbenchRoute(
   }
 
   return jsonRoute(404, { error: "Not found." });
+}
+
+function workbenchRoutes() {
+  return askRoutes({
+    jsonRoute,
+    optionalQuery,
+    retrieveContextForAnswer
+  });
 }
 
 async function handleWorkbenchPostRoute(
@@ -3263,24 +3238,6 @@ function parseBriefTargetKind(requestUrl: URL): { kind: SessionBriefTargetKind; 
   }
 
   return { error: "Invalid query parameter kind; expected person|context." };
-}
-
-async function readRequestBody(request: IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.byteLength;
-
-    if (totalBytes > 1_000_000) {
-      throw new Error("Workbench request body is too large.");
-    }
-
-    chunks.push(buffer);
-  }
-
-  return Buffer.concat(chunks).toString("utf8");
 }
 
 function parseJsonBody(body: string | undefined): Record<string, unknown> {
