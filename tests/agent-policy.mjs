@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildPolicyResult,
   buildValidationPlan,
+  changedFilesFromStatusPorcelain,
   capabilityValidationGroups
 } from "../scripts/agent-policy.mjs";
 import { loadTsModule } from "./ts-module-loader.mjs";
@@ -158,6 +159,24 @@ export async function runAgentPolicyTests() {
   const obsidianPolicy = buildPolicyResult({ changedFiles: [".obsidian/workspace.json"] });
   assert.equal(obsidianPolicy.passed, false);
   assert.equal(obsidianPolicy.findings.some((finding) => finding.code === "obsidian_changed"), true);
+
+  const statusFiles = changedFilesFromStatusPorcelain([
+    "M docs/agent-acceleration.md",
+    "?? memory/events/2026/2026-05/local.md",
+    "?? memory/transactions/pending/local.md",
+    " M memory/events/2026/2026-05/edited.md",
+    "A  memory/transactions/pending/staged.md",
+    "R  memory/events/2026/2026-05/renamed.md -> docs/renamed.md",
+    "?? .trunk/.gitignore"
+  ].join("\n"));
+  assert.deepEqual(statusFiles, [
+    "docs/agent-acceleration.md",
+    "memory/events/2026/2026-05/edited.md",
+    "memory/transactions/pending/staged.md",
+    "memory/events/2026/2026-05/renamed.md",
+    "docs/renamed.md",
+    ".trunk/.gitignore"
+  ]);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
