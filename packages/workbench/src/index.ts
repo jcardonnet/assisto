@@ -154,6 +154,7 @@ import {
 } from "@assisto/core";
 import { createWorkbenchHttpServer } from "./server/http";
 import { findRoute } from "./server/route-registry";
+import { jsonRoute, optionalQuery, textRoute } from "./server/route-utils";
 import { createAskRoute } from "./server/routes/ask";
 import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
@@ -967,8 +968,6 @@ export async function handleWorkbenchRoute(
 function workbenchRoutes() {
   return [
     createAskRoute({
-      jsonRoute,
-      optionalQuery,
       retrieveContextForAnswer
     })
   ];
@@ -3161,13 +3160,6 @@ function normalizeWorkbenchPath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\/+/, "").trim();
 }
 
-function optionalQuery(requestUrl: URL): string | undefined {
-  const query = requestUrl.searchParams.get("q") ?? requestUrl.searchParams.get("query");
-  const trimmed = query?.trim();
-
-  return trimmed ? trimmed : undefined;
-}
-
 function optionalTarget(requestUrl: URL): string | undefined {
   const target = requestUrl.searchParams.get("target") ?? requestUrl.searchParams.get("id") ?? requestUrl.searchParams.get("path");
   const trimmed = target?.trim();
@@ -3340,18 +3332,6 @@ function previewTempParent(): string {
   }
 
   return process.platform === "win32" ? os.tmpdir() : "/tmp";
-}
-
-function jsonRoute(status: number, body: unknown): WorkbenchRouteResponse {
-  return textRoute(status, `${JSON.stringify(body, null, 2)}\n`, "application/json; charset=utf-8");
-}
-
-function textRoute(status: number, body: string, contentType: string): WorkbenchRouteResponse {
-  return {
-    status,
-    content_type: contentType,
-    body
-  };
 }
 
 function stringValue(value: FrontmatterValue | undefined): string | undefined {

@@ -6,12 +6,15 @@ export async function runWorkbenchModularizationTests() {
   const workbench = await loadTsModule("packages/workbench/src/index.ts");
   const http = await loadTsModule("packages/workbench/src/server/http.ts");
   const registry = await loadTsModule("packages/workbench/src/server/route-registry.ts");
+  const routeUtils = await loadTsModule("packages/workbench/src/server/route-utils.ts");
   const ask = await loadTsModule("packages/workbench/src/server/routes/ask.ts");
 
   assert.equal(typeof workbench.startWorkbenchServer, "function");
   assert.equal(typeof workbench.handleWorkbenchRoute, "function");
   assert.equal(typeof http.createWorkbenchHttpServer, "function");
   assert.equal(typeof registry.findRoute, "function");
+  assert.equal(typeof routeUtils.jsonRoute, "function");
+  assert.equal(typeof routeUtils.optionalQuery, "function");
   assert.equal(typeof ask.createAskRoute, "function");
 
   const route = { method: "GET", pathname: "/api/example", handler: () => ({}) };
