@@ -1,8 +1,42 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { writeWorkbenchFixture } from "../workbench.mjs";
 import { makeTempVault, writeVaultFile } from "./temp-vault.mjs";
 
-export async function makeScenarioVault(name) {
-  return await makeTempVault(`assisto-${name}-`);
+export const scenarioNames = [
+  "manager-chain",
+  "review-backlog",
+  "stale-noop",
+  "context-project",
+  "duplicate-import",
+  "conflicting-role-claims",
+  "missing-evidence",
+  "retrieval-no-match"
+];
+
+const scenarioWriters = {
+  "manager-chain": writeManagerChainScenario,
+  "review-backlog": writeReviewBacklogScenario,
+  "stale-noop": writeStaleNoopScenario,
+  "context-project": writeContextProjectScenario,
+  "duplicate-import": writeDuplicateImportScenario,
+  "conflicting-role-claims": writeConflictingRoleScenario,
+  "missing-evidence": writeMissingEvidenceScenario,
+  "retrieval-no-match": writeRetrievalNoMatchScenario
+};
+
+export async function makeScenarioVault(name, options = {}) {
+  return await makeTempVault(options.prefix ?? `assisto-${name}-`);
+}
+
+export async function createScenarioVault(name, options = {}) {
+  if (!scenarioNames.includes(name)) {
+    throw new Error(`Unknown scenario: ${name}`);
+  }
+
+  const root = await makeScenarioVault(name, options);
+  await scenarioWriters[name](root);
+  return { root, name };
 }
 
 export async function writeContextProjectScenario(root) {
@@ -212,5 +246,10 @@ summary_generated_from:
 }
 
 export async function writeRetrievalNoMatchScenario(root) {
-  await writeManagerChainScenario(root);
+  await writeEmptyUsableVault(root);
+}
+
+async function writeEmptyUsableVault(root) {
+  await mkdir(path.join(root, "memory/schema"), { recursive: true });
+  await mkdir(path.join(root, "memory/events"), { recursive: true });
 }

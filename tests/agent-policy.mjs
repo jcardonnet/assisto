@@ -13,10 +13,13 @@ export async function runAgentPolicyTests() {
   const docsPlan = buildValidationPlan({ changedFiles: ["README.md"] });
   assert.deepEqual(commandNames(docsPlan), ["lint", "typecheck", "test"]);
   assert.equal(docsPlan.mode, "docs-process");
+  assert.deepEqual(docsPlan.targeted_groups, []);
 
   const workflowPlan = buildValidationPlan({ changedFiles: ["scripts/env-doctor.mjs"] });
   assert.deepEqual(commandNames(workflowPlan), ["lint", "typecheck", "test", "check:memory-data"]);
   assert.equal(workflowPlan.categories.includes("workflow"), true);
+  assert.deepEqual(workflowPlan.targeted_groups.map((group) => group.name), ["agent"]);
+  assert.equal(workflowPlan.targeted_groups[0].commands.includes("tests/agent-policy.mjs"), true);
 
   const corePlan = buildValidationPlan({ changedFiles: ["packages/core/src/retrieval/index.ts"] });
   assert.deepEqual(commandNames(corePlan), [
@@ -45,6 +48,7 @@ export async function runAgentPolicyTests() {
   const workbenchPlan = buildValidationPlan({ changedFiles: ["packages/workbench/src/index.ts"] });
   assert.equal(commandNames(workbenchPlan).includes("test:e2e"), true);
   assert.equal(commandNames(workbenchPlan).includes("test:browser"), true);
+  assert.deepEqual(workbenchPlan.targeted_groups.map((group) => group.name), ["workbench"]);
   const browser = workbenchPlan.commands.find((item) => item.name === "test:browser");
   assert.equal(browser.required, true);
   assert.equal(browser.cost, "high");
@@ -100,12 +104,14 @@ export async function runAgentPolicyTests() {
       reason: "Classified as core by deterministic path rules."
     }
   ]);
+  assert.deepEqual(corePlan.targeted_groups.map((group) => group.name), ["retrieval"]);
   assert.equal(corePlan.commands.every((item) => typeof item.cost === "string" && item.required === true), true);
   assert.equal(corePlan.skipped.some((item) => item.required === false), true);
 
   const memoryPolicy = buildPolicyResult({ changedFiles: ["memory/events/2026/example.md"] });
   assert.equal(memoryPolicy.passed, false);
   assert.equal(memoryPolicy.findings.some((finding) => finding.code === "guarded_memory_data_changed"), true);
+  assert.deepEqual(memoryPolicy.validation_plan.targeted_groups.map((group) => group.name), ["memory"]);
 
   const obsidianPolicy = buildPolicyResult({ changedFiles: [".obsidian/workspace.json"] });
   assert.equal(obsidianPolicy.passed, false);

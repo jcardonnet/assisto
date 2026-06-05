@@ -780,6 +780,8 @@ Expected: pass.
 
 **Purpose:** Cut repeated fixture setup time and make targeted validation more reliable.
 
+**Status Update - 2026-06-05:** Implemented on `codex/agent-scenario-factory-shards`. The scenario factory now exposes named scenario registry helpers, `retrieval-no-match` creates an empty usable vault, and validation plans emit targeted test groups for workflow, Workbench, retrieval, and memory-sensitive changes. Targeted tests, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm check:memory-data` passed.
+
 **Files:**
 
 - Modify `tests/helpers/scenario-factory.mjs`
@@ -792,7 +794,7 @@ Expected: pass.
 
 ### Task 4.1: Add scenario factory tests
 
-- [ ] **Step 1: Add factory tests to `tests/scenario-factory.mjs`**
+- [x] **Step 1: Add factory tests to `tests/scenario-factory.mjs`**
 
 ```js
 test("managerChainScenario creates cited manager and reporting claims", async () => {
@@ -813,7 +815,7 @@ test("retrievalNoMatchScenario creates an empty but valid vault", async () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -825,7 +827,7 @@ Expected: failure because the named scenarios are not implemented or exported.
 
 ### Task 4.2: Implement missing scenarios
 
-- [ ] **Step 1: Add exported scenario names in `tests/helpers/scenario-factory.mjs`**
+- [x] **Step 1: Add exported scenario names in `tests/helpers/scenario-factory.mjs`**
 
 Add a registry:
 
@@ -842,7 +844,7 @@ export const scenarioNames = [
 ];
 ```
 
-- [ ] **Step 2: Add `createScenarioVault` registry dispatch**
+- [x] **Step 2: Add `createScenarioVault` registry dispatch**
 
 ```js
 export async function createScenarioVault(name, options = {}) {
@@ -860,7 +862,7 @@ export async function createScenarioVault(name, options = {}) {
 }
 ```
 
-- [ ] **Step 3: Add manager chain writer**
+- [x] **Step 3: Add manager chain writer**
 
 ```js
 async function writeManagerChain(root) {
@@ -920,7 +922,7 @@ Kuastav reports to Jeff.
 }
 ```
 
-- [ ] **Step 4: Run targeted tests**
+- [x] **Step 4: Run targeted tests**
 
 Run:
 
@@ -932,7 +934,7 @@ Expected: pass.
 
 ### Task 4.3: Add targeted validation groups
 
-- [ ] **Step 1: Extend `scripts/agent-policy.mjs` with validation groups**
+- [x] **Step 1: Extend `scripts/agent-policy.mjs` with validation groups**
 
 Add:
 
@@ -964,7 +966,7 @@ function inferTargetedGroups(categories) {
 }
 ```
 
-- [ ] **Step 2: Add test to `tests/agent-policy.mjs`**
+- [x] **Step 2: Add test to `tests/agent-policy.mjs`**
 
 ```js
 test("validation plan includes targeted groups for workflow changes", () => {
@@ -976,7 +978,7 @@ test("validation plan includes targeted groups for workflow changes", () => {
 });
 ```
 
-- [ ] **Step 3: Validate PR 4**
+- [x] **Step 3: Validate PR 4**
 
 Run:
 

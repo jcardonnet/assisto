@@ -101,6 +101,13 @@ const evalHarnessCommandNames = [...fullEvalChain, "check:memory-data"];
 const workbenchCommandNames = ["test:e2e", "test:browser", ...recentUiEvalSubset, "check:memory-data"];
 const coreBehaviorCommandNames = [...fullEvalChain, "check:memory-data"];
 
+const targetedGroups = {
+  agent: ["tests/agent-control.mjs", "tests/agent-policy.mjs", "tests/agent-runner.mjs", "tests/agent-pr.mjs"],
+  workbench: ["tests/workbench.mjs", "tests/browser/agent-workbench.spec.mjs"],
+  retrieval: ["tests/scenarios/run-retrieval.mjs", "tests/scenarios/run-answers.mjs"],
+  memory: ["tests/check-memory-data.mjs", "tests/core-v3-memory-hardening.mjs"]
+};
+
 function command(name, reason) {
   const profile = commandProfiles[name];
   if (profile === undefined) {
@@ -163,6 +170,23 @@ function classifyFile(file) {
 
 function hasAny(categories, values) {
   return values.some((value) => categories.includes(value));
+}
+
+function inferTargetedGroups(categories) {
+  const groups = [];
+  if (hasAny(categories, ["workflow"])) {
+    groups.push({ name: "agent", commands: targetedGroups.agent });
+  }
+  if (hasAny(categories, ["workbench"])) {
+    groups.push({ name: "workbench", commands: targetedGroups.workbench });
+  }
+  if (hasAny(categories, ["core"])) {
+    groups.push({ name: "retrieval", commands: targetedGroups.retrieval });
+  }
+  if (hasAny(categories, ["guarded-memory-data", "memory"])) {
+    groups.push({ name: "memory", commands: targetedGroups.memory });
+  }
+  return groups;
 }
 
 function addCommands(commands, additions) {
@@ -257,6 +281,7 @@ export function buildValidationPlan({
     categories,
     changed_files: changedFiles,
     file_reasons: explainChangedFiles(changedFiles),
+    targeted_groups: inferTargetedGroups(categories),
     commands: filteredCommands,
     skipped
   };
@@ -339,6 +364,12 @@ function print(value, json) {
     console.log(`Categories: ${value.categories.join(", ") || "none"}`);
     for (const item of value.commands) {
       console.log(`- ${item.command}: ${item.reason}`);
+    }
+    if ((value.targeted_groups ?? []).length > 0) {
+      console.log("Targeted groups:");
+      for (const group of value.targeted_groups) {
+        console.log(`- ${group.name}: ${group.commands.join(", ")}`);
+      }
     }
     if ((value.skipped ?? []).length > 0) {
       console.log("Skipped:");
