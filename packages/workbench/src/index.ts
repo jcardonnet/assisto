@@ -139,9 +139,6 @@ import {
   type SeedKitInput,
   type SeedKitPreviewResult,
   type SeedKitResult,
-  type SessionBriefKind,
-  type SessionBriefTarget,
-  type SessionBriefTargetKind,
   type SourceAdapterCreateResult,
   type SourceAdapterKind,
   type SourceAdapterPreviewResult,
@@ -156,9 +153,11 @@ import { createWorkbenchHttpServer } from "./server/http";
 import { findRoute } from "./server/route-registry";
 import { jsonRoute, optionalQuery, textRoute } from "./server/route-utils";
 import { createAskRoute } from "./server/routes/ask";
+import { createBriefRoutes } from "./server/routes/briefs";
 import type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
 
 export type { WorkbenchRouteRequest, WorkbenchRouteResponse } from "./shared/contracts";
+export type { WorkbenchBriefTargetOption, WorkbenchBriefTargetsResponse } from "./server/routes/briefs";
 
 export interface WorkbenchSnapshotOptions {
   query?: string;
@@ -447,13 +446,6 @@ export type WorkbenchDogfoodHome = DogfoodHomeResult;
 export type WorkbenchActivationStatus = ActivationStatusResult;
 export type WorkbenchSeedKitResult = SeedKitResult;
 export type WorkbenchCaptureInbox = CaptureInboxResult;
-
-export type WorkbenchBriefTargetOption = SessionBriefTarget;
-
-export interface WorkbenchBriefTargetsResponse {
-  kind: SessionBriefTargetKind;
-  targets: WorkbenchBriefTargetOption[];
-}
 
 export interface WorkbenchReadWarning {
   path: string;
@@ -930,38 +922,6 @@ export async function handleWorkbenchRoute(
     return target ? jsonRoute(200, await readMaintenanceRun(root, target)) : jsonRoute(400, { error: "Missing required query parameter: id." });
   }
 
-  if (requestUrl.pathname === "/api/brief/targets") {
-    const parsedKind = parseBriefTargetKind(requestUrl);
-    const kind = parsedKind.kind;
-
-    if (!kind) {
-      return jsonRoute(400, { error: parsedKind.error });
-    }
-
-    const response: WorkbenchBriefTargetsResponse = {
-      kind,
-      targets: await listSessionBriefTargets(root, kind)
-    };
-
-    return jsonRoute(200, response);
-  }
-
-  if (requestUrl.pathname === "/api/brief") {
-    const kind = optionalBriefKind(requestUrl);
-
-    if (!kind) {
-      return jsonRoute(400, { error: "Missing required query parameter: kind." });
-    }
-
-    const targetKind = optionalBriefTargetKind(requestUrl);
-
-    if (targetKind.error) {
-      return jsonRoute(400, { error: targetKind.error });
-    }
-
-    return jsonRoute(200, await buildSessionBrief(root, { kind, targetKind: targetKind.kind, target: optionalTarget(requestUrl) }));
-  }
-
   return jsonRoute(404, { error: "Not found." });
 }
 
@@ -969,6 +929,10 @@ function workbenchRoutes() {
   return [
     createAskRoute({
       retrieveContextForAnswer
+    }),
+    ...createBriefRoutes({
+      buildSessionBrief,
+      listSessionBriefTargets
     })
   ];
 }
@@ -3174,30 +3138,6 @@ function optionalQuestionsPath(root: string, requestUrl: URL): string | undefine
   return trimmed ? path.resolve(root, trimmed) : undefined;
 }
 
-function optionalBriefKind(requestUrl: URL): SessionBriefKind | undefined {
-  const kind = requestUrl.searchParams.get("kind")?.trim();
-
-  if (kind === "today" || kind === "person" || kind === "context" || kind === "review" || kind === "followups" || kind === "recent") {
-    return kind;
-  }
-
-  return undefined;
-}
-
-function optionalBriefTargetKind(requestUrl: URL): { kind?: SessionBriefTargetKind; error?: string } {
-  const kind = requestUrl.searchParams.get("targetKind")?.trim();
-
-  if (!kind) {
-    return {};
-  }
-
-  if (kind === "person" || kind === "context") {
-    return { kind };
-  }
-
-  return { error: "Invalid query parameter targetKind; expected person|context." };
-}
-
 function optionalContextPackKind(requestUrl: URL): ContextPackKind | undefined {
   const value = requestUrl.searchParams.get("kind") ?? undefined;
   return value === "task" ||
@@ -3218,20 +3158,6 @@ function optionalEntityKind(requestUrl: URL): EntityKind | undefined {
   }
 
   return undefined;
-}
-
-function parseBriefTargetKind(requestUrl: URL): { kind: SessionBriefTargetKind; error?: never } | { kind?: never; error: string } {
-  const kind = requestUrl.searchParams.get("kind")?.trim();
-
-  if (!kind) {
-    return { error: "Missing required query parameter: kind=person|context." };
-  }
-
-  if (kind === "person" || kind === "context") {
-    return { kind };
-  }
-
-  return { error: "Invalid query parameter kind; expected person|context." };
 }
 
 function parseJsonBody(body: string | undefined): Record<string, unknown> {

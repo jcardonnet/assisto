@@ -12,11 +12,11 @@
 
 ## Status Update - 2026-06-05
 
-`main` is synced at `00146f8 [codex] Add Agent Workbench v2 routes (#139)`.
+`main` is synced at `134ce1e [codex] Align agent policy with memory guard (#141)`.
 
-PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path. PR 10 is merged, so Agent Workbench v2 now exposes validation-plan, staging-guard, Mixedbread-plan, and no-Copilot closeout panels.
+PRs 1-4 are merged into `main`: no-Copilot closeout, validation planner v2, memory-safe staging, and scenario factory/test shards. PR 5 has a server-first Workbench modularization cut on `main`; remaining non-Briefs route groups and client tab extraction are still deferred. PR 6 plus follow-up #128 are merged, so the capability registry now covers capture, cited answer contracts, entity stewardship, and Context operating rooms with the additional public Workbench/CLI surfaces. PR 7 plus follow-up #132 are merged, so `pnpm agent:review` now produces local subagent review prompts with policy-derived validation commands and hardened focus areas. PR 8 is merged, so `agent:run` now classifies the recurring WSL, Playwright sandbox, and Mixedbread smoke-no-results failures. PR 9 is merged, so `pnpm agent:mxbai refresh` is now the logged post-merge Mixedbread upload/smoke path. PR 10 is merged, so Agent Workbench v2 now exposes validation-plan, staging-guard, Mixedbread-plan, and no-Copilot closeout panels. Policy follow-up PR #141 is merged, so `pnpm agent:policy check` now ignores preserved untracked dogfood Events/Transactions while still blocking staged, modified, or committed guarded memory paths.
 
-Current implementation slice: policy follow-up on `codex/agent-policy-untracked-memory`, then return to PR 5 Workbench modularization.
+Current implementation slice: PR 5 Briefs GET route extraction on `codex/workbench-brief-routes`, moving `/api/brief` and `/api/brief/targets` into the route registry before continuing the remaining Workbench route groups.
 
 ## Operating Rules
 
@@ -999,7 +999,7 @@ Expected: pass.
 
 **Purpose:** Reduce editing risk and review cost by splitting the large Workbench file into focused modules without changing behavior.
 
-**Status Update - 2026-06-05:** Server-first cut implemented on `codex/agent-workbench-modularization`. The public Workbench route contracts now live in `shared/contracts.ts` and remain re-exported from `index.ts`; the Node HTTP bridge moved to `server/http.ts`; route lookup moved to `server/route-registry.ts`; and `/api/ask` now dispatches through `server/routes/ask.ts` with dependency injection to avoid root export cycles. Client tab extraction is deferred because the current browser client is a single shared-state script with broad selector-heavy coverage; a later PR should introduce an explicit client state/context seam before moving tabs.
+**Status Update - 2026-06-05:** Server-first cut implemented on `codex/agent-workbench-modularization`. The public Workbench route contracts now live in `shared/contracts.ts` and remain re-exported from `index.ts`; the Node HTTP bridge moved to `server/http.ts`; route lookup moved to `server/route-registry.ts`; and `/api/ask` now dispatches through `server/routes/ask.ts` with dependency injection to avoid root export cycles. Follow-up slice `codex/workbench-brief-routes` moves `GET /api/brief` and `GET /api/brief/targets` into `packages/workbench/src/server/routes/briefs.ts` without behavior changes; focused Workbench/core/e2e/browser checks, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm validate:local --skip-browser`, full `pnpm test:browser`, planner-requested evals, and `pnpm check:memory-data` passed. Client tab extraction is deferred because the current browser client is a single shared-state script with broad selector-heavy coverage; a later PR should introduce an explicit client state/context seam before moving tabs.
 
 **Files:**
 
@@ -1142,6 +1142,26 @@ node --test tests/workbench.mjs tests/browser/workbench-transaction-console.spec
 Expected: unit tests pass; browser test may require `TMPDIR=/tmp pnpm test:browser` in full validation.
 
 - [ ] **Step 3: Move Health, Briefs, Entities, and Contexts routes**
+
+- [x] **Step 3a: Move Briefs GET routes**
+
+Create `packages/workbench/src/server/routes/briefs.ts` with `GET /api/brief` and `GET /api/brief/targets` handlers, preserving the derived-session-brief behavior and exact query validation errors.
+
+Run:
+
+```bash
+node tests/workbench-modularization.mjs
+node tests/workbench.mjs
+node tests/core-briefs.mjs
+node tests/run-e2e.mjs
+pnpm exec playwright test tests/browser/workbench-briefs.spec.mjs --project=chromium
+pnpm lint
+pnpm typecheck
+```
+
+Expected: pass; local-server and browser commands may need to run outside the sandbox.
+
+- [ ] **Step 3b: Move remaining Health, Entities, and Contexts routes**
 
 Create the listed route files and preserve handler behavior exactly.
 
@@ -2097,7 +2117,7 @@ pnpm agent:mxbai refresh
 Expected:
 
 - `check:memory-data` reports no blocking guarded changes.
-- `agent:policy check` passes. Follow-up `codex/agent-policy-untracked-memory` aligns policy with `check:memory-data` so preserved untracked dogfood Events/Transactions are reported but nonblocking.
+- `agent:policy check` passes. Merged follow-up PR #141 aligns policy with `check:memory-data` so preserved untracked dogfood Events/Transactions are reported but nonblocking.
 - `agent:validate --plan` prints a coherent changed-file plan.
 - `validate:local` passes or any environment failure is classified by `agent:diagnose:last`.
 - `agent:ci-local --plan` prints the local CI capsule command plan.
