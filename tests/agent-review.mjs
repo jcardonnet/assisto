@@ -16,9 +16,9 @@ export function runAgentReviewTests() {
   assert.deepEqual(invariantPlan.focus_areas, ["core-memory-semantics"]);
   assert.equal(invariantPlan.checks.some((item) => item.includes("direct canonical writes")), true);
   assert.equal(invariantPlan.checks.some((item) => item.includes("Event evidence")), true);
-  assert.equal(invariantPlan.commands.includes("TMPDIR=/tmp pnpm eval:mvp"), true);
-  assert.equal(invariantPlan.commands.includes("TMPDIR=/tmp pnpm eval:source-adapters"), true);
-  assert.equal(invariantPlan.commands.includes("TMPDIR=/tmp pnpm eval:v10"), true);
+  assert.equal(invariantPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm eval:mvp"), true);
+  assert.equal(invariantPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm eval:source-adapters"), true);
+  assert.equal(invariantPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm eval:v10"), true);
   assert.match(invariantPlan.subagent_prompt, /Do not edit files/);
 
   const testsPlan = buildReviewPlan({
@@ -29,10 +29,18 @@ export function runAgentReviewTests() {
   assert.equal(testsPlan.kind, "tests");
   assert.equal(testsPlan.focus_areas.includes("workbench-ui"), true);
   assert.equal(testsPlan.checks.some((item) => item.includes("focused regression test")), true);
-  assert.equal(testsPlan.commands.includes("TMPDIR=/tmp pnpm test:e2e"), true);
-  assert.equal(testsPlan.commands.includes("TMPDIR=/tmp pnpm test:browser"), true);
-  assert.equal(testsPlan.commands.includes("TMPDIR=/tmp pnpm eval:v10"), true);
+  assert.equal(testsPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm test:e2e"), true);
+  assert.equal(testsPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm test:browser"), true);
+  assert.equal(testsPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm eval:v10"), true);
   assert.equal(testsPlan.commands.includes("pnpm check:memory-data"), true);
+
+  const currentMemoryPlan = buildReviewPlan({
+    kind: "invariant",
+    changedFiles: ["memory/people/jeff.md"]
+  });
+
+  assert.equal(currentMemoryPlan.focus_areas.includes("canonical-memory-pages"), true);
+  assert.equal(currentMemoryPlan.checks.some((item) => item.includes("canonical memory page edits")), true);
 
   const guardedPlan = buildReviewPlan({
     kind: "invariant",
@@ -42,6 +50,24 @@ export function runAgentReviewTests() {
   assert.deepEqual(guardedPlan.changed_files, ["memory/events/2026/example.md", "scripts/agent-review.mjs"]);
   assert.equal(guardedPlan.focus_areas.includes("guarded-memory-data"), true);
   assert.equal(guardedPlan.checks.some((item) => item.includes("intentionally approved")), true);
+
+  const dotPrefixedPlan = buildReviewPlan({
+    kind: "invariant",
+    changedFiles: ["./packages/core/src/transactions/apply.ts"]
+  });
+
+  assert.deepEqual(dotPrefixedPlan.changed_files, ["packages/core/src/transactions/apply.ts"]);
+  assert.deepEqual(dotPrefixedPlan.focus_areas, ["core-memory-semantics"]);
+  assert.equal(dotPrefixedPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm eval:v10"), true);
+
+  const evalHarnessPlan = buildReviewPlan({
+    kind: "tests",
+    changedFiles: ["tests/scenarios/run-retrieval.mjs"]
+  });
+
+  assert.equal(evalHarnessPlan.focus_areas.includes("eval-test-harness"), true);
+  assert.equal(evalHarnessPlan.checks.some((item) => item.includes("golden-threshold")), true);
+  assert.equal(evalHarnessPlan.commands.includes("TMPDIR=/tmp TEMP=/tmp TMP=/tmp pnpm eval:source-adapters"), true);
 
   assert.throws(
     () => buildReviewPlan({ kind: "security", changedFiles: [] }),

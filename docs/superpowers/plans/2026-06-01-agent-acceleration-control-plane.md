@@ -1423,7 +1423,7 @@ Expected: pass.
 
 **Purpose:** Replace disabled Copilot review with deterministic local review prompts/checklists that subagents can run before PR creation.
 
-**Status Update - 2026-06-05:** Implemented on `codex/agent-local-review-harness`. The review harness adds `pnpm agent:review`, deterministic invariant/test prompts with focus areas and validation commands, focused tests, integration runner wiring, and docs. The original red/green failure step below was collapsed into one implementation patch after local inspection; final targeted tests, lint, typecheck, `pnpm test`, and `pnpm check:memory-data` passed. PR 5 route/client modularization remains deferred; PR 8 is the next control-plane slice after this harness.
+**Status Update - 2026-06-05:** Implemented and merged through PR #130, then followed by `codex/agent-review-harness-followup` to address post-merge review comments. The review harness adds `pnpm agent:review`, deterministic invariant/test prompts with focus areas and policy-derived validation commands, focused tests, integration runner wiring, and docs. The original red/green failure step below was collapsed into one implementation patch after local inspection; final targeted tests, lint, typecheck, `pnpm test`, and `pnpm check:memory-data` passed. PR 5 route/client modularization remains deferred; PR 8 is the next control-plane slice after this harness.
 
 **Files:**
 
